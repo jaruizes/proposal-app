@@ -13,15 +13,32 @@
           "builder": "@angular-devkit/build-angular:application",
           "options": {
             "browser": "src/main.ts",
+            "index": "src/index.html",
             "tsConfig": "tsconfig.app.json",
             "assets": [],
             "styles": ["src/styles.css"]
-          }
+          },
+          "configurations": {
+            "production": {
+              "optimization": true,
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
-            "development": { "buildTarget": "proposal-app:build" }
+            "production": {
+              "buildTarget": "proposal-app:build:production"
+            },
+            "development": {
+              "buildTarget": "proposal-app:build:development"
+            }
           },
           "defaultConfiguration": "development"
         }

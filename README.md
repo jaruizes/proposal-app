@@ -1,25 +1,22 @@
-# Proposal App — UX Prototype
+# Proposal App
 
-Angular prototype for validating the proposal-generation workflow UI.
+Monorepo prototype for the proposal-generation application.
 
-## What is mocked
+## Structure
 
-- Offer creation and auto-generated UUID.
-- Workflow phases and state transitions.
-- Automatic transition from **Trabajando** to **Esperando aprobación**.
-- Human approval triggering the next phase.
-- Refinement chat returning a phase to **Trabajando**.
-- Markdown-like artifact preview.
-- AI provider/model selectors.
-- Presentation guidance section editor.
+```text
+frontend/   Angular UI prototype
+backend/    reserved for the backend implementation
+```
 
-No backend, Google Drive or LLM calls are performed yet.
-
-## Run
+## Run the frontend
 
 ```bash
+cd frontend
 npm install
 npm start
 ```
 
 Then open `http://localhost:4200`.
+
+The current frontend uses mocks for offer creation, workflow execution, approvals and refinement. No backend, Google Drive or LLM calls are performed yet.
