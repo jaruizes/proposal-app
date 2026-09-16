@@ -1,0 +1,127 @@
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">P</span><span>Proposal<span class="brand-accent">Flow</span></span></div>
+    <nav>
+      <button class="nav-item active"><span>⌂</span><span>Ofertas</span></button>
+      <button class="nav-item"><span>◫</span><span>Plantillas</span></button>
+      <button class="nav-item"><span>◇</span><span>Proveedores IA</span></button>
+      <button class="nav-item"><span>⚙</span><span>Configuración</span></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="profile-dot">JR</div>
+      <div><strong>José Ruiz</strong><small>Workspace local</small></div>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <header class="topbar">
+      <div>
+        <span class="eyebrow">PROPOSAL COPILOT</span>
+        <h1>{{ view() === 'home' ? 'Panel de ofertas' : selected()?.name }}</h1>
+      </div>
+      <div class="top-actions">
+        <span class="environment">● Mock mode</span>
+        <button *ngIf="view() === 'home'" class="primary" (click)="openCreate()">＋ Crear nueva oferta</button>
+        <button *ngIf="view() === 'detail'" class="ghost" (click)="back()">← Volver</button>
+      </div>
+    </header>
+
+    <ng-container *ngIf="view() === 'home'">
+      <section class="stat-grid">
+        <article class="stat-card"><div class="stat-label">TOTAL OFERTAS</div><div class="stat-value">{{stats().total}}</div><div class="spark">▁▂▃▅▃▆▇</div></article>
+        <article class="stat-card"><div class="stat-label">EN EJECUCIÓN</div><div class="stat-value">{{stats().working}}</div><div class="stat-note good">● Procesando ahora</div></article>
+        <article class="stat-card"><div class="stat-label">ESPERANDO APROBACIÓN</div><div class="stat-value">{{stats().waiting}}</div><div class="stat-note warn">● Requieren atención</div></article>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="panel-head"><div><h2>Ejecuciones</h2><p>Seguimiento de ofertas y estado de cada flujo.</p></div><div class="search-box">⌕ <input placeholder="Buscar oferta..." /></div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Nombre</th><th>Paso</th><th>Estado</th><th>Creada</th><th></th></tr></thead>
+            <tbody>
+              <tr *ngFor="let exec of svc.executions()" (click)="openDetail(exec)">
+                <td class="mono">{{exec.id.slice(0,8)}}…</td><td><strong>{{exec.name}}</strong></td><td>{{exec.currentStep}}</td>
+                <td><span class="status-pill" [ngClass]="statusClass(exec.overallStatus)"><i></i>{{exec.overallStatus}}</span></td>
+                <td>{{exec.createdAt | date:'dd/MM/yyyy HH:mm'}}</td><td class="arrow">›</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </ng-container>
+
+    <ng-container *ngIf="view() === 'detail' && selected() as exec">
+      <section class="detail-summary panel">
+        <div><span class="mono muted">{{exec.id}}</span><h2>{{exec.presentationName}}</h2></div>
+        <span class="status-pill" [ngClass]="statusClass(exec.overallStatus)"><i></i>{{exec.overallStatus}}</span>
+      </section>
+
+      <section class="state-machine panel">
+        <div class="panel-head"><div><h2>Flujo de generación</h2><p>Cada fase requiere validación antes de continuar.</p></div></div>
+        <div class="steps">
+          <ng-container *ngFor="let p of exec.phases; let i = index">
+            <button class="step" [class.clickable]="phaseClickable(p)" [ngClass]="phaseClass(p.status)" (click)="choosePhase(p)">
+              <span class="step-index">{{p.status === 'approved' ? '✓' : i + 1}}</span>
+              <span><strong>{{p.label}}</strong><small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : 'Pendiente'}}</small></span>
+            </button>
+            <div class="step-line" *ngIf="i < exec.phases.length - 1"></div>
+          </ng-container>
+        </div>
+      </section>
+
+      <section class="workspace-grid" *ngIf="selectedPhase() as phase; else chooseHint">
+        <article class="panel artifact-panel">
+          <div class="panel-head"><div><span class="eyebrow">ARTEFACTO</span><h2>{{phase.label}}</h2></div><span class="status-pill" [ngClass]="phase.status === 'approved' ? 'approved' : 'waiting'">{{phase.status === 'approved' ? 'Validado' : 'Pendiente de validación'}}</span></div>
+          <div class="markdown-preview">
+            <h1>{{phase.label}}</h1>
+            <h2>{{exec.name}}</h2>
+            <p>Este es un <strong>artefacto simulado</strong> para validar el flujo visual.</p>
+            <ul><li>Alcance principal identificado y estructurado.</li><li>Decisiones relevantes trazadas.</li><li>Riesgos y dependencias visibles para revisión humana.</li></ul>
+            <h3>Siguiente decisión</h3><p>Revisar este contenido y <strong>validar</strong> o solicitar cambios desde el panel de refinamiento.</p>
+          </div>
+        </article>
+        <aside class="panel chat-panel" *ngIf="phase.status === 'waiting_approval'">
+          <div class="chat-head"><div><span class="online-dot"></span><strong>Refinar con IA</strong></div><small>La fase volverá a “Trabajando”</small></div>
+          <div class="chat-body"><div class="bot-message">Describe el cambio que quieres aplicar al artefacto de <strong>{{phase.label}}</strong>.</div></div>
+          <div class="chat-input"><textarea [(ngModel)]="chatMessage" placeholder="Ej. Cambia Kubernetes por OpenShift..."></textarea><button (click)="sendRefine()">Enviar ↗</button></div>
+          <button class="approve-btn" (click)="approve()">✓ Validar y continuar</button>
+        </aside>
+      </section>
+      <ng-template #chooseHint><div class="panel empty-state">Selecciona un paso validado o pendiente de aprobación para ver su salida.</div></ng-template>
+    </ng-container>
+  </main>
+</div>
+
+<div class="modal-backdrop" *ngIf="createOpen()">
+  <section class="modal">
+    <header><div><span class="eyebrow">NUEVA EJECUCIÓN</span><h2>Crear nueva oferta</h2><p>Configura el flujo antes de iniciar el procesamiento.</p></div><button class="icon-btn" (click)="closeCreate()">×</button></header>
+    <div class="modal-body">
+      <div class="form-grid two">
+        <label><span>Nombre</span><input [(ngModel)]="draft.name" placeholder="Ej. REDEIA · SSIR" /></label>
+        <label><span>Idioma de la presentación</span><select [(ngModel)]="draft.presentationLanguage"><option>Español</option><option>English</option><option>Français</option></select></label>
+      </div>
+      <div class="form-grid two">
+        <label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="draft.inputDriveFolder" /></label>
+        <label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="draft.outputDriveFolder" /></label>
+      </div>
+      <label><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Nombre del documento final" /></label>
+
+      <div class="section-title"><div><h3>Configuración IA</h3><p>Equivalente visual a los campos configurables de offer-config.yaml.</p></div></div>
+      <div class="form-grid two">
+        <label><span>Proveedor</span><select [(ngModel)]="draft.provider"><option *ngFor="let p of (providerModels | keyvalue)">{{p.key}}</option></select></label>
+        <div class="provider-chip">{{draft.provider}}</div>
+      </div>
+      <div class="model-grid">
+        <label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solution',l:'Solución'}, {k:'slides',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="draft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label>
+      </div>
+
+      <div class="section-title"><div><h3>Estructura de presentación</h3><p>Configuración equivalente a presentation-guidance.yaml.</p></div><button class="ghost small" (click)="addSection()">＋ Añadir sección</button></div>
+      <div class="sections-editor">
+        <div class="section-row" *ngFor="let s of draft.sections; let i = index">
+          <input type="checkbox" [(ngModel)]="s.enabled" /><input class="grow" [(ngModel)]="s.name" /><label class="compact"><span>Máx. slides</span><input type="number" min="1" [(ngModel)]="s.maxSlides" /></label><button class="icon-btn subtle" (click)="removeSection(i)">×</button>
+        </div>
+      </div>
+    </div>
+    <footer><button class="ghost" (click)="closeCreate()">Cancelar</button><button class="primary" [disabled]="!draft.name || !draft.presentationName" (click)="saveCreate()">Guardar e iniciar</button></footer>
+  </section>
+</div>
