@@ -1,0 +1,1 @@
+package io.github.jaruizes.proposal.infrastructure.client.anthropic; import org.springframework.boot.context.properties.ConfigurationProperties; @ConfigurationProperties(prefix="anthropic") public record AnthropicProperties(String apiKey,String baseUrl,String version,boolean fallbackToMock) {}

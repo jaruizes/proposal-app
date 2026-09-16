@@ -1,0 +1,1 @@
+package io.github.jaruizes.proposal.infrastructure.persistence.repository; import io.github.jaruizes.proposal.infrastructure.persistence.entity.OfferJpaEntity; import org.springframework.data.jpa.repository.JpaRepository; import java.util.UUID; public interface SpringOfferRepository extends JpaRepository<OfferJpaEntity,UUID> {}

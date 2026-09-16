@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: Proposal Platform
+    orgId: 1
+    folder: Proposal Platform
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: proposal-platform-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/proposal}
+    username: ${DB_USER:proposal}
+    password: ${DB_PASSWORD:proposal}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+server:
+  port: ${SERVER_PORT:8080}
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY:}
+  base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
+  version: ${ANTHROPIC_VERSION:2023-06-01}
+  fallback-to-mock: ${ANTHROPIC_FALLBACK_TO_MOCK:true}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+logging:
+  pattern:
+    correlation: "[%X{traceId:-},%X{spanId:-}] "

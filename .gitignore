@@ -1,11 +1,8 @@
-# Dependencies
-node_modules/
-
-# Angular build output
-dist/
-.angular/
-
-# IDE / OS
 .DS_Store
+.env
+**/target/
+**/node_modules/
+**/dist/
 .idea/
 .vscode/
+*.iml
