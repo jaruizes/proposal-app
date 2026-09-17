@@ -26,14 +26,17 @@ public class SourceIngestionService {
     private final DocumentTextExtractorPort extractor;
     private final DocumentVisualRendererPort renderer;
     private final ArtifactRepositoryPort artifacts;
+    private final SourceChangeInvalidationService sourceInvalidation;
     private final ObjectMapper json = new ObjectMapper();
 
     public SourceIngestionService(ToolGatewayPort tools, DocumentTextExtractorPort extractor,
-                                  DocumentVisualRendererPort renderer, ArtifactRepositoryPort artifacts) {
+                                  DocumentVisualRendererPort renderer, ArtifactRepositoryPort artifacts,
+                                  SourceChangeInvalidationService sourceInvalidation) {
         this.tools = tools;
         this.extractor = extractor;
         this.renderer = renderer;
         this.artifacts = artifacts;
+        this.sourceInvalidation = sourceInvalidation;
     }
 
     public SourceBundle loadOrIngest(Offer offer) {
@@ -51,6 +54,7 @@ public class SourceIngestionService {
                     return new SourceBundle(manifest.get().content(), context.get().content(), attachmentsFromManifest(manifest.get().content()),
                             report.map(Artifact::content).orElse("Previously ingested source corpus."));
                 }
+                sourceInvalidation.invalidateForSourceChange(offer.id(), storedHash, currentHash);
             } catch (Exception e) {
                 throw new IllegalStateException("Unable to validate current Google Drive source state", e);
             }
