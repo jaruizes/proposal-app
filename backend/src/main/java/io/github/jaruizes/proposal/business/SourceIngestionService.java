@@ -48,27 +48,31 @@ public class SourceIngestionService {
     public SourceBundle ingest(Offer offer) {
         var folderId = extractDriveId(offer.inputDriveFolder());
         if (folderId.isBlank()) throw new IllegalArgumentException("Google Drive input folder ID/URL is required");
-        var listing = text(tools.execute("drive_list_folder", Map.of("folderId", folderId, "pageSize", 1000)));
         try {
-            var array = json.readTree(listing);
-            var files = new ArrayList<JsonNode>();
-            array.forEach(files::add);
-            files.removeIf(f -> FOLDER_MIME.equals(f.path("mimeType").asText()));
-            files.sort(Comparator.comparing((JsonNode f) -> f.path("name").asText()).thenComparing(f -> f.path("id").asText()));
+            var files = listFilesRecursively(folderId);
+            files.sort(Comparator.comparing((DriveSource f) -> f.path()).thenComparing(DriveSource::id));
 
             var entries = new ArrayList<Map<String,Object>>();
-            var context = new StringBuilder("# Customer source corpus\n\n");
+            var context = new StringBuilder("# Customer source corpus\n\nOriginal/native customer sources are authoritative. Extracted text and rendered representations are auxiliary.\n");
             var warnings = new ArrayList<String>();
             var attachments = new ArrayList<LlmRequest.Attachment>();
             int i = 1;
-            for (var file : files) {
+            for (var source : files) {
+                var file = source.node();
                 var code = "DOC-%03d".formatted(i++);
-                var fileId = file.path("id").asText();
+                var fileId = source.id();
                 var name = file.path("name").asText();
                 var mime = file.path("mimeType").asText();
                 var entry = new LinkedHashMap<String,Object>();
-                entry.put("id", code); entry.put("driveFileId", fileId); entry.put("name", name); entry.put("mimeType", mime);
-                entry.put("modifiedTime", file.path("modifiedTime").asText(null)); entry.put("webViewLink", file.path("webViewLink").asText(null));
+                entry.put("id", code);
+                entry.put("driveFileId", fileId);
+                entry.put("name", name);
+                entry.put("relativePath", source.path());
+                entry.put("mimeType", mime);
+                entry.put("sourceAuthority", "original_native");
+                entry.put("representationKind", representationKind(mime));
+                entry.put("modifiedTime", file.path("modifiedTime").asText(null));
+                entry.put("webViewLink", file.path("webViewLink").asText(null));
                 entry.put("status", "ready");
                 String extracted;
                 String visualPath = null;
@@ -111,13 +115,17 @@ public class SourceIngestionService {
                     attachment(resolve(visualPath), name, attachments, warnings);
                 }
                 entries.add(entry);
-                context.append("\n\n## ").append(code).append(" — ").append(name)
+                context.append("\n\n## ").append(code).append(" — ").append(source.path())
                         .append("\nMIME: ").append(mime).append("\nDrive ID: ").append(fileId)
-                        .append("\n\n").append(limit(extracted, 120_000));
+                        .append("\nAuthority: original/native source\n\n").append(limit(extracted, 120_000));
             }
             var manifestMap = new LinkedHashMap<String,Object>();
-            manifestMap.put("sourceType", "google_drive"); manifestMap.put("folderId", folderId); manifestMap.put("generatedAt", Instant.now().toString());
-            manifestMap.put("sources", entries); manifestMap.put("warnings", warnings);
+            manifestMap.put("sourceType", "google_drive");
+            manifestMap.put("folderId", folderId);
+            manifestMap.put("generatedAt", Instant.now().toString());
+            manifestMap.put("authorityPolicy", "Original/native customer sources are authoritative; extracted/rendered representations are auxiliary.");
+            manifestMap.put("sources", entries);
+            manifestMap.put("warnings", warnings);
             var manifestJson = json.writerWithDefaultPrettyPrinter().writeValueAsString(manifestMap);
             var reportText = "Google Drive ingestion completed: %d documents, %d warnings, %d multimodal PDF attachments. Original/native sources remain authoritative.".formatted(entries.size(), warnings.size(), attachments.size());
             save(offer.id(), ArtifactType.SOURCE_MANIFEST, manifestJson);
@@ -127,6 +135,36 @@ public class SourceIngestionService {
         } catch (Exception e) {
             throw new IllegalStateException("Source ingestion failed", e);
         }
+    }
+
+    private List<DriveSource> listFilesRecursively(String rootFolderId) throws Exception {
+        var result = new ArrayList<DriveSource>();
+        var queue = new ArrayDeque<FolderRef>();
+        queue.add(new FolderRef(rootFolderId, ""));
+        var visited = new HashSet<String>();
+
+        while (!queue.isEmpty()) {
+            var folder = queue.removeFirst();
+            if (!visited.add(folder.id())) continue;
+            var listing = text(tools.execute("drive_list_folder", Map.of("folderId", folder.id(), "pageSize", 1000)));
+            var array = json.readTree(listing);
+            if (!array.isArray()) throw new IllegalStateException("drive_list_folder returned a non-array response for folder " + folder.id());
+            for (var file : array) {
+                var id = file.path("id").asText();
+                var name = file.path("name").asText();
+                var mime = file.path("mimeType").asText();
+                var path = folder.path().isBlank() ? name : folder.path() + "/" + name;
+                if (FOLDER_MIME.equals(mime)) queue.addLast(new FolderRef(id, path));
+                else result.add(new DriveSource(id, path, file));
+            }
+        }
+        return result;
+    }
+
+    private static String representationKind(String mime) {
+        if (DOC_MIME.equals(mime) || SLIDES_MIME.equals(mime) || SHEETS_MIME.equals(mime)) return "google_native";
+        if ("application/pdf".equals(mime)) return "binary_pdf";
+        return "binary";
     }
 
     private String exportGoogleNative(UUID offerId, String code, String fileId, String name, String mime) {
@@ -167,4 +205,7 @@ public class SourceIngestionService {
     private static String safeName(String name){return name.replaceAll("[^a-zA-Z0-9._-]+","_");}
     private static String limit(String text,int max){return text.length()<=max?text:text.substring(0,max)+"\n[representation truncated]";}
     private static String extractDriveId(String value){if(value==null)return "";var v=value.trim();var marker="/folders/";var idx=v.indexOf(marker);if(idx>=0){var rest=v.substring(idx+marker.length());var q=rest.indexOf('?');return q>=0?rest.substring(0,q):rest;}return v;}
+
+    private record FolderRef(String id, String path) {}
+    private record DriveSource(String id, String path, JsonNode node) {}
 }
