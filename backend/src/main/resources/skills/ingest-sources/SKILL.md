@@ -85,7 +85,11 @@ Original PDF files do not need conversion solely for multimodal analysis: inspec
 3. assign `DOC-nnn` IDs in that order;
 4. record `driveFileId`, MIME type, modified time, checksum/size/web link where available;
 5. write `source-manifest.json`;
-6. update deterministic manifest hash.
+6. update deterministic manifest hash with:
+
+```bash
+uv run python tools/source_manifest.py hash <opportunity>/working/source-manifest.json
+```
 
 ### Google-native files
 
@@ -101,10 +105,10 @@ For PDF/DOCX/PPTX/XLSX:
 
 1. download with `drive_download_file` to deterministic `working/sources/` paths;
 2. preserve downloaded original;
-3. generate auxiliary text where useful;
-4. for downloaded DOCX/PPTX/XLSX, attempt visual PDF rendering;
+3. generate auxiliary text using `tools/extract_documents.py` where useful;
+4. for downloaded DOCX/PPTX/XLSX, attempt visual PDF rendering using `tools/render_documents.py` against the downloaded-source directory;
 5. preserve rendering warnings for phase-1 analysis;
-6. never treat extracted text as more authoritative than the original.
+6. never treat extracted Markdown as more authoritative than the original.
 
 Use `drive_export_file` selectively when it provides a richer representation; do not export everything universally.
 
