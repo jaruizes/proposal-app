@@ -3,18 +3,38 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ExecutionService } from './execution.service';
 import { OfferExecution, Phase, SectionConfig } from './models';
+
+type PhaseArtifact={type:string;version:number;title:string;content:string};
+
 @Component({selector:'app-root',standalone:true,imports:[CommonModule,FormsModule],templateUrl:'./app.component.html'})
 export class AppComponent {
-  svc=inject(ExecutionService); view=signal<'home'|'detail'>('home'); selectedId=signal<string|null>(null); selectedPhaseKey=signal<string|null>(null); createOpen=signal(false); configOpen=signal(false); showRawMarkdown=signal(false); chatMessage='';
+  svc=inject(ExecutionService); view=signal<'home'|'detail'>('home'); selectedId=signal<string|null>(null); selectedPhaseKey=signal<string|null>(null); selectedArtifactIndex=signal(0); createOpen=signal(false); configOpen=signal(false); showRawMarkdown=signal(false); chatMessage='';
   providerModels:Record<string,string[]>={ANTHROPIC:['claude-sonnet-4-6','claude-opus-4-6'],'AWS Bedrock':['claude-sonnet-4-6'],OpenAI:['gpt-5.6']};
   draft:any=this.newDraft(); selected=computed(()=>this.selectedId()?this.svc.get(this.selectedId()!):undefined); selectedPhase=computed(()=>this.selected()?.phases.find(p=>p.key===this.selectedPhaseKey()));
+  selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
+  selectedArtifact=computed(()=>this.selectedArtifacts()[this.selectedArtifactIndex()]||this.selectedArtifacts()[0]);
   stats=computed(()=>{const items=this.svc.executions();return{total:items.length,working:items.filter(x=>x.overallStatus==='Trabajando').length,waiting:items.filter(x=>x.overallStatus==='Esperando aprobación').length};});
   openCreate(){this.draft=this.newDraft();this.createOpen.set(true);} closeCreate(){this.createOpen.set(false);} saveCreate(){this.svc.create(this.draft);this.createOpen.set(false);}
-  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.showRawMarkdown.set(false);}
-  back(){this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.showRawMarkdown.set(false);} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.showRawMarkdown.set(false);}}
-  approve(){const e=this.selected(),p=this.selectedPhase();if(e&&p){this.svc.approve(e.id,p.key);this.selectedPhaseKey.set(null);}}
+  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
+  back(){this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
+  chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
+  approve(){const e=this.selected(),p=this.selectedPhase();if(e&&p){this.svc.approve(e.id,p.key);this.selectedPhaseKey.set(null);this.resetArtifactView();}}
   sendRefine(){const e=this.selected(),p=this.selectedPhase();if(e&&p&&this.chatMessage.trim()){this.svc.refine(e.id,p.key,this.chatMessage.trim());this.chatMessage='';}}
   statusClass(status:string){return status==='Trabajando'?'working':status==='Esperando aprobación'?'waiting':status==='Completado'?'approved':'cancelled';} phaseClass(status:string){return status.replace('_','-');} currentModels(){return this.providerModels[this.draft.provider]||[];} addSection(){this.draft.sections.push({name:'Nueva sección',maxSlides:3,enabled:true});} removeSection(i:number){this.draft.sections.splice(i,1);}
+
+  phaseArtifacts(phase:Phase|undefined):PhaseArtifact[]{
+    const output=phase?.output?.trim();
+    if(!output)return [];
+    const marker=/^#\s+([A-Z][A-Z0-9_]*)\s+·\s+v(\d+)\s*$/gm;
+    const matches=[...output.matchAll(marker)];
+    if(!matches.length)return [{type:'DOCUMENT',version:1,title:phase?.label||'Documento',content:output}];
+    return matches.map((match,index)=>{
+      const start=(match.index||0)+match[0].length;
+      const end=index+1<matches.length?(matches[index+1].index||output.length):output.length;
+      const type=match[1]; const version=Number(match[2]);
+      return {type,version,title:this.artifactLabel(type),content:output.slice(start,end).trim()};
+    });
+  }
 
   renderMarkdown(markdown:string|undefined):string {
     if (!markdown) return '<p>El artefacto todavía no está disponible.</p>';
@@ -42,6 +62,8 @@ export class AppComponent {
     closeList(); if(inCode)html.push(`<pre><code>${this.escapeHtml(code.join('\n'))}</code></pre>`);
     return html.join('');
   }
+  private resetArtifactView(){this.selectedArtifactIndex.set(0);this.showRawMarkdown.set(false);}
+  private artifactLabel(type:string){return type.toLowerCase().split('_').map(word=>word.charAt(0).toUpperCase()+word.slice(1)).join(' ');}
   private isTableHeader(lines:string[],i:number){return i+1<lines.length&&this.isTableRow(lines[i])&&/^\s*\|?\s*:?-{3,}/.test(lines[i+1])&&lines[i+1].includes('|');}
   private isTableRow(line:string){return line.includes('|')&&line.trim().length>0;}
   private tableCells(line:string){return line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());}
