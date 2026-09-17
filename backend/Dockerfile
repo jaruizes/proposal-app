@@ -13,7 +13,7 @@ COPY backend/src ./src
 RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:21-jre-jammy
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs ca-certificates libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=backend-build /workspace/target/proposal-platform-backend-0.1.0-SNAPSHOT.jar /app/app.jar
 COPY --from=mcp-build /build/mcp/google-workspace /app/mcp/google-workspace

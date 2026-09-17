@@ -22,12 +22,15 @@ public class SourceIngestionService {
 
     private final ToolGatewayPort tools;
     private final DocumentTextExtractorPort extractor;
+    private final DocumentVisualRendererPort renderer;
     private final ArtifactRepositoryPort artifacts;
     private final ObjectMapper json = new ObjectMapper();
 
-    public SourceIngestionService(ToolGatewayPort tools, DocumentTextExtractorPort extractor, ArtifactRepositoryPort artifacts) {
+    public SourceIngestionService(ToolGatewayPort tools, DocumentTextExtractorPort extractor,
+                                  DocumentVisualRendererPort renderer, ArtifactRepositoryPort artifacts) {
         this.tools = tools;
         this.extractor = extractor;
+        this.renderer = renderer;
         this.artifacts = artifacts;
     }
 
@@ -72,24 +75,31 @@ public class SourceIngestionService {
                 try {
                     if (DOC_MIME.equals(mime)) {
                         extracted = text(tools.execute("docs_get_document", Map.of("documentId", fileId)));
-                        visualPath = exportVisual(offer.id(), code, fileId, name, "application/pdf");
+                        visualPath = exportGoogleNative(offer.id(), code, fileId, name, "application/pdf");
                     } else if (SLIDES_MIME.equals(mime)) {
                         extracted = text(tools.execute("slides_get_presentation", Map.of("presentationId", fileId)));
-                        visualPath = exportVisual(offer.id(), code, fileId, name, "application/pdf");
+                        visualPath = exportGoogleNative(offer.id(), code, fileId, name, "application/pdf");
                     } else if (SHEETS_MIME.equals(mime)) {
                         extracted = text(tools.execute("sheets_get_spreadsheet", Map.of("spreadsheetId", fileId)));
-                        var xlsx = exportVisual(offer.id(), code, fileId, name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                        if (xlsx != null) extracted += "\n\n# Extracted workbook text\n" + extractor.extract(Path.of("/app", xlsx));
-                        visualPath = exportVisual(offer.id(), code + "-visual", fileId, name, "application/pdf");
+                        var xlsx = exportGoogleNative(offer.id(), code, fileId, name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                        if (xlsx != null) extracted += "\n\n# Extracted workbook text\n" + extractor.extract(resolve(xlsx));
+                        visualPath = exportGoogleNative(offer.id(), code + "-visual", fileId, name, "application/pdf");
                     } else {
-                        var safe = safeName(name);
-                        var outputPath = "workspace/%s/working/sources/%s-%s".formatted(offer.id(), code, safe);
+                        var outputPath = "workspace/%s/working/sources/%s-%s".formatted(offer.id(), code, safeName(name));
                         var download = tools.execute("drive_download_file", Map.of("fileId", fileId, "outputPath", outputPath, "overwrite", true));
                         var downloaded = extractOutputPath(text(download));
                         if (downloaded == null) downloaded = outputPath;
                         entry.put("localPath", downloaded);
-                        extracted = extractor.extract(Path.of("/app", downloaded));
-                        if ("application/pdf".equals(mime)) visualPath = downloaded;
+                        var local=resolve(downloaded);
+                        extracted = extractor.extract(local);
+                        if ("application/pdf".equals(mime)) {
+                            visualPath = downloaded;
+                        } else if (isOffice(name,mime)) {
+                            var renderedDir=Path.of("/app/workspace",offer.id().toString(),"working","rendered");
+                            var rendered=renderer.renderPdf(local,renderedDir);
+                            if(rendered.isPresent()) visualPath=Path.of("/app").relativize(rendered.get()).toString();
+                            else warnings.add(code+" "+name+": LibreOffice PDF rendering unavailable/failed");
+                        }
                     }
                 } catch (Exception ex) {
                     extracted = "[Unable to prepare representation: " + ex.getMessage() + "]";
@@ -98,7 +108,7 @@ public class SourceIngestionService {
                 }
                 if (visualPath != null) {
                     entry.put("localVisualPath", visualPath);
-                    attachment(Path.of("/app", visualPath), name, attachments, warnings);
+                    attachment(resolve(visualPath), name, attachments, warnings);
                 }
                 entries.add(entry);
                 context.append("\n\n## ").append(code).append(" — ").append(name)
@@ -119,7 +129,7 @@ public class SourceIngestionService {
         }
     }
 
-    private String exportVisual(UUID offerId, String code, String fileId, String name, String mime) {
+    private String exportGoogleNative(UUID offerId, String code, String fileId, String name, String mime) {
         var extension = mime.equals("application/pdf") ? ".pdf" : ".xlsx";
         var output = "workspace/%s/working/rendered/%s-%s%s".formatted(offerId, code, safeName(name), extension);
         var result = tools.execute("drive_export_file", Map.of("fileId", fileId, "mimeType", mime, "outputPath", output, "overwrite", true));
@@ -132,7 +142,7 @@ public class SourceIngestionService {
         try {
             json.readTree(manifest).path("sources").forEach(source -> {
                 var path = source.path("localVisualPath").asText("");
-                if (!path.isBlank() && path.endsWith(".pdf")) attachment(Path.of("/app", path), source.path("name").asText("source.pdf"), result, new ArrayList<>());
+                if (!path.isBlank() && path.endsWith(".pdf")) attachment(resolve(path), source.path("name").asText("source.pdf"), result, new ArrayList<>());
             });
         } catch (Exception ignored) {}
         return result;
@@ -150,6 +160,8 @@ public class SourceIngestionService {
     private void save(UUID offerId, ArtifactType type, String content) {
         artifacts.save(new Artifact(UUID.randomUUID(), offerId, PhaseType.ANALYSIS, type, artifacts.nextVersion(offerId,type), content, Instant.now()));
     }
+    private static Path resolve(String relative){return Path.of("/app").resolve(relative).normalize();}
+    private static boolean isOffice(String name,String mime){var n=name.toLowerCase(Locale.ROOT);return n.endsWith(".docx")||n.endsWith(".pptx")||n.endsWith(".xlsx")||mime.contains("officedocument");}
     private static String text(Map<String,Object> result){return Objects.toString(result.get("text"),"");}
     private String extractOutputPath(String text){try{return json.readTree(text).path("outputPath").asText(null);}catch(Exception e){return null;}}
     private static String safeName(String name){return name.replaceAll("[^a-zA-Z0-9._-]+","_");}
