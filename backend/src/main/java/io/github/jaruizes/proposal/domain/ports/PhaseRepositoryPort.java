@@ -12,5 +12,5 @@ public interface PhaseRepositoryPort {
 
     Optional<PhaseExecution> find(UUID offerId, PhaseType phase);
 
-    List<PhaseExecution> findPhasesByOfferId(UUID offerId);
+    List<PhaseExecution> findByOfferId(UUID offerId);
 }
