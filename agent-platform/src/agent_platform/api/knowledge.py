@@ -7,8 +7,13 @@ from pydantic import BaseModel, Field
 from agent_platform.api.dependencies import KnowledgeFileServiceDep, KnowledgeIngestionServiceDep, KnowledgeServiceDep
 from agent_platform.application.chunking import ChunkingStrategyName
 from agent_platform.application.file_ingestion import KnowledgeFileUploadError
-from agent_platform.application.ingestion import KnowledgeIngestionError, KnowledgeIngestionResult
+from agent_platform.application.ingestion import (
+    KnowledgeIngestionError,
+    KnowledgeIngestionResult,
+    KnowledgeMetadataEnrichmentResult,
+)
 from agent_platform.application.knowledge import KnowledgeConflictError, KnowledgeNotFoundError
+from agent_platform.application.metadata_enrichment import MetadataEnrichmentProfile
 from agent_platform.domain import KnowledgeBase, KnowledgeChunk, KnowledgeDocument
 
 
@@ -39,6 +44,13 @@ class KnowledgeIngestRequest(BaseModel):
     child_size: int = Field(default=1200, gt=0, le=10000)
     child_overlap: int = Field(default=200, ge=0, le=5000)
     embed: bool = True
+    metadata_enrichment: MetadataEnrichmentProfile = MetadataEnrichmentProfile.STANDARD
+    max_keywords: int = Field(default=8, ge=0, le=50)
+
+
+class KnowledgeEnrichRequest(BaseModel):
+    metadata_enrichment: MetadataEnrichmentProfile = MetadataEnrichmentProfile.STANDARD
+    max_keywords: int = Field(default=8, ge=0, le=50)
 
 
 class KnowledgeFileUploadResponse(BaseModel):
@@ -110,6 +122,8 @@ async def upload_file(
     child_size: int = Form(default=1200),
     child_overlap: int = Form(default=200),
     embed: bool = Form(default=True),
+    metadata_enrichment: MetadataEnrichmentProfile = Form(default=MetadataEnrichmentProfile.STANDARD),
+    max_keywords: int = Form(default=8),
 ):
     if not 1 <= chunk_size <= 10000:
         raise HTTPException(status_code=422, detail="chunk_size must be between 1 and 10000")
@@ -119,6 +133,8 @@ async def upload_file(
         raise HTTPException(status_code=422, detail="child_size must be between 1 and 10000")
     if overlap < 0 or child_overlap < 0:
         raise HTTPException(status_code=422, detail="overlap values must be >= 0")
+    if not 0 <= max_keywords <= 50:
+        raise HTTPException(status_code=422, detail="max_keywords must be between 0 and 50")
     _validate_chunking(chunking_strategy, chunk_size, overlap, parent_size, child_size, child_overlap)
     parsed_metadata: dict = {}
     if metadata:
@@ -145,6 +161,8 @@ async def upload_file(
             child_size=child_size,
             child_overlap=child_overlap,
             embed=embed,
+            metadata_enrichment=metadata_enrichment,
+            max_keywords=max_keywords,
         )
         return KnowledgeFileUploadResponse(document=result.document, ingestion=result.ingestion)
     except KnowledgeNotFoundError as exc:
@@ -174,6 +192,20 @@ async def ingest_document(document_id: UUID, payload: KnowledgeIngestRequest, se
             child_size=payload.child_size,
             child_overlap=payload.child_overlap,
             embed=payload.embed,
+            metadata_enrichment=payload.metadata_enrichment,
+            max_keywords=payload.max_keywords,
+        )
+    except KnowledgeIngestionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/knowledge-documents/{document_id}/enrich", response_model=KnowledgeMetadataEnrichmentResult)
+async def enrich_document(document_id: UUID, payload: KnowledgeEnrichRequest, service: KnowledgeIngestionServiceDep):
+    try:
+        return await service.enrich_existing(
+            document_id,
+            metadata_enrichment=payload.metadata_enrichment,
+            max_keywords=payload.max_keywords,
         )
     except KnowledgeIngestionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

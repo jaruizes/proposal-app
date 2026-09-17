@@ -6,6 +6,7 @@ from agent_platform.application.chunking import ChunkingStrategyName
 from agent_platform.application.document_parsers import DocumentParseError, DocumentParserRegistry
 from agent_platform.application.ingestion import KnowledgeIngestionResult, KnowledgeIngestionService
 from agent_platform.application.knowledge import KnowledgeService
+from agent_platform.application.metadata_enrichment import MetadataEnrichmentProfile
 from agent_platform.domain import KnowledgeDocument
 
 
@@ -50,6 +51,8 @@ class KnowledgeFileService:
         child_size: int = 1200,
         child_overlap: int = 200,
         embed: bool = True,
+        metadata_enrichment: MetadataEnrichmentProfile | str = MetadataEnrichmentProfile.STANDARD,
+        max_keywords: int = 8,
     ) -> KnowledgeFileUploadResult:
         await self._knowledge_service.get_base(knowledge_base_key)
         if not filename:
@@ -91,5 +94,7 @@ class KnowledgeFileService:
                 child_size=child_size,
                 child_overlap=child_overlap,
                 embed=embed,
+                metadata_enrichment=metadata_enrichment,
+                max_keywords=max_keywords,
             )
         return KnowledgeFileUploadResult(document=stored, ingestion=ingestion)
