@@ -43,8 +43,20 @@
 
       <section class="workspace-grid" *ngIf="selectedPhase() as phase; else chooseHint">
         <article class="panel artifact-panel">
-          <div class="panel-head"><div><span class="eyebrow">ARTEFACTO</span><h2>{{phase.label}}</h2></div><span class="status-pill" [ngClass]="phase.status === 'approved' ? 'approved' : 'waiting'">{{phase.status === 'approved' ? 'Validado' : 'Pendiente de validación'}}</span></div>
-          <div class="markdown-preview"><pre style="white-space:pre-wrap;word-break:break-word;margin:0;font:inherit;color:inherit">{{phase.output || 'El artefacto todavía no está disponible.'}}</pre></div>
+          <div class="panel-head">
+            <div><span class="eyebrow">ARTEFACTO</span><h2>{{phase.label}}</h2></div>
+            <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end">
+              <div style="display:flex;border:1px solid #29324a;border-radius:8px;padding:2px">
+                <button class="ghost small" [style.opacity]="showRawMarkdown() ? .6 : 1" (click)="showRawMarkdown.set(false)">Vista</button>
+                <button class="ghost small" [style.opacity]="showRawMarkdown() ? 1 : .6" (click)="showRawMarkdown.set(true)">Markdown</button>
+              </div>
+              <span class="status-pill" [ngClass]="phase.status === 'approved' ? 'approved' : 'waiting'">{{phase.status === 'approved' ? 'Validado' : 'Pendiente de validación'}}</span>
+            </div>
+          </div>
+          <div class="markdown-preview" style="overflow:auto">
+            <pre *ngIf="showRawMarkdown()" style="white-space:pre-wrap;word-break:break-word;margin:0;font:inherit;color:inherit">{{phase.output || 'El artefacto todavía no está disponible.'}}</pre>
+            <div *ngIf="!showRawMarkdown()" [innerHTML]="renderMarkdown(phase.output)" style="max-width:1100px;line-height:1.6"></div>
+          </div>
         </article>
         <aside class="panel chat-panel" *ngIf="phase.status === 'waiting_approval'">
           <div class="chat-head"><div><span class="online-dot"></span><strong>Refinar con IA</strong></div><small>La fase volverá a “Trabajando”</small></div>
