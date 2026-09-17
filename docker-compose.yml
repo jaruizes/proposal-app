@@ -26,6 +26,8 @@ services:
       GOOGLE_OAUTH_CREDENTIALS: /app/.secrets/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /app/.secrets/google-token.json
       GOOGLE_SLIDES_TEMPLATE_ID: ${GOOGLE_SLIDES_TEMPLATE_ID:-}
+      MCP_GOOGLE_WORKSPACE_COMMAND: node
+      MCP_GOOGLE_WORKSPACE_SCRIPT: /app/mcp/google-workspace/dist/server.js
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-collector:4318/v1/traces
     volumes:
       - ./.secrets:/app/.secrets:ro
