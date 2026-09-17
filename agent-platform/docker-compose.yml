@@ -17,15 +17,24 @@ services:
 
   agent-platform:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: agent-platform/Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://agent_platform:agent_platform@postgres:5432/agent_platform
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       ANTHROPIC_DEFAULT_MODEL: ${ANTHROPIC_DEFAULT_MODEL:-claude-sonnet-4-6}
+      GOOGLE_WORKSPACE_MCP_ENABLED: ${GOOGLE_WORKSPACE_MCP_ENABLED:-true}
+      GOOGLE_WORKSPACE_MCP_COMMAND: node
+      GOOGLE_WORKSPACE_MCP_SCRIPT: /opt/mcp/google-workspace/dist/server.js
+      GOOGLE_WORKSPACE_MCP_CWD: /opt/mcp/google-workspace
+      GOOGLE_OAUTH_CREDENTIALS: /run/secrets/google/google-oauth-credentials.json
+      GOOGLE_OAUTH_TOKEN: /run/secrets/google/google-token.json
     ports:
       - "8000:8000"
+    volumes:
+      - ../.secrets:/run/secrets/google
+      - ../workspace:/opt/workspace
     depends_on:
       postgres:
         condition: service_healthy

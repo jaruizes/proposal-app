@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from agent_platform.api.agents import router as agents_router
 from agent_platform.api.executions import router as executions_router
 from agent_platform.api.skills import router as skills_router
+from agent_platform.api.tools import router as tools_router
 
 
 class HealthResponse(BaseModel):
@@ -20,6 +21,7 @@ app = FastAPI(
 app.include_router(agents_router)
 app.include_router(skills_router)
 app.include_router(executions_router)
+app.include_router(tools_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["platform"])

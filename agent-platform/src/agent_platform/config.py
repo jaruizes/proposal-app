@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     anthropic_timeout_seconds: float = 120.0
     anthropic_default_max_output_tokens: int = 4096
 
+    google_workspace_mcp_enabled: bool = True
+    google_workspace_mcp_command: str = "node"
+    google_workspace_mcp_script: str = "/opt/mcp/google-workspace/dist/server.js"
+    google_workspace_mcp_cwd: str = "/opt/mcp/google-workspace"
+    google_workspace_mcp_timeout_seconds: float = 30.0
+    google_oauth_credentials: str | None = None
+    google_oauth_token: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

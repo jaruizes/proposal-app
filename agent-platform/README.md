@@ -6,17 +6,17 @@ This service is intentionally isolated from the existing Spring Boot workflow. T
 
 ## Current capabilities
 
-- Python 3.11+ locally; container runtime uses Python 3.13
+- Python 3.11+ locally; Python 3.13 container runtime
 - FastAPI + Pydantic v2
 - PostgreSQL persistence with SQLAlchemy async and Alembic
 - Dynamic Agent and Skill registries
-- Provider-neutral model contract
-- Anthropic adapter
+- Provider-neutral model contract and Anthropic adapter
 - Native Python Agent Runtime with persisted execution lifecycle
 - Git-tracked bootstrap catalog containing the current Proposal Copilot agents and skills
-- Runtime parity tests for current agent/skill assignments
-- Opt-in real Anthropic API integration smoke test
-- `/health`, `/v1/agents`, `/v1/skills` and `/v1/executions` APIs
+- Provider-neutral Tool contracts and Tool Registry
+- MCP server registry and stdio MCP adapter
+- Google Workspace MCP bundled behind the Agent Platform
+- `/health`, `/v1/agents`, `/v1/skills`, `/v1/executions`, `/v1/tools` and `/v1/mcp/servers` APIs
 
 ## Run locally
 
@@ -26,17 +26,27 @@ export ANTHROPIC_API_KEY="..."
 docker compose up --build
 ```
 
+The Compose build context is the repository root because the Agent Platform image now bundles `mcp/google-workspace`. Google OAuth files are mounted from repository `.secrets/` and the MCP workspace is mounted from repository `workspace/`.
+
 Then verify:
 
 ```bash
 curl http://localhost:8000/health
+curl http://localhost:8000/v1/mcp/servers
+curl 'http://localhost:8000/v1/tools?refresh=true'
 ```
 
 Swagger is available at `http://localhost:8000/docs`.
 
-## Bootstrap Proposal Copilot definitions
+A tool can be invoked through the platform instead of calling MCP directly:
 
-The platform keeps the current Proposal Copilot Agent/Skill contracts under `agent_platform/bootstrap_data` so the independent platform can be tested before the Spring application is changed.
+```bash
+curl -X POST http://localhost:8000/v1/tools/drive_list_folder/invoke \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"folderId":"YOUR_FOLDER_ID"}}'
+```
+
+## Bootstrap Proposal Copilot definitions
 
 After PostgreSQL is running, import missing definitions with:
 
@@ -44,15 +54,11 @@ After PostgreSQL is running, import missing definitions with:
 python -m agent_platform.bootstrap
 ```
 
-The default import is safe for definitions edited later through the runtime/API: existing DB definitions are left unchanged.
-
-To deliberately synchronize existing DB definitions with the Git bootstrap snapshot:
+The default import is safe for definitions edited later through the runtime/API: existing DB definitions are left unchanged. To deliberately synchronize with the Git bootstrap snapshot:
 
 ```bash
 python -m agent_platform.bootstrap --sync
 ```
-
-`--sync` updates only definitions whose Git representation differs and uses the normal registries, so updated definitions receive a new version.
 
 When running with Docker Compose:
 
@@ -60,38 +66,23 @@ When running with Docker Compose:
 docker compose exec agent-platform python -m agent_platform.bootstrap
 ```
 
-After bootstrap, verify:
-
-```bash
-curl http://localhost:8000/v1/agents
-curl http://localhost:8000/v1/skills
-```
-
 ## Tests
-
-Local development supports Python 3.11 or newer:
 
 ```bash
 python -m pip install -e '.[dev]'
 pytest
 ```
 
-The normal suite never performs a paid external LLM request. The Anthropic parity smoke test is explicit opt-in:
+The real Google Workspace MCP smoke test is opt-in because it requires a built MCP server and Google OAuth configuration:
 
 ```bash
-export ANTHROPIC_API_KEY="..."
-export RUN_ANTHROPIC_INTEGRATION=1
-pytest -m integration tests/integration/test_anthropic_execution.py -v
+export RUN_GOOGLE_WORKSPACE_MCP_INTEGRATION=1
+export GOOGLE_WORKSPACE_MCP_COMMAND=node
+export GOOGLE_WORKSPACE_MCP_SCRIPT=../mcp/google-workspace/dist/server.js
+export GOOGLE_WORKSPACE_MCP_CWD=../mcp/google-workspace
+pytest -m integration tests/integration/test_google_workspace_mcp.py -v
 ```
-
-Optionally route the integration test to another Anthropic model without changing the bootstrap catalog:
-
-```bash
-export ANTHROPIC_INTEGRATION_MODEL="claude-sonnet-4-6"
-```
-
-The integration test calls `POST /v1/executions` with the bootstrapped `business-analyst` + `analyze-opportunity` definitions and verifies a completed artifact, token usage, model, provider request ID and persisted lifecycle events.
 
 ## Design rule
 
-The platform owns cognitive/agentic execution. Deterministic business workflows remain outside this service and will integrate only through the stable API contract after platform parity is validated.
+The platform owns cognitive/agentic execution and tools. Applications do not call MCP servers directly; they call the Agent Platform. Deterministic business workflows remain outside this service and integrate through stable platform contracts.

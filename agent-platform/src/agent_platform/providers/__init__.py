@@ -1,5 +1,17 @@
-"""Concrete model provider adapters."""
-
 from agent_platform.providers.anthropic import AnthropicModelProvider
+from agent_platform.providers.mcp import (
+    McpProtocolError,
+    McpRegistry,
+    McpServerDefinition,
+    McpStdioSession,
+    McpToolProvider,
+)
 
-__all__ = ["AnthropicModelProvider"]
+__all__ = [
+    "AnthropicModelProvider",
+    "McpProtocolError",
+    "McpRegistry",
+    "McpServerDefinition",
+    "McpStdioSession",
+    "McpToolProvider",
+]
