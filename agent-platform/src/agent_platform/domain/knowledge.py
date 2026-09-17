@@ -12,6 +12,7 @@ def utc_now() -> datetime:
 
 class KnowledgeDocumentStatus(StrEnum):
     STORED = "STORED"
+    PROCESSING = "PROCESSING"
     READY = "READY"
     FAILED = "FAILED"
 
@@ -47,6 +48,8 @@ class KnowledgeChunk(BaseModel):
     ordinal: int = Field(ge=0)
     content: str = Field(min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    embedding: list[float] | None = None
+    embedding_model: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 

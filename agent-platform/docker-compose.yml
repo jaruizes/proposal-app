@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: agent_platform
       POSTGRES_USER: agent_platform
@@ -14,7 +14,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
   agent-platform:
     build:
       context: ..
@@ -24,6 +23,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       ANTHROPIC_DEFAULT_MODEL: ${ANTHROPIC_DEFAULT_MODEL:-claude-sonnet-4-6}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hash}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hash-embedding-v1}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
       GOOGLE_WORKSPACE_MCP_ENABLED: ${GOOGLE_WORKSPACE_MCP_ENABLED:-true}
       GOOGLE_WORKSPACE_MCP_COMMAND: node
       GOOGLE_WORKSPACE_MCP_SCRIPT: /opt/mcp/google-workspace/dist/server.js
@@ -43,6 +45,5 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
 volumes:
   agent-platform-postgres-data:

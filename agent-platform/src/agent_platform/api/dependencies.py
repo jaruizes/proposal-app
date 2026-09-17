@@ -2,6 +2,8 @@ from functools import lru_cache
 from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from agent_platform.application.embeddings import EmbeddingProvider
+from agent_platform.application.ingestion import KnowledgeIngestionService
 from agent_platform.application.knowledge import KnowledgeService
 from agent_platform.application.models import ModelProvider
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
@@ -11,43 +13,35 @@ from agent_platform.application.tools import ToolRegistry
 from agent_platform.config import get_settings
 from agent_platform.persistence.database import get_session
 from agent_platform.persistence.repositories import PostgresAgentRepository, PostgresExecutionRepository, PostgresKnowledgeRepository, PostgresSkillRepository
-from agent_platform.providers import AnthropicModelProvider, McpRegistry, McpServerDefinition
+from agent_platform.providers import AnthropicModelProvider, HashEmbeddingProvider, McpRegistry, McpServerDefinition
 
 async def get_agent_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> AgentRepository: return PostgresAgentRepository(session)
 async def get_skill_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> SkillRepository: return PostgresSkillRepository(session)
 async def get_execution_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> ExecutionRepository: return PostgresExecutionRepository(session)
 async def get_knowledge_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> KnowledgeRepository: return PostgresKnowledgeRepository(session)
-
-AgentRepositoryDep = Annotated[AgentRepository, Depends(get_agent_repository)]
-SkillRepositoryDep = Annotated[SkillRepository, Depends(get_skill_repository)]
-ExecutionRepositoryDep = Annotated[ExecutionRepository, Depends(get_execution_repository)]
-KnowledgeRepositoryDep = Annotated[KnowledgeRepository, Depends(get_knowledge_repository)]
-
-async def get_skill_registry(repository: SkillRepositoryDep) -> SkillRegistry: return SkillRegistry(repository)
-async def get_agent_registry(repository: AgentRepositoryDep, skills: SkillRepositoryDep) -> AgentRegistry: return AgentRegistry(repository, skills)
-async def get_knowledge_service(repository: KnowledgeRepositoryDep) -> KnowledgeService: return KnowledgeService(repository)
-
-SkillRegistryDep = Annotated[SkillRegistry, Depends(get_skill_registry)]
-AgentRegistryDep = Annotated[AgentRegistry, Depends(get_agent_registry)]
-KnowledgeServiceDep = Annotated[KnowledgeService, Depends(get_knowledge_service)]
-
-def get_model_provider() -> ModelProvider: return AnthropicModelProvider()
-ModelProviderDep = Annotated[ModelProvider, Depends(get_model_provider)]
-
-def get_agent_runtime(agents: AgentRegistryDep, skills: SkillRegistryDep, executions: ExecutionRepositoryDep, model_provider: ModelProviderDep) -> AgentRuntime:
-    return AgentRuntime(agents, skills, executions, model_provider)
-AgentRuntimeDep = Annotated[AgentRuntime, Depends(get_agent_runtime)]
-
+AgentRepositoryDep=Annotated[AgentRepository,Depends(get_agent_repository)]; SkillRepositoryDep=Annotated[SkillRepository,Depends(get_skill_repository)]; ExecutionRepositoryDep=Annotated[ExecutionRepository,Depends(get_execution_repository)]; KnowledgeRepositoryDep=Annotated[KnowledgeRepository,Depends(get_knowledge_repository)]
+async def get_skill_registry(repository:SkillRepositoryDep)->SkillRegistry: return SkillRegistry(repository)
+async def get_agent_registry(repository:AgentRepositoryDep,skills:SkillRepositoryDep)->AgentRegistry: return AgentRegistry(repository,skills)
+async def get_knowledge_service(repository:KnowledgeRepositoryDep)->KnowledgeService: return KnowledgeService(repository)
+SkillRegistryDep=Annotated[SkillRegistry,Depends(get_skill_registry)]; AgentRegistryDep=Annotated[AgentRegistry,Depends(get_agent_registry)]; KnowledgeServiceDep=Annotated[KnowledgeService,Depends(get_knowledge_service)]
+def get_model_provider()->ModelProvider: return AnthropicModelProvider()
+ModelProviderDep=Annotated[ModelProvider,Depends(get_model_provider)]
+def get_embedding_provider()->EmbeddingProvider:
+    settings=get_settings(); return HashEmbeddingProvider(dimensions=settings.embedding_dimensions,model=settings.embedding_model)
+EmbeddingProviderDep=Annotated[EmbeddingProvider,Depends(get_embedding_provider)]
+async def get_knowledge_ingestion_service(repository:KnowledgeRepositoryDep,embedding_provider:EmbeddingProviderDep)->KnowledgeIngestionService: return KnowledgeIngestionService(repository,embedding_provider)
+KnowledgeIngestionServiceDep=Annotated[KnowledgeIngestionService,Depends(get_knowledge_ingestion_service)]
+def get_agent_runtime(agents:AgentRegistryDep,skills:SkillRegistryDep,executions:ExecutionRepositoryDep,model_provider:ModelProviderDep)->AgentRuntime: return AgentRuntime(agents,skills,executions,model_provider)
+AgentRuntimeDep=Annotated[AgentRuntime,Depends(get_agent_runtime)]
 @lru_cache
-def get_mcp_registry() -> McpRegistry:
-    settings = get_settings(); registry = McpRegistry()
+def get_mcp_registry()->McpRegistry:
+    settings=get_settings(); registry=McpRegistry()
     if settings.google_workspace_mcp_enabled:
-        env = {}
-        if settings.google_oauth_credentials: env["GOOGLE_OAUTH_CREDENTIALS"] = settings.google_oauth_credentials
-        if settings.google_oauth_token: env["GOOGLE_OAUTH_TOKEN"] = settings.google_oauth_token
-        registry.register(McpServerDefinition(key="google-workspace", command=settings.google_workspace_mcp_command, args=(settings.google_workspace_mcp_script,), cwd=settings.google_workspace_mcp_cwd, env=env, timeout_seconds=settings.google_workspace_mcp_timeout_seconds))
+        env={}
+        if settings.google_oauth_credentials: env["GOOGLE_OAUTH_CREDENTIALS"]=settings.google_oauth_credentials
+        if settings.google_oauth_token: env["GOOGLE_OAUTH_TOKEN"]=settings.google_oauth_token
+        registry.register(McpServerDefinition(key="google-workspace",command=settings.google_workspace_mcp_command,args=(settings.google_workspace_mcp_script,),cwd=settings.google_workspace_mcp_cwd,env=env,timeout_seconds=settings.google_workspace_mcp_timeout_seconds))
     return registry
 @lru_cache
-def get_tool_registry() -> ToolRegistry: return ToolRegistry(get_mcp_registry().tool_providers())
-McpRegistryDep = Annotated[McpRegistry, Depends(get_mcp_registry)]
-ToolRegistryDep = Annotated[ToolRegistry, Depends(get_tool_registry)]
+def get_tool_registry()->ToolRegistry: return ToolRegistry(get_mcp_registry().tool_providers())
+McpRegistryDep=Annotated[McpRegistry,Depends(get_mcp_registry)]; ToolRegistryDep=Annotated[ToolRegistry,Depends(get_tool_registry)]
