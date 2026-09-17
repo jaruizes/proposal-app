@@ -1,13 +1,13 @@
 """knowledge foundation
 Revision ID: 0002_knowledge_foundation
-Revises: 0001_initial_platform_schema
+Revises: 0001
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "0002_knowledge_foundation"
-down_revision = "0001_initial_platform_schema"
+down_revision = "0001"
 branch_labels = None
 depends_on = None
 
