@@ -99,6 +99,14 @@ function waitForAuthorizationCode(server: http.Server, redirectUri: string): Pro
   });
 }
 
+/**
+ * Local OAuth flow implemented only with googleapis.
+ *
+ * This intentionally avoids @google-cloud/local-auth and a direct
+ * google-auth-library dependency. Keeping a single auth implementation prevents
+ * the duplicate OAuth2Client private-field TypeScript conflict that occurs when
+ * packages resolve different physical versions of google-auth-library.
+ */
 export async function interactiveLogin(): Promise<void> {
   await fs.mkdir(path.dirname(TOKEN_PATH), { recursive: true });
   const config = await readClientConfig();
