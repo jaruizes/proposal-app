@@ -45,6 +45,37 @@ public class SourceIngestionService {
         return ingest(offer);
     }
 
+    public Map<String, Object> inspectDriveFolder(String folderIdOrUrl) {
+        var folderId = extractDriveId(folderIdOrUrl);
+        if (folderId.isBlank()) throw new IllegalArgumentException("Google Drive input folder ID/URL is required");
+        try {
+            var files = listFilesRecursively(folderId);
+            files.sort(Comparator.comparing((DriveSource f) -> f.path()).thenComparing(DriveSource::id));
+
+            var sources = new ArrayList<Map<String, Object>>();
+            for (var source : files) {
+                var file = source.node();
+                var item = new LinkedHashMap<String, Object>();
+                item.put("driveFileId", source.id());
+                item.put("name", file.path("name").asText());
+                item.put("relativePath", source.path());
+                item.put("mimeType", file.path("mimeType").asText());
+                item.put("modifiedTime", file.path("modifiedTime").asText(null));
+                item.put("webViewLink", file.path("webViewLink").asText(null));
+                sources.add(item);
+            }
+
+            var result = new LinkedHashMap<String, Object>();
+            result.put("status", "OK");
+            result.put("folderId", folderId);
+            result.put("sourceCount", sources.size());
+            result.put("sources", sources);
+            return result;
+        } catch (Exception e) {
+            throw new IllegalStateException("Google Drive source inspection failed", e);
+        }
+    }
+
     public SourceBundle ingest(Offer offer) {
         var folderId = extractDriveId(offer.inputDriveFolder());
         if (folderId.isBlank()) throw new IllegalArgumentException("Google Drive input folder ID/URL is required");
