@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from agent_platform.api.agents import router as agents_router
 from agent_platform.api.executions import router as executions_router
 from agent_platform.api.knowledge import router as knowledge_router
+from agent_platform.api.memory import router as memory_router
 from agent_platform.api.retrieval import router as retrieval_router
 from agent_platform.api.skills import router as skills_router
 from agent_platform.api.tools import router as tools_router
@@ -19,6 +20,7 @@ app.include_router(executions_router)
 app.include_router(tools_router)
 app.include_router(knowledge_router)
 app.include_router(retrieval_router)
+app.include_router(memory_router)
 
 @app.get("/health", response_model=HealthResponse, tags=["platform"])
 async def health() -> HealthResponse:

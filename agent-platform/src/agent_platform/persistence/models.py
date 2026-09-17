@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -57,3 +57,19 @@ class KnowledgeDocumentRecord(Base):
 class KnowledgeChunkRecord(Base):
     __tablename__="knowledge_chunks"; __table_args__=(UniqueConstraint("document_id","ordinal"),)
     id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4); document_id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey("knowledge_documents.id",ondelete="CASCADE"),index=True); ordinal: Mapped[int]=mapped_column(Integer); content: Mapped[str]=mapped_column(Text); metadata_json: Mapped[dict]=mapped_column("metadata",JSONB,default=dict); embedding: Mapped[list[float]|None]=mapped_column(Vector(384),nullable=True); embedding_model: Mapped[str|None]=mapped_column(String(200),nullable=True); created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+
+class MemoryRecord(Base):
+    __tablename__ = "memory_entries"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    scope_type: Mapped[str] = mapped_column(String(50), index=True)
+    scope_key: Mapped[str] = mapped_column(String(300), index=True)
+    kind: Mapped[str] = mapped_column(String(50), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    agent_key: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    skill_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    importance: Mapped[float] = mapped_column(Float, default=0.5)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
