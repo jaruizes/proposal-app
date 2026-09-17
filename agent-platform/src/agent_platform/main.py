@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from agent_platform.api.agents import router as agents_router
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -13,6 +15,7 @@ app = FastAPI(
     version="0.1.0",
     description="Independent runtime and API for configurable agents, skills and cognitive services.",
 )
+app.include_router(agents_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["platform"])
