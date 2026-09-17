@@ -5,47 +5,22 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from agent_platform.api.dependencies import AgentRegistryDep, ExecutionRepositoryDep, SkillRegistryDep
+from agent_platform.api.dependencies import AgentRuntimeDep, ExecutionRepositoryDep
 from agent_platform.application.registries import DefinitionNotFoundError
-from agent_platform.domain import AgentExecution, AgentExecutionRequest
+from agent_platform.application.runtime import AgentRuntimeValidationError
+from agent_platform.domain import AgentExecution, AgentExecutionRequest, AgentExecutionResult
 
 router = APIRouter(prefix="/v1/executions", tags=["executions"])
 
 
-@router.post("", response_model=AgentExecution, status_code=status.HTTP_202_ACCEPTED)
-async def create_execution(
-    request: AgentExecutionRequest,
-    agents: AgentRegistryDep,
-    skills: SkillRegistryDep,
-    executions: ExecutionRepositoryDep,
-) -> AgentExecution:
+@router.post("", response_model=AgentExecutionResult, status_code=status.HTTP_200_OK)
+async def create_execution(request: AgentExecutionRequest, runtime: AgentRuntimeDep) -> AgentExecutionResult:
     try:
-        agent = await agents.get(request.agent_key)
+        return await runtime.execute(request)
     except DefinitionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-
-    if not agent.enabled:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Agent is disabled")
-
-    if request.skill_key is not None:
-        try:
-            skill = await skills.get(request.skill_key)
-        except DefinitionNotFoundError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-        if not skill.enabled:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Skill is disabled")
-        if request.skill_key not in agent.skills:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Skill is not assigned to agent")
-
-    execution = AgentExecution(
-        correlation_id=request.correlation_id,
-        agent_key=request.agent_key,
-        skill_key=request.skill_key,
-        objective=request.objective,
-    )
-    await executions.create(execution)
-    await executions.add_event(execution.id, "execution", execution.model_dump(mode="json"))
-    return execution
+    except AgentRuntimeValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get("/{execution_id}", response_model=AgentExecution)

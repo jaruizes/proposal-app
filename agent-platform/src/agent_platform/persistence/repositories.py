@@ -216,6 +216,22 @@ class PostgresExecutionRepository:
         await self.session.commit()
         return execution
 
+    async def update(self, execution: AgentExecution) -> AgentExecution:
+        record = await self.session.get(ExecutionRecord, execution.id)
+        if record is None:
+            raise LookupError(f"Execution '{execution.id}' not found")
+        record.status = execution.status.value
+        record.runtime = execution.runtime
+        record.model = execution.model
+        record.started_at = execution.started_at
+        record.completed_at = execution.completed_at
+        record.usage = execution.usage.model_dump(mode="json")
+        record.provider_request_id = execution.provider_request_id
+        record.trace_id = execution.trace_id
+        record.error = execution.error.model_dump(mode="json") if execution.error else None
+        await self.session.commit()
+        return execution
+
     async def add_event(self, execution_id: UUID, event_type: str, payload: dict) -> None:
         self.session.add(
             ExecutionEventRecord(

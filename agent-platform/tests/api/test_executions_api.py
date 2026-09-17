@@ -25,7 +25,7 @@ def setup_function() -> None:
     )
 
 
-def test_execution_contract_creates_queued_execution() -> None:
+def test_execution_contract_runs_agent_and_returns_result() -> None:
     response = client.post(
         "/v1/executions",
         json={
@@ -35,14 +35,18 @@ def test_execution_contract_creates_queued_execution() -> None:
             "context": {"offer_id": "offer-123"},
         },
     )
-    assert response.status_code == 202
+    assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "QUEUED"
-    assert body["agent_key"] == "business-analyst"
+    assert body["status"] == "COMPLETED"
+    assert body["artifacts"][0]["type"] == "AGENT_OUTPUT"
+    assert "Runtime executed successfully" in body["artifacts"][0]["content"]
+    assert body["usage"]["input_tokens"] == 100
+    assert body["provider_request_id"] == "msg_test_123"
 
-    fetched = client.get(f"/v1/executions/{body['id']}")
+    fetched = client.get(f"/v1/executions/{body['execution_id']}")
     assert fetched.status_code == 200
-    assert fetched.json()["id"] == body["id"]
+    assert fetched.json()["status"] == "COMPLETED"
+    assert fetched.json()["model"] == "claude-test"
 
 
 def test_execution_requires_registered_agent_and_skill() -> None:
@@ -59,15 +63,17 @@ def test_execution_requires_registered_agent_and_skill() -> None:
     assert missing_skill.status_code == 404
 
 
-def test_execution_events_exposes_sse_snapshot() -> None:
+def test_execution_events_exposes_full_lifecycle() -> None:
     created = client.post(
         "/v1/executions",
         json={"agent_key": "business-analyst", "objective": "Analyze this opportunity"},
     )
-    execution_id = created.json()["id"]
+    execution_id = created.json()["execution_id"]
 
     events = client.get(f"/v1/executions/{execution_id}/events")
     assert events.status_code == 200
     assert events.headers["content-type"].startswith("text/event-stream")
-    assert "event: execution" in events.text
-    assert '"status":"QUEUED"' in events.text
+    assert "event: execution.queued" in events.text
+    assert "event: execution.running" in events.text
+    assert "event: execution.completed" in events.text
+    assert "event: execution.result" in events.text
