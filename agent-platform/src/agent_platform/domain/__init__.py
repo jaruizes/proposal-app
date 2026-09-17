@@ -6,10 +6,28 @@ from agent_platform.domain.definitions import (
     ModelPolicy,
     SkillDefinition,
 )
+from agent_platform.domain.executions import (
+    AgentArtifact,
+    AgentError,
+    AgentExecution,
+    AgentExecutionRequest,
+    AgentExecutionResult,
+    AgentUsage,
+    Attachment,
+    ExecutionStatus,
+)
 
 __all__ = [
+    "AgentArtifact",
     "AgentConstraints",
     "AgentDefinition",
+    "AgentError",
+    "AgentExecution",
+    "AgentExecutionRequest",
+    "AgentExecutionResult",
+    "AgentUsage",
+    "Attachment",
+    "ExecutionStatus",
     "ModelPolicy",
     "SkillDefinition",
 ]
