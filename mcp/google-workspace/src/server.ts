@@ -22,10 +22,16 @@ const workspaceRoot=path.resolve(REPO_ROOT,"workspace");
 async function resolveWorkspaceOutput(relativePath:string,overwrite:boolean){
   const normalized=relativePath.replace(/^\/+/,"");
   const output=path.resolve(REPO_ROOT,normalized);
-  if(output!==workspaceRoot&&!output.startsWith(workspaceRoot+path.sep)) throw new Error("Drive downloads/exports may only be written under the repository workspace/ directory");
-  if(!overwrite){try{await fs.access(output);throw new Error(`Destination already exists: ${relativePath}. Set overwrite=true to replace it.`);}catch(error){if(error instanceof Error&&error.message.startsWith("Destination already exists:"))throw error;}}
-  await fs.mkdir(path.dirname(output),{recursive:true}); return output;
+  if(output!==workspaceRoot&&!output.startsWith(workspaceRoot+path.sep)){
+    throw new Error("Drive downloads/exports may only be written under the repository workspace/ directory");
+  }
+  if(!overwrite){
+    try{await fs.access(output);throw new Error(`Destination already exists: ${relativePath}. Set overwrite=true to replace it.`);}catch(error){if(error instanceof Error&&error.message.startsWith("Destination already exists:"))throw error;}
+  }
+  await fs.mkdir(path.dirname(output),{recursive:true});
+  return output;
 }
+
 const driveFields="id,name,mimeType,parents,webViewLink,modifiedTime,createdTime,owners(displayName,emailAddress),size,md5Checksum,version";
 
 server.tool("drive_search_files","Search accessible Google Drive files and folders. Read-only.",{name:z.string().optional(),mimeType:z.string().optional(),folderId:z.string().optional(),fullText:z.string().optional(),pageSize:z.number().int().min(1).max(100).default(20)},async({name,mimeType,folderId,fullText,pageSize})=>{const q=["trashed = false"];if(name)q.push(`name = '${escapeDrive(name)}'`);if(mimeType)q.push(`mimeType = '${escapeDrive(mimeType)}'`);if(folderId)q.push(`'${escapeDrive(folderId)}' in parents`);if(fullText)q.push(`fullText contains '${escapeDrive(fullText)}'`);const r=await drive.files.list({q:q.join(" and "),pageSize,spaces:"drive",orderBy:"modifiedTime desc",fields:`files(${driveFields})`});return text(r.data.files??[]);});
