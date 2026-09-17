@@ -4,6 +4,12 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent_platform.application.cognitive import (
+    ApplicationContextContributor,
+    AttachmentContextContributor,
+    CognitiveContextBuilder,
+    KnowledgeRetrievalContributor,
+)
 from agent_platform.application.embeddings import EmbeddingProvider
 from agent_platform.application.file_ingestion import KnowledgeFileService
 from agent_platform.application.ingestion import KnowledgeIngestionService
@@ -82,8 +88,35 @@ async def get_knowledge_retrieval_service(
 KnowledgeRetrievalServiceDep = Annotated[KnowledgeRetrievalService, Depends(get_knowledge_retrieval_service)]
 
 
-def get_agent_runtime(agents: AgentRegistryDep, skills: SkillRegistryDep, executions: ExecutionRepositoryDep, model_provider: ModelProviderDep) -> AgentRuntime:
-    return AgentRuntime(agents, skills, executions, model_provider)
+async def get_cognitive_context_builder(
+    retrieval_service: KnowledgeRetrievalServiceDep,
+) -> CognitiveContextBuilder:
+    return CognitiveContextBuilder(
+        contributors=[
+            ApplicationContextContributor(),
+            AttachmentContextContributor(),
+            KnowledgeRetrievalContributor(retrieval_service),
+        ]
+    )
+
+
+CognitiveContextBuilderDep = Annotated[CognitiveContextBuilder, Depends(get_cognitive_context_builder)]
+
+
+def get_agent_runtime(
+    agents: AgentRegistryDep,
+    skills: SkillRegistryDep,
+    executions: ExecutionRepositoryDep,
+    model_provider: ModelProviderDep,
+    cognitive_context_builder: CognitiveContextBuilderDep,
+) -> AgentRuntime:
+    return AgentRuntime(
+        agents,
+        skills,
+        executions,
+        model_provider,
+        cognitive_context_builder=cognitive_context_builder,
+    )
 
 
 AgentRuntimeDep = Annotated[AgentRuntime, Depends(get_agent_runtime)]
