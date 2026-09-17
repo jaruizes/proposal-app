@@ -8,5 +8,5 @@ import java.util.UUID;
 public interface AgentExecutionRepositoryPort {
     AgentExecution save(AgentExecution execution);
 
-    List<AgentExecution> findAgentExecutionsByOfferId(UUID offerId);
+    List<AgentExecution> findByOfferId(UUID offerId);
 }
