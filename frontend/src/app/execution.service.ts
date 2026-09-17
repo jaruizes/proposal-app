@@ -13,14 +13,41 @@ export class ExecutionService {
   ];
   private events = new Map<string, EventSource>();
   constructor(private http: HttpClient) { this.refresh(); }
-  refresh() { this.http.get<OfferExecution[]>('/api/offers').subscribe(items => this.executions.set(items)); }
+
+  refresh() {
+    this.http.get<OfferExecution[]>('/api/offers').subscribe(items =>
+      this.executions.set([...items].sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()))
+    );
+  }
+
   create(data: any) {
     const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName, aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, slidePlanning:data.models.slides, presentation:data.models.slides }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
     this.http.post<OfferExecution>('/api/offers',request).subscribe(offer=>{this.executions.update(items=>[offer,...items.filter(i=>i.id!==offer.id)]);this.watch(offer.id);});
   }
+
   get(id:string){return this.executions().find(e=>e.id===id);}
   approve(id:string,phaseKey:string){this.http.post<void>(`/api/offers/${id}/phases/${phaseKey}/approve`,{}).subscribe(()=>this.refreshOne(id));}
   refine(id:string,phaseKey:string,message:string){this.http.post<void>(`/api/offers/${id}/phases/${phaseKey}/refine`,{instruction:message}).subscribe(()=>this.refreshOne(id));}
-  watch(id:string){if(this.events.has(id))return;const source=new EventSource(`/api/offers/${id}/events`);source.addEventListener('offer',(event:MessageEvent)=>{const offer=JSON.parse(event.data) as OfferExecution;this.executions.update(items=>[offer,...items.filter(i=>i.id!==offer.id)]);});source.onerror=()=>{source.close();this.events.delete(id);};this.events.set(id,source);}
-  private refreshOne(id:string){this.http.get<OfferExecution>(`/api/offers/${id}`).subscribe(offer=>{this.executions.update(items=>[offer,...items.filter(i=>i.id!==id)]);this.watch(id);});}
+
+  watch(id:string){
+    if(this.events.has(id))return;
+    const source=new EventSource(`/api/offers/${id}/events`);
+    source.addEventListener('offer',(event:MessageEvent)=>this.upsertInPlace(JSON.parse(event.data) as OfferExecution));
+    source.onerror=()=>{source.close();this.events.delete(id);};
+    this.events.set(id,source);
+  }
+
+  private refreshOne(id:string){
+    this.http.get<OfferExecution>(`/api/offers/${id}`).subscribe(offer=>{this.upsertInPlace(offer);this.watch(id);});
+  }
+
+  private upsertInPlace(offer:OfferExecution){
+    this.executions.update(items=>{
+      const index=items.findIndex(item=>item.id===offer.id);
+      if(index<0)return [...items,offer];
+      const next=[...items];
+      next[index]=offer;
+      return next;
+    });
+  }
 }
