@@ -1,12 +1,36 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: agent_platform
+      POSTGRES_USER: agent_platform
+      POSTGRES_PASSWORD: agent_platform
+    ports:
+      - "5433:5432"
+    volumes:
+      - agent-platform-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_platform -d agent_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   agent-platform:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agent_platform:agent_platform@postgres:5432/agent_platform
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+volumes:
+  agent-platform-postgres-data:
