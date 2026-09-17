@@ -46,6 +46,7 @@ class SuccessfulProvider:
     async def generate(self, request: ModelRequest) -> ModelResult:
         assert "Solution Architect" in request.system_prompt
         assert '"platform": "openshift"' in request.messages[0].content
+        assert request.metadata["cognitive_context"]["sections"]["business_context"] == 1
         return ModelResult(content="# Solution\nUse OpenShift.", model="claude-test", usage=ModelUsage(input_tokens=80, output_tokens=20), provider_request_id="msg_1")
 
 
@@ -73,7 +74,13 @@ async def test_runtime_completes_and_persists_lifecycle() -> None:
     assert result.usage.total_tokens == 100
     persisted = await repository.get(result.execution_id)
     assert persisted.status is ExecutionStatus.COMPLETED
-    assert [event["event_type"] for event in await repository.list_events(result.execution_id)] == ["execution.queued", "execution.running", "execution.completed", "execution.result"]
+    assert [event["event_type"] for event in await repository.list_events(result.execution_id)] == [
+        "execution.queued",
+        "execution.running",
+        "cognitive.context.built",
+        "execution.completed",
+        "execution.result",
+    ]
 
 
 @pytest.mark.asyncio

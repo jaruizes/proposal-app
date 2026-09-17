@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from agent_platform.application.cognitive import CognitiveContextBuilder
 from agent_platform.application.context import AgentPromptAssembler
 from agent_platform.application.models import ModelProvider, ModelProviderError
 from agent_platform.application.registries import AgentRegistry, DefinitionNotFoundError, SkillRegistry
@@ -20,7 +21,7 @@ class AgentRuntimeValidationError(RuntimeError):
 
 
 class AgentRuntime:
-    """Native v1 agent runtime: resolve definitions, build context, invoke model and persist lifecycle."""
+    """Native runtime: resolve definitions, build cognitive context, invoke model and persist lifecycle."""
 
     def __init__(
         self,
@@ -29,12 +30,14 @@ class AgentRuntime:
         executions: ExecutionRepository,
         model_provider: ModelProvider,
         prompt_assembler: AgentPromptAssembler | None = None,
+        cognitive_context_builder: CognitiveContextBuilder | None = None,
     ) -> None:
         self._agents = agents
         self._skills = skills
         self._executions = executions
         self._model_provider = model_provider
         self._prompt_assembler = prompt_assembler or AgentPromptAssembler()
+        self._cognitive_context_builder = cognitive_context_builder or CognitiveContextBuilder()
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         agent = await self._agents.get(request.agent_key)
@@ -69,7 +72,13 @@ class AgentRuntime:
         await self._record(running, "execution.running")
 
         try:
-            model_request = self._prompt_assembler.build(agent, skill, request)
+            cognitive_context = await self._cognitive_context_builder.build(agent, skill, request)
+            await self._executions.add_event(
+                running.id,
+                "cognitive.context.built",
+                cognitive_context.summary(),
+            )
+            model_request = self._prompt_assembler.build(agent, skill, request, cognitive_context)
             model_result = await self._model_provider.generate(model_request)
             usage = AgentUsage(
                 input_tokens=model_result.usage.input_tokens,
@@ -86,6 +95,7 @@ class AgentRuntime:
                     "skill_key": skill.key if skill else None,
                     "skill_version": skill.version if skill else None,
                     "finish_reason": model_result.finish_reason,
+                    "cognitive_context": cognitive_context.summary(),
                 },
             )
             completed = running.model_copy(

@@ -1,22 +1,39 @@
 import json
+from typing import Any
 
 from agent_platform.application.models import ModelMessage, ModelRequest, ModelRole
-from agent_platform.domain import AgentDefinition, AgentExecutionRequest, SkillDefinition
+from agent_platform.domain import (
+    AgentDefinition,
+    AgentExecutionRequest,
+    CognitiveContext,
+    CognitiveSection,
+    SkillDefinition,
+)
+
+
+_SECTION_TITLES = {
+    CognitiveSection.BUSINESS_CONTEXT: "Business context",
+    CognitiveSection.SOURCE_MATERIAL: "Source material",
+    CognitiveSection.PRIOR_ARTIFACT: "Prior artifacts",
+    CognitiveSection.MEMORY: "Relevant memory",
+    CognitiveSection.RETRIEVED_KNOWLEDGE: "Retrieved knowledge",
+    CognitiveSection.DECISION: "Relevant decisions",
+    CognitiveSection.REFERENCE: "Reference material",
+    CognitiveSection.TOOL_CONTEXT: "Tool context",
+}
 
 
 class AgentPromptAssembler:
-    """Build the provider-neutral model request from agent, skill and execution context."""
+    """Build a provider-neutral model request from definitions plus cognitive context."""
 
     def build(
         self,
         agent: AgentDefinition,
         skill: SkillDefinition | None,
         request: AgentExecutionRequest,
+        cognitive_context: CognitiveContext | None = None,
     ) -> ModelRequest:
-        system_sections = [
-            f"# Agent\n{agent.name}",
-            f"# Role\n{agent.role}",
-        ]
+        system_sections = [f"# Agent\n{agent.name}", f"# Role\n{agent.role}"]
         if agent.description:
             system_sections.append(f"# Description\n{agent.description}")
         if agent.capabilities:
@@ -37,20 +54,19 @@ class AgentPromptAssembler:
                 )
 
         user_sections = [f"# Task\n{request.objective}"]
-        if request.context:
-            user_sections.append(
-                "# Application context\n```json\n"
-                + json.dumps(request.context, ensure_ascii=False, indent=2, sort_keys=True, default=str)
-                + "\n```"
-            )
-        if request.attachments:
-            attachment_lines = []
-            for attachment in request.attachments:
-                location = attachment.uri or "inline"
-                attachment_lines.append(f"- {attachment.name} ({attachment.media_type}) [{location}]")
-                if attachment.content:
-                    attachment_lines.append(attachment.content)
-            user_sections.append("# Attachments\n" + "\n".join(attachment_lines))
+        context = cognitive_context or self._legacy_context(request)
+        for section in CognitiveSection:
+            items = context.by_section(section)
+            if not items:
+                continue
+            rendered = []
+            for item in items:
+                rendered.append(
+                    f"## {item.key}\nEpistemic label: {item.label.value}\nSource: {item.source}\n"
+                    + self._render_content(item.content)
+                )
+            user_sections.append(f"# {_SECTION_TITLES[section]}\n" + "\n\n".join(rendered))
+
         if request.constraints:
             user_sections.append(
                 "# Execution constraints\n```json\n"
@@ -70,5 +86,49 @@ class AgentPromptAssembler:
                 "skill_key": skill.key if skill else None,
                 "skill_version": skill.version if skill else None,
                 "correlation_id": str(request.correlation_id) if request.correlation_id else None,
+                "cognitive_context": context.summary(),
             },
         )
+
+    @staticmethod
+    def _render_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        return "```json\n" + json.dumps(content, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n```"
+
+    @staticmethod
+    def _legacy_context(request: AgentExecutionRequest) -> CognitiveContext:
+        from agent_platform.application.cognitive import ApplicationContextContributor
+        from agent_platform.domain import CognitiveContextItem, EpistemicLabel
+
+        items: list[CognitiveContextItem] = []
+        if request.context:
+            items.append(
+                CognitiveContextItem(
+                    key="application-context",
+                    section=CognitiveSection.BUSINESS_CONTEXT,
+                    content=request.context,
+                    source=ApplicationContextContributor.name,
+                    priority=100,
+                    required=True,
+                    label=EpistemicLabel.UNCLASSIFIED,
+                )
+            )
+        for index, attachment in enumerate(request.attachments):
+            items.append(
+                CognitiveContextItem(
+                    key=f"attachment:{index}:{attachment.name}",
+                    section=CognitiveSection.SOURCE_MATERIAL,
+                    content={
+                        "name": attachment.name,
+                        "media_type": attachment.media_type,
+                        "uri": attachment.uri,
+                        "content": attachment.content,
+                    },
+                    source="attachments",
+                    priority=95,
+                    required=True,
+                    metadata=attachment.metadata,
+                )
+            )
+        return CognitiveContext(items=items)
