@@ -6,7 +6,9 @@ import io.github.jaruizes.proposal.domain.model.*;
 import io.github.jaruizes.proposal.domain.ports.*;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.*;
 import java.util.Base64;
@@ -39,8 +41,19 @@ public class SourceIngestionService {
         var context = artifacts.findLatest(offer.id(), ArtifactType.SOURCE_CONTEXT);
         var report = artifacts.findLatest(offer.id(), ArtifactType.SOURCE_INGESTION_REPORT);
         if (manifest.isPresent() && context.isPresent()) {
-            return new SourceBundle(manifest.get().content(), context.get().content(), attachmentsFromManifest(manifest.get().content()),
-                    report.map(Artifact::content).orElse("Previously ingested source corpus."));
+            try {
+                var folderId = extractDriveId(offer.inputDriveFolder());
+                var files = listFilesRecursively(folderId);
+                files.sort(Comparator.comparing((DriveSource f) -> f.path()).thenComparing(DriveSource::id));
+                var currentHash = sourceHash(files);
+                var storedHash = json.readTree(manifest.get().content()).path("sourceHash").asText("");
+                if (!storedHash.isBlank() && storedHash.equals(currentHash)) {
+                    return new SourceBundle(manifest.get().content(), context.get().content(), attachmentsFromManifest(manifest.get().content()),
+                            report.map(Artifact::content).orElse("Previously ingested source corpus."));
+                }
+            } catch (Exception e) {
+                throw new IllegalStateException("Unable to validate current Google Drive source state", e);
+            }
         }
         return ingest(offer);
     }
@@ -61,6 +74,9 @@ public class SourceIngestionService {
                 item.put("relativePath", source.path());
                 item.put("mimeType", file.path("mimeType").asText());
                 item.put("modifiedTime", file.path("modifiedTime").asText(null));
+                item.put("size", file.path("size").asText(null));
+                item.put("md5Checksum", file.path("md5Checksum").asText(null));
+                item.put("version", file.path("version").asText(null));
                 item.put("webViewLink", file.path("webViewLink").asText(null));
                 sources.add(item);
             }
@@ -69,6 +85,7 @@ public class SourceIngestionService {
             result.put("status", "OK");
             result.put("folderId", folderId);
             result.put("sourceCount", sources.size());
+            result.put("sourceHash", sourceHash(files));
             result.put("sources", sources);
             return result;
         } catch (Exception e) {
@@ -82,6 +99,7 @@ public class SourceIngestionService {
         try {
             var files = listFilesRecursively(folderId);
             files.sort(Comparator.comparing((DriveSource f) -> f.path()).thenComparing(DriveSource::id));
+            var sourceHash = sourceHash(files);
 
             var entries = new ArrayList<Map<String,Object>>();
             var context = new StringBuilder("# Customer source corpus\n\nOriginal/native customer sources are authoritative. Extracted text and rendered representations are auxiliary.\n");
@@ -103,6 +121,9 @@ public class SourceIngestionService {
                 entry.put("sourceAuthority", "original_native");
                 entry.put("representationKind", representationKind(mime));
                 entry.put("modifiedTime", file.path("modifiedTime").asText(null));
+                entry.put("size", file.path("size").asText(null));
+                entry.put("md5Checksum", file.path("md5Checksum").asText(null));
+                entry.put("version", file.path("version").asText(null));
                 entry.put("webViewLink", file.path("webViewLink").asText(null));
                 entry.put("status", "ready");
                 String extracted;
@@ -154,12 +175,15 @@ public class SourceIngestionService {
             var manifestMap = new LinkedHashMap<String,Object>();
             manifestMap.put("sourceType", "google_drive");
             manifestMap.put("folderId", folderId);
+            manifestMap.put("sourceHashAlgorithm", "SHA-256");
+            manifestMap.put("sourceHash", sourceHash);
+            manifestMap.put("sourceCount", entries.size());
             manifestMap.put("generatedAt", Instant.now().toString());
             manifestMap.put("authorityPolicy", "Original/native customer sources are authoritative; extracted/rendered representations are auxiliary.");
             manifestMap.put("sources", entries);
             manifestMap.put("warnings", warnings);
             var manifestJson = json.writerWithDefaultPrettyPrinter().writeValueAsString(manifestMap);
-            var reportText = "Google Drive ingestion completed: %d documents, %d warnings, %d multimodal PDF attachments. Original/native sources remain authoritative.".formatted(entries.size(), warnings.size(), attachments.size());
+            var reportText = "Google Drive ingestion completed: %d documents, %d warnings, %d multimodal PDF attachments. Source hash: %s. Original/native sources remain authoritative.".formatted(entries.size(), warnings.size(), attachments.size(), sourceHash);
             save(offer.id(), ArtifactType.SOURCE_MANIFEST, manifestJson);
             save(offer.id(), ArtifactType.SOURCE_CONTEXT, context.toString());
             save(offer.id(), ArtifactType.SOURCE_INGESTION_REPORT, reportText);
@@ -216,6 +240,27 @@ public class SourceIngestionService {
             }
         }
         return result;
+    }
+
+    private String sourceHash(List<DriveSource> files) {
+        try {
+            var canonical = new StringBuilder();
+            for (var source : files) {
+                var file = source.node();
+                canonical.append(source.id()).append('\t')
+                        .append(source.path()).append('\t')
+                        .append(file.path("mimeType").asText("")).append('\t')
+                        .append(file.path("modifiedTime").asText("")).append('\t')
+                        .append(file.path("size").asText("")).append('\t')
+                        .append(file.path("md5Checksum").asText("")).append('\t')
+                        .append(file.path("version").asText(""))
+                        .append('\n');
+            }
+            var digest = MessageDigest.getInstance("SHA-256").digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException("Cannot calculate deterministic source hash", e);
+        }
     }
 
     private static String representationKind(String mime) {
