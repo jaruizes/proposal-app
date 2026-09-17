@@ -12,40 +12,54 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/proposal
       DB_USER: proposal
       DB_PASSWORD: proposal
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_FALLBACK_TO_MOCK: ${ANTHROPIC_FALLBACK_TO_MOCK:-true}
+      ANTHROPIC_FALLBACK_TO_MOCK: ${ANTHROPIC_FALLBACK_TO_MOCK:-false}
+      GOOGLE_OAUTH_CREDENTIALS: /app/.secrets/google-oauth-credentials.json
+      GOOGLE_OAUTH_TOKEN: /app/.secrets/google-token.json
+      GOOGLE_SLIDES_TEMPLATE_ID: ${GOOGLE_SLIDES_TEMPLATE_ID:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-collector:4318/v1/traces
+    volumes:
+      - ./.secrets:/app/.secrets:ro
+      - proposal-workspace:/app/workspace
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       otel-collector: { condition: service_started }
+
   frontend:
     build: ./frontend
     ports: ["4200:80"]
     depends_on: [backend]
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.136.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes: ["./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro"]
     ports: ["4317:4317", "4318:4318"]
     depends_on: [tempo]
+
   tempo:
     image: grafana/tempo:2.8.2
     command: ["-config.file=/etc/tempo.yaml"]
     volumes: ["./observability/tempo.yaml:/etc/tempo.yaml:ro", "tempo-data:/var/tempo"]
     ports: ["3200:3200"]
+
   prometheus:
     image: prom/prometheus:v3.6.0
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
     ports: ["9090:9090"]
     depends_on: [backend]
+
   grafana:
     image: grafana/grafana:12.2.0
     environment:
@@ -58,7 +72,9 @@ services:
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports: ["3000:3000"]
     depends_on: [prometheus, tempo]
+
 volumes:
   postgres-data:
   tempo-data:
   grafana-data:
+  proposal-workspace:

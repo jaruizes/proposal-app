@@ -1,10 +1,22 @@
-FROM maven:3.9.11-eclipse-temurin-21 AS build
+FROM node:22-bookworm-slim AS mcp-build
+WORKDIR /build/mcp/google-workspace
+COPY mcp/google-workspace/package.json ./
+RUN npm install
+COPY mcp/google-workspace/tsconfig.json ./
+COPY mcp/google-workspace/src ./src
+RUN npm run build
+
+FROM maven:3.9.11-eclipse-temurin-21 AS backend-build
 WORKDIR /workspace
-COPY pom.xml .
-COPY src src
+COPY backend/pom.xml ./pom.xml
+COPY backend/src ./src
 RUN mvn -q -DskipTests package
-FROM eclipse-temurin:21-jre
+
+FROM eclipse-temurin:21-jre-jammy
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=build /workspace/target/proposal-platform-backend-0.1.0-SNAPSHOT.jar app.jar
+COPY --from=backend-build /workspace/target/proposal-platform-backend-0.1.0-SNAPSHOT.jar /app/app.jar
+COPY --from=mcp-build /build/mcp/google-workspace /app/mcp/google-workspace
+RUN mkdir -p /app/workspace /app/.secrets
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]

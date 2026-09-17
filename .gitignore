@@ -1,8 +1,9 @@
+node_modules/
+dist/
+target/
+.angular/
 .DS_Store
 .env
-**/target/
-**/node_modules/
-**/dist/
-.idea/
-.vscode/
-*.iml
+.secrets/
+workspace/
+*.log

@@ -1,32 +1,62 @@
 # Proposal Agent Platform
 
-Extensible agent platform whose first application is **Proposal Copilot**.
+Extensible agent platform whose first application is **Proposal Copilot**. The validated contracts from `proposal-copilot/feat/optimize-tokens` are preserved as versioned `SKILL.md` and agent resources.
 
-## Current vertical slice
+## What is implemented
 
 - Angular frontend connected to backend with REST + SSE.
-- Spring Boot / Java 21 backend.
-- PostgreSQL + Flyway.
-- Hexagonal packages: `domain`, `business`, `infrastructure`; dependency direction `infrastructure → business → domain`.
-- Generic Agent Registry, Agent Runtime and AgentTask model.
-- Parallel agent primitive using Java virtual threads.
-- Anthropic Claude Messages API adapter.
-- Proposal workflow with mandatory human gates: `analysis → strategy → solution → slide_plan → presentation`.
-- Phase 3 preserves `Solution Architect → Delivery Manager → Business Analyst coherence`.
-- Versioned artifacts and downstream stale handling on refinement.
-- Ports for MCP/tools, knowledge/RAG, memory, ontology and cognitive services.
-- OpenTelemetry traces → Collector → Tempo.
-- Prometheus metrics + provisioned Grafana dashboard.
+- Spring Boot / Java 21 backend using Hexagonal Architecture: `infrastructure → business → domain`.
+- PostgreSQL + Flyway for workflow state, versioned artifacts and agent executions.
+- Anthropic Claude Messages API, including PDF multimodal attachments.
+- The same `mcp/google-workspace` server used by Proposal Copilot, executed by the backend over MCP stdio.
+- Real Google Drive source ingestion before analysis.
+- Native Docs/Slides/Sheets representations plus binary download/text extraction with Apache Tika.
+- PDF visual representations attached to Claude where available.
+- Skill Registry + Agent Registry; every role execution receives its validated agent definition and complete SKILL contract.
+- Human-gated workflow: `analysis → strategy → solution → slide_plan → presentation`.
+- Phase 3: Architect source triage → up to 2 bounded specialist consultations in parallel → Solution Architect → Delivery Manager → Business Analyst coherence review.
+- Real Google Slides materialization through MCP using an immutable copied corporate template.
+- OpenTelemetry traces → Collector → Tempo, Prometheus metrics and provisioned Grafana dashboard.
+- Extension ports for MCP/tools, RAG/knowledge, memory, ontology and cognitive services.
 
-## First-version boundary
+## Google Workspace authentication
 
-Google Drive ingestion and Google Slides materialization are explicit adapter boundaries and are not yet production integrations. Phase 5 currently uses a `PresentationPort` stub so the end-to-end state machine can be exercised without Google credentials. The next implementation can use Google Workspace APIs or MCP without changing business/domain packages.
+The MCP server is intentionally the same local OAuth implementation used in `proposal-copilot`.
 
-## Run
+1. Put your Google OAuth desktop/web client file at:
+
+```text
+.secrets/google-oauth-credentials.json
+```
+
+2. Authenticate once on the host (the OAuth flow opens your browser):
+
+```bash
+npm --prefix mcp/google-workspace install
+npm --prefix mcp/google-workspace run auth
+npm --prefix mcp/google-workspace run doctor
+```
+
+This creates `.secrets/google-token.json`. Both files are gitignored and mounted read-only into the backend container.
+
+## Configuration
 
 ```bash
 cp .env.example .env
-# set ANTHROPIC_API_KEY in .env for real Claude calls
+```
+
+Set at least:
+
+```text
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_SLIDES_TEMPLATE_ID=<corporate Google Slides template id>
+```
+
+In the UI, **Google Drive input/output folder** accepts either a Drive folder ID or a normal `https://drive.google.com/drive/folders/<id>` URL.
+
+## Run everything
+
+```bash
 docker compose up --build
 ```
 
@@ -36,16 +66,16 @@ docker compose up --build
 - Prometheus: http://localhost:9090
 - Tempo: http://localhost:3200
 
-Without `ANTHROPIC_API_KEY`, fallback mode keeps the workflow runnable for UI validation.
-
-## Architecture
+## Runtime architecture
 
 ```text
 Angular → REST/SSE → Spring Agent Platform
-                        ├─ Agent Registry / Runtime
-                        ├─ Proposal Workflow + Human Gates
-                        ├─ Model Gateway → Anthropic
-                        ├─ Tool/MCP Gateway port
+                        ├─ Workflow / Human Gates
+                        ├─ Agent Registry + Skill Registry
+                        ├─ Agent Runtime → Claude API
+                        ├─ Tool Gateway → Google Workspace MCP
+                        ├─ Source Ingestion → Drive/Docs/Slides/Sheets + Tika
+                        ├─ Presentation Builder → Google Slides MCP
                         ├─ Knowledge/RAG port
                         ├─ Memory port
                         ├─ Ontology port
@@ -53,4 +83,26 @@ Angular → REST/SSE → Spring Agent Platform
                         └─ PostgreSQL artifacts/state
 ```
 
-Proposal Copilot is the first application; platform ports are designed so future agent applications and cognitive/ontology layers can be added without coupling them to Anthropic or Google.
+## Skills and deterministic enforcement
+
+The semantic behavior remains under `backend/src/main/resources/skills/**/SKILL.md`. Agent role definitions live under `backend/src/main/resources/agents`.
+
+The runtime assembles each isolated model context as:
+
+```text
+agent definition (WHO)
++ full SKILL contract (HOW)
++ deterministic runtime context (WHAT evidence)
++ current task/refinement
+```
+
+Rules such as human gates, phase dependencies, downstream staleness, specialist fan-out limits and slide-title validation are enforced in Java as well as described to the model.
+
+## First end-to-end test
+
+1. Authenticate Google Workspace and configure `.env`.
+2. Start Docker Compose.
+3. Create an offer in the Angular UI using a Drive source folder ID/URL and output folder ID/URL.
+4. The backend ingests the Drive folder and starts Phase 1 automatically.
+5. Review each generated artifact in the UI, refine if needed, then approve to start the next phase.
+6. Phase 5 copies the configured corporate template and materializes the approved slide plan into the generated Google Slides deck.
