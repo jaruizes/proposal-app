@@ -32,7 +32,7 @@ async def create_execution(
     await executions.create(execution)
     await executions.add_event(
         execution.id,
-        "execution.queued",
+        "execution",
         execution.model_dump(mode="json"),
     )
     return execution
