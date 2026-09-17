@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.application.repositories import AgentRepository, ExecutionRepository, SkillRepository
 from agent_platform.persistence.database import get_session
 from agent_platform.persistence.repositories import (
@@ -27,3 +28,15 @@ async def get_execution_repository(session: Annotated[AsyncSession, Depends(get_
 AgentRepositoryDep = Annotated[AgentRepository, Depends(get_agent_repository)]
 SkillRepositoryDep = Annotated[SkillRepository, Depends(get_skill_repository)]
 ExecutionRepositoryDep = Annotated[ExecutionRepository, Depends(get_execution_repository)]
+
+
+async def get_skill_registry(repository: SkillRepositoryDep) -> SkillRegistry:
+    return SkillRegistry(repository)
+
+
+async def get_agent_registry(repository: AgentRepositoryDep, skills: SkillRepositoryDep) -> AgentRegistry:
+    return AgentRegistry(repository, skills)
+
+
+SkillRegistryDep = Annotated[SkillRegistry, Depends(get_skill_registry)]
+AgentRegistryDep = Annotated[AgentRegistry, Depends(get_agent_registry)]
