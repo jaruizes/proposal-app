@@ -129,12 +129,17 @@ async def test_current_agent_skill_pairs_preserve_contract_and_runtime_assembly(
     persisted = await executions.get(result.execution_id)
     assert persisted is not None
     assert persisted.status is ExecutionStatus.COMPLETED
-    assert [event["event_type"] for event in await executions.list_events(result.execution_id)] == [
+    events = await executions.list_events(result.execution_id)
+    assert [event["event_type"] for event in events] == [
         "execution.queued",
         "execution.running",
+        "cognitive.context.built",
         "execution.completed",
         "execution.result",
     ]
+    cognitive_event = events[2]
+    assert cognitive_event["payload"]["items"] >= 1
+    assert cognitive_event["payload"]["sections"]["business_context"] >= 1
 
 
 @pytest.mark.asyncio
