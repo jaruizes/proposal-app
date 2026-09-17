@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from uuid import UUID
 
+from agent_platform.application.chunking import ChunkingStrategyName, FixedChunker, build_chunker
 from agent_platform.application.embeddings import EmbeddingProvider, EmbeddingRequest
 from agent_platform.application.repositories import KnowledgeRepository
 from agent_platform.domain import KnowledgeChunk, KnowledgeDocumentStatus
@@ -30,6 +31,7 @@ class KnowledgeIngestionResult:
     chunks: int
     embedded_chunks: int
     embedding_model: str | None
+    chunking_strategy: ChunkingStrategyName
 
 
 class TextNormalizer:
@@ -41,37 +43,13 @@ class TextNormalizer:
 
 
 class TextChunker:
+    """Backward-compatible adapter for the original fixed chunker contract."""
+
     def __init__(self, *, chunk_size: int = 1200, overlap: int = 200) -> None:
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be > 0")
-        if overlap < 0 or overlap >= chunk_size:
-            raise ValueError("overlap must satisfy 0 <= overlap < chunk_size")
-        self.chunk_size = chunk_size
-        self.overlap = overlap
+        self._delegate = FixedChunker(chunk_size=chunk_size, overlap=overlap)
 
     def split(self, text: str) -> list[tuple[str, int, int]]:
-        if not text:
-            return []
-        chunks: list[tuple[str, int, int]] = []
-        start = 0
-        length = len(text)
-        while start < length:
-            hard_end = min(start + self.chunk_size, length)
-            end = hard_end
-            if hard_end < length:
-                paragraph_break = text.rfind("\n\n", start + self.chunk_size // 2, hard_end)
-                sentence_break = text.rfind(". ", start + self.chunk_size // 2, hard_end)
-                if paragraph_break > start:
-                    end = paragraph_break + 2
-                elif sentence_break > start:
-                    end = sentence_break + 2
-            content = text[start:end].strip()
-            if content:
-                chunks.append((content, start, end))
-            if end >= length:
-                break
-            start = max(end - self.overlap, start + 1)
-        return chunks
+        return [(item.content, item.start, item.end) for item in self._delegate.split(text)]
 
 
 class KnowledgeIngestionService:
@@ -90,8 +68,12 @@ class KnowledgeIngestionService:
         self,
         document_id: UUID,
         *,
+        chunking_strategy: ChunkingStrategyName | str = ChunkingStrategyName.FIXED,
         chunk_size: int = 1200,
         overlap: int = 200,
+        parent_size: int = 6000,
+        child_size: int = 1200,
+        child_overlap: int = 200,
         embed: bool = True,
     ) -> KnowledgeIngestionResult:
         document = await self._repository.get_document(document_id)
@@ -106,44 +88,57 @@ class KnowledgeIngestionService:
         if not normalized:
             raise KnowledgeIngestionError("Document content is empty after normalization")
 
+        try:
+            selected_strategy = ChunkingStrategyName(chunking_strategy)
+        except ValueError as exc:
+            raise KnowledgeIngestionError(f"Unsupported chunking strategy '{chunking_strategy}'") from exc
+
         await self._repository.update_document(
             document.model_copy(update={"status": KnowledgeDocumentStatus.PROCESSING})
         )
         try:
-            chunker = TextChunker(chunk_size=chunk_size, overlap=overlap)
-            raw_chunks = chunker.split(normalized)
+            chunker = build_chunker(
+                selected_strategy,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                parent_size=parent_size,
+                child_size=child_size,
+                child_overlap=child_overlap,
+            )
+            candidates = chunker.split(normalized)
             chunks = [
                 KnowledgeChunk(
                     document_id=document.id,
                     ordinal=ordinal,
-                    content=content,
+                    content=candidate.content,
                     metadata={
                         "knowledge_base_key": document.knowledge_base_key,
                         "title": document.title,
                         "media_type": document.media_type,
                         "source_uri": document.source_uri,
-                        "char_start": start,
-                        "char_end": end,
-                        "chunking_strategy": "text-boundary-v1",
+                        "char_start": candidate.start,
+                        "char_end": candidate.end,
+                        **candidate.metadata,
                     },
                 )
-                for ordinal, (content, start, end) in enumerate(raw_chunks)
+                for ordinal, candidate in enumerate(candidates)
             ]
 
             embedding_model = None
             embedded_chunks = 0
-            if embed and chunks:
+            embeddable_indexes = [index for index, candidate in enumerate(candidates) if candidate.embed]
+            if embed and embeddable_indexes:
                 result = await self._embedding_provider.embed(
-                    EmbeddingRequest(texts=[chunk.content for chunk in chunks])
+                    EmbeddingRequest(texts=[chunks[index].content for index in embeddable_indexes])
                 )
-                if len(result.vectors) != len(chunks):
+                if len(result.vectors) != len(embeddable_indexes):
                     raise KnowledgeIngestionError("Embedding provider returned an unexpected vector count")
-                chunks = [
-                    chunk.model_copy(update={"embedding": vector, "embedding_model": result.model})
-                    for chunk, vector in zip(chunks, result.vectors, strict=True)
-                ]
+                for index, vector in zip(embeddable_indexes, result.vectors, strict=True):
+                    chunks[index] = chunks[index].model_copy(
+                        update={"embedding": vector, "embedding_model": result.model}
+                    )
                 embedding_model = result.model
-                embedded_chunks = len(chunks)
+                embedded_chunks = len(embeddable_indexes)
 
             await self._repository.replace_chunks(document.id, chunks)
             ready = document.model_copy(update={"status": KnowledgeDocumentStatus.READY})
@@ -155,8 +150,11 @@ class KnowledgeIngestionService:
                 chunks=len(chunks),
                 embedded_chunks=embedded_chunks,
                 embedding_model=embedding_model,
+                chunking_strategy=selected_strategy,
             )
-        except Exception:
+        except Exception as exc:
             failed = document.model_copy(update={"status": KnowledgeDocumentStatus.FAILED})
             await self._repository.update_document(failed)
-            raise
+            if isinstance(exc, KnowledgeIngestionError):
+                raise
+            raise KnowledgeIngestionError(str(exc)) from exc

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agent_platform.application.chunking import ChunkingStrategyName
 from agent_platform.application.document_parsers import DocumentParseError, DocumentParserRegistry
 from agent_platform.application.ingestion import KnowledgeIngestionResult, KnowledgeIngestionService
 from agent_platform.application.knowledge import KnowledgeService
@@ -42,9 +43,13 @@ class KnowledgeFileService:
         metadata: dict,
         source_uri: str | None,
         ingest: bool,
-        chunk_size: int,
-        overlap: int,
-        embed: bool,
+        chunking_strategy: ChunkingStrategyName | str = ChunkingStrategyName.FIXED,
+        chunk_size: int = 1200,
+        overlap: int = 200,
+        parent_size: int = 6000,
+        child_size: int = 1200,
+        child_overlap: int = 200,
+        embed: bool = True,
     ) -> KnowledgeFileUploadResult:
         await self._knowledge_service.get_base(knowledge_base_key)
         if not filename:
@@ -79,8 +84,12 @@ class KnowledgeFileService:
         if ingest:
             ingestion = await self._ingestion_service.ingest(
                 stored.id,
+                chunking_strategy=chunking_strategy,
                 chunk_size=chunk_size,
                 overlap=overlap,
+                parent_size=parent_size,
+                child_size=child_size,
+                child_overlap=child_overlap,
                 embed=embed,
             )
         return KnowledgeFileUploadResult(document=stored, ingestion=ingestion)

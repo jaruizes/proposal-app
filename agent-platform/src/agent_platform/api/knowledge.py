@@ -5,6 +5,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from agent_platform.api.dependencies import KnowledgeFileServiceDep, KnowledgeIngestionServiceDep, KnowledgeServiceDep
+from agent_platform.application.chunking import ChunkingStrategyName
 from agent_platform.application.file_ingestion import KnowledgeFileUploadError
 from agent_platform.application.ingestion import KnowledgeIngestionError, KnowledgeIngestionResult
 from agent_platform.application.knowledge import KnowledgeConflictError, KnowledgeNotFoundError
@@ -31,14 +32,35 @@ class KnowledgeDocumentCreate(BaseModel):
 
 
 class KnowledgeIngestRequest(BaseModel):
+    chunking_strategy: ChunkingStrategyName = ChunkingStrategyName.FIXED
     chunk_size: int = Field(default=1200, gt=0, le=10000)
     overlap: int = Field(default=200, ge=0, le=5000)
+    parent_size: int = Field(default=6000, gt=0, le=50000)
+    child_size: int = Field(default=1200, gt=0, le=10000)
+    child_overlap: int = Field(default=200, ge=0, le=5000)
     embed: bool = True
 
 
 class KnowledgeFileUploadResponse(BaseModel):
     document: KnowledgeDocument
     ingestion: KnowledgeIngestionResult | None = None
+
+
+def _validate_chunking(
+    strategy: ChunkingStrategyName,
+    chunk_size: int,
+    overlap: int,
+    parent_size: int,
+    child_size: int,
+    child_overlap: int,
+) -> None:
+    if strategy is ChunkingStrategyName.HIERARCHICAL:
+        if child_overlap >= child_size:
+            raise HTTPException(status_code=422, detail="child_overlap must be smaller than child_size")
+        if child_size >= parent_size:
+            raise HTTPException(status_code=422, detail="child_size must be smaller than parent_size")
+    elif overlap >= chunk_size:
+        raise HTTPException(status_code=422, detail="overlap must be smaller than chunk_size")
 
 
 @router.get("/knowledge-bases", response_model=list[KnowledgeBase])
@@ -81,14 +103,23 @@ async def upload_file(
     metadata: str | None = Form(default=None),
     source_uri: str | None = Form(default=None),
     ingest: bool = Form(default=True),
+    chunking_strategy: ChunkingStrategyName = Form(default=ChunkingStrategyName.FIXED),
     chunk_size: int = Form(default=1200),
     overlap: int = Form(default=200),
+    parent_size: int = Form(default=6000),
+    child_size: int = Form(default=1200),
+    child_overlap: int = Form(default=200),
     embed: bool = Form(default=True),
 ):
-    if chunk_size <= 0 or chunk_size > 10000:
+    if not 1 <= chunk_size <= 10000:
         raise HTTPException(status_code=422, detail="chunk_size must be between 1 and 10000")
-    if overlap < 0 or overlap >= chunk_size:
-        raise HTTPException(status_code=422, detail="overlap must satisfy 0 <= overlap < chunk_size")
+    if not 1 <= parent_size <= 50000:
+        raise HTTPException(status_code=422, detail="parent_size must be between 1 and 50000")
+    if not 1 <= child_size <= 10000:
+        raise HTTPException(status_code=422, detail="child_size must be between 1 and 10000")
+    if overlap < 0 or child_overlap < 0:
+        raise HTTPException(status_code=422, detail="overlap values must be >= 0")
+    _validate_chunking(chunking_strategy, chunk_size, overlap, parent_size, child_size, child_overlap)
     parsed_metadata: dict = {}
     if metadata:
         try:
@@ -107,8 +138,12 @@ async def upload_file(
             metadata=parsed_metadata,
             source_uri=source_uri,
             ingest=ingest,
+            chunking_strategy=chunking_strategy,
             chunk_size=chunk_size,
             overlap=overlap,
+            parent_size=parent_size,
+            child_size=child_size,
+            child_overlap=child_overlap,
             embed=embed,
         )
         return KnowledgeFileUploadResponse(document=result.document, ingestion=result.ingestion)
@@ -128,9 +163,20 @@ async def get_document(document_id: UUID, service: KnowledgeServiceDep):
 
 @router.post("/knowledge-documents/{document_id}/ingest", response_model=KnowledgeIngestionResult)
 async def ingest_document(document_id: UUID, payload: KnowledgeIngestRequest, service: KnowledgeIngestionServiceDep):
-    if payload.overlap >= payload.chunk_size: raise HTTPException(status_code=422, detail="overlap must be smaller than chunk_size")
-    try: return await service.ingest(document_id, chunk_size=payload.chunk_size, overlap=payload.overlap, embed=payload.embed)
-    except KnowledgeIngestionError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _validate_chunking(payload.chunking_strategy, payload.chunk_size, payload.overlap, payload.parent_size, payload.child_size, payload.child_overlap)
+    try:
+        return await service.ingest(
+            document_id,
+            chunking_strategy=payload.chunking_strategy,
+            chunk_size=payload.chunk_size,
+            overlap=payload.overlap,
+            parent_size=payload.parent_size,
+            child_size=payload.child_size,
+            child_overlap=payload.child_overlap,
+            embed=payload.embed,
+        )
+    except KnowledgeIngestionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/knowledge-documents/{document_id}/chunks", response_model=list[KnowledgeChunk])

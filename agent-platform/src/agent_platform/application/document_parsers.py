@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -37,11 +38,7 @@ class TextDocumentParser:
         for encoding in ("utf-8-sig", "utf-16", "latin-1"):
             try:
                 text = payload.decode(encoding)
-                return ParsedDocument(
-                    content=text,
-                    media_type=media_type if media_type in TEXT_MEDIA_TYPES else "text/plain",
-                    metadata={"parser": "text", "encoding": encoding},
-                )
+                return ParsedDocument(content=text, media_type=media_type if media_type in TEXT_MEDIA_TYPES else "text/plain", metadata={"parser": "text", "encoding": encoding})
             except UnicodeDecodeError:
                 continue
         raise DocumentParseError("Unable to decode uploaded text file")
@@ -56,16 +53,10 @@ class PdfDocumentParser:
             pages = [(page.extract_text() or "").strip() for page in reader.pages]
         except Exception as exc:
             raise DocumentParseError(f"Unable to parse PDF '{filename}': {exc}") from exc
-        text = "\n\n".join(page for page in pages if page).strip()
+        text = "\n\f\n".join(page for page in pages if page).strip()
         if not text:
-            raise DocumentParseError(
-                "PDF contains no extractable text. Scanned/image-only PDFs require OCR, which is not enabled yet."
-            )
-        return ParsedDocument(
-            content=text,
-            media_type=PDF_MEDIA_TYPE,
-            metadata={"parser": "pypdf", "pages": len(reader.pages)},
-        )
+            raise DocumentParseError("PDF contains no extractable text. Scanned/image-only PDFs require OCR, which is not enabled yet.")
+        return ParsedDocument(content=text, media_type=PDF_MEDIA_TYPE, metadata={"parser": "pypdf", "pages": len(reader.pages), "page_boundaries": True})
 
 
 class DocxDocumentParser:
@@ -78,9 +69,18 @@ class DocxDocumentParser:
             raise DocumentParseError(f"Unable to parse Word document '{filename}': {exc}") from exc
 
         blocks: list[str] = []
+        headings = 0
         for paragraph in document.paragraphs:
             text = paragraph.text.strip()
-            if text:
+            if not text:
+                continue
+            style_name = paragraph.style.name if paragraph.style is not None else ""
+            match = re.match(r"Heading\s+(\d+)", style_name, re.I)
+            if match:
+                level = min(max(int(match.group(1)), 1), 6)
+                blocks.append(f"{'#' * level} {text}")
+                headings += 1
+            else:
                 blocks.append(text)
         for table in document.tables:
             for row in table.rows:
@@ -91,15 +91,7 @@ class DocxDocumentParser:
         text = "\n\n".join(blocks).strip()
         if not text:
             raise DocumentParseError("Word document contains no extractable text")
-        return ParsedDocument(
-            content=text,
-            media_type=DOCX_MEDIA_TYPE,
-            metadata={
-                "parser": "python-docx",
-                "paragraphs": len(document.paragraphs),
-                "tables": len(document.tables),
-            },
-        )
+        return ParsedDocument(content=text, media_type=DOCX_MEDIA_TYPE, metadata={"parser": "python-docx", "paragraphs": len(document.paragraphs), "tables": len(document.tables), "headings": headings})
 
 
 class DocumentParserRegistry:
@@ -110,26 +102,16 @@ class DocumentParserRegistry:
 
     def resolve_media_type(self, *, filename: str, declared_media_type: str | None) -> str:
         suffix = Path(filename).suffix.lower()
-        if suffix == ".pdf":
-            return PDF_MEDIA_TYPE
-        if suffix == ".docx":
-            return DOCX_MEDIA_TYPE
-        if suffix == ".doc":
-            raise DocumentParseError("Legacy .doc files are not supported; save the document as .docx first")
-        if suffix in {".txt", ".text"}:
-            return "text/plain"
-        if suffix in {".md", ".markdown"}:
-            return "text/markdown"
-        if declared_media_type in SUPPORTED_UPLOAD_MEDIA_TYPES:
-            return declared_media_type
-        raise DocumentParseError(
-            f"Unsupported file type '{suffix or declared_media_type or 'unknown'}'. Supported: PDF, DOCX, TXT and Markdown"
-        )
+        if suffix == ".pdf": return PDF_MEDIA_TYPE
+        if suffix == ".docx": return DOCX_MEDIA_TYPE
+        if suffix == ".doc": raise DocumentParseError("Legacy .doc files are not supported; save the document as .docx first")
+        if suffix in {".txt", ".text"}: return "text/plain"
+        if suffix in {".md", ".markdown"}: return "text/markdown"
+        if declared_media_type in SUPPORTED_UPLOAD_MEDIA_TYPES: return declared_media_type
+        raise DocumentParseError(f"Unsupported file type '{suffix or declared_media_type or 'unknown'}'. Supported: PDF, DOCX, TXT and Markdown")
 
     def parse(self, payload: bytes, *, filename: str, declared_media_type: str | None = None) -> ParsedDocument:
         media_type = self.resolve_media_type(filename=filename, declared_media_type=declared_media_type)
-        if media_type == PDF_MEDIA_TYPE:
-            return self._pdf.parse(payload, filename=filename, media_type=media_type)
-        if media_type == DOCX_MEDIA_TYPE:
-            return self._docx.parse(payload, filename=filename, media_type=media_type)
+        if media_type == PDF_MEDIA_TYPE: return self._pdf.parse(payload, filename=filename, media_type=media_type)
+        if media_type == DOCX_MEDIA_TYPE: return self._docx.parse(payload, filename=filename, media_type=media_type)
         return self._text.parse(payload, filename=filename, media_type=media_type)
