@@ -41,6 +41,43 @@
         <div class="steps"><ng-container *ngFor="let p of exec.phases; let i = index"><button class="step" [class.clickable]="phaseClickable(p)" [ngClass]="phaseClass(p.status)" (click)="choosePhase(p)"><span class="step-index">{{p.status === 'approved' ? '✓' : i + 1}}</span><span><strong>{{p.label}}</strong><small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : 'Pendiente'}}</small></span></button><div class="step-line" *ngIf="i < exec.phases.length - 1"></div></ng-container></div>
       </section>
 
+      <section class="panel agent-activity-panel">
+        <div class="panel-head agent-panel-head">
+          <div><span class="eyebrow">OBSERVABILIDAD</span><h2>Actividad de agentes</h2><p>Estado, consumo y errores de las ejecuciones de IA de esta oferta.</p></div>
+          <div class="agent-summary">
+            <span><strong>{{agentStats().running}}</strong><small>activos</small></span>
+            <span><strong>{{agentStats().failed}}</strong><small>errores</small></span>
+            <span><strong>{{formatTokens(agentStats().input + agentStats().output)}}</strong><small>tokens</small></span>
+          </div>
+        </div>
+        <div class="agent-empty" *ngIf="svc.agentExecutions().length === 0">Todavía no hay ejecuciones de agentes registradas para esta oferta.</div>
+        <div class="agent-list" *ngIf="svc.agentExecutions().length > 0">
+          <article class="agent-item" *ngFor="let agent of svc.agentExecutions()">
+            <div class="agent-main">
+              <div class="agent-title-row">
+                <span class="agent-dot" [ngClass]="agentStatusClass(agent.status)"></span>
+                <strong>{{agent.agentKey}}</strong>
+                <span class="agent-status" [ngClass]="agentStatusClass(agent.status)">{{agentStatusLabel(agent.status)}}</span>
+                <span class="agent-phase">{{agentPhaseLabel(agent.phase)}}</span>
+              </div>
+              <p *ngIf="agent.objective">{{agent.objective}}</p>
+              <div class="agent-meta">
+                <span><b>Modelo</b> {{agent.model || '—'}}</span>
+                <span><b>Duración</b> {{agentDuration(agent)}}</span>
+                <span><b>Inicio</b> {{agent.startedAt | date:'HH:mm:ss'}}</span>
+                <span *ngIf="agent.providerRequestId"><b>Request</b> <span class="mono">{{agent.providerRequestId}}</span></span>
+              </div>
+            </div>
+            <div class="agent-tokens">
+              <div><strong>{{formatTokens(agent.inputTokens)}}</strong><small>entrada</small></div>
+              <div><strong>{{formatTokens(agent.outputTokens)}}</strong><small>salida</small></div>
+              <div><strong>{{formatTokens(agent.inputTokens + agent.outputTokens)}}</strong><small>total</small></div>
+            </div>
+            <div class="agent-error" *ngIf="agent.errorMessage"><strong>Error</strong><span>{{agent.errorMessage}}</span></div>
+          </article>
+        </div>
+      </section>
+
       <section class="workspace-grid" *ngIf="selectedPhase() as phase; else chooseHint">
         <article class="panel artifact-panel">
           <div class="panel-head artifact-head">
