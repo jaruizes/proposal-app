@@ -3,7 +3,7 @@ name = "proposal-agent-platform"
 version = "0.1.0"
 description = "Independent agent platform for Proposal Copilot and future applications"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.116,<1.0",
   "uvicorn[standard]>=0.35,<1.0",
@@ -33,3 +33,6 @@ packages = ["src/agent_platform"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+  "integration: tests that call external providers and require explicit credentials"
+]
