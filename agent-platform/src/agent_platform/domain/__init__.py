@@ -16,6 +16,7 @@ from agent_platform.domain.executions import (
     Attachment,
     ExecutionStatus,
 )
+from agent_platform.domain.tools import ToolCall, ToolDefinition, ToolError, ToolResult
 
 __all__ = [
     "AgentArtifact",
@@ -30,4 +31,8 @@ __all__ = [
     "ExecutionStatus",
     "ModelPolicy",
     "SkillDefinition",
+    "ToolCall",
+    "ToolDefinition",
+    "ToolError",
+    "ToolResult",
 ]
