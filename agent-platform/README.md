@@ -6,13 +6,16 @@ This service is intentionally isolated from the existing Spring Boot workflow. T
 
 ## Current capabilities
 
-- Python 3.13 + FastAPI + Pydantic v2
+- Python 3.11+ locally; container runtime uses Python 3.13
+- FastAPI + Pydantic v2
 - PostgreSQL persistence with SQLAlchemy async and Alembic
 - Dynamic Agent and Skill registries
 - Provider-neutral model contract
 - Anthropic adapter
 - Native Python Agent Runtime with persisted execution lifecycle
 - Git-tracked bootstrap catalog containing the current Proposal Copilot agents and skills
+- Runtime parity tests for current agent/skill assignments
+- Opt-in real Anthropic API integration smoke test
 - `/health`, `/v1/agents`, `/v1/skills` and `/v1/executions` APIs
 
 ## Run locally
@@ -64,14 +67,30 @@ curl http://localhost:8000/v1/agents
 curl http://localhost:8000/v1/skills
 ```
 
-## Run tests
+## Tests
 
-Using a local Python 3.13 environment:
+Local development supports Python 3.11 or newer:
 
 ```bash
-pip install -e '.[dev]'
+python -m pip install -e '.[dev]'
 pytest
 ```
+
+The normal suite never performs a paid external LLM request. The Anthropic parity smoke test is explicit opt-in:
+
+```bash
+export ANTHROPIC_API_KEY="..."
+export RUN_ANTHROPIC_INTEGRATION=1
+pytest -m integration tests/integration/test_anthropic_execution.py -v
+```
+
+Optionally route the integration test to another Anthropic model without changing the bootstrap catalog:
+
+```bash
+export ANTHROPIC_INTEGRATION_MODEL="claude-sonnet-4-6"
+```
+
+The integration test calls `POST /v1/executions` with the bootstrapped `business-analyst` + `analyze-opportunity` definitions and verifies a completed artifact, token usage, model, provider request ID and persisted lifecycle events.
 
 ## Design rule
 
