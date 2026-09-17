@@ -69,7 +69,14 @@ class MemoryContextContributor:
         if not scopes:
             return []
         kinds = [MemoryKind(value) for value in config.get("kinds", []) or []]
-        entries = await self._service.recall(MemoryRecall(scopes=scopes, kinds=kinds, agent_key=agent.key, skill_key=skill.key if skill else None, min_importance=float(config.get("min_importance", 0.0)), limit=int(config.get("max_items", 6))))
+        entries = await self._service.recall(MemoryRecall(
+            scopes=scopes,
+            kinds=kinds,
+            agent_key=agent.key if bool(config.get("same_agent_only", False)) else None,
+            skill_key=skill.key if skill and bool(config.get("same_skill_only", False)) else None,
+            min_importance=float(config.get("min_importance", 0.0)),
+            limit=int(config.get("max_items", 6)),
+        ))
         label_by_kind = {MemoryKind.FACT: EpistemicLabel.FACT, MemoryKind.DECISION: EpistemicLabel.DECISION}
         items = []
         for rank, entry in enumerate(entries, start=1):
