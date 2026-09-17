@@ -30,22 +30,28 @@ Read approved analysis/strategy artifacts.
 Phase 3 is deliberately multi-role because it models a real offer team:
 
 ```text
-Business Analyst / Offer Owner
+Business Analyst / Offer Owner     # coordinator, main context
         ↓
-Solution Architect
-        ↓ owns solution.md
-Delivery Manager
-        ↓ owns solution-plan.md
-Business Analyst coherence review
+Solution Architect                 # dedicated base-role context
+        ↓ owns
+solution.md
+        ↓
+Delivery Manager                   # dedicated base-role context
+        ↓ owns
+solution-plan.md
+        ↓
+Business Analyst                   # coherence review in coordinator context
 ```
 
-`solution-architect` and `delivery-manager` are base-role agents, not optional specialists and not counted against the specialist-consultation limit.
+`solution-architect` and `delivery-manager` are **base-role agents**, not optional specialists and not counted against the specialist-consultation limit.
 
-Execute them sequentially, not in parallel. The Delivery Manager must consume the architect's completed `solution.md`.
+Execute them **sequentially, not in parallel**. The Delivery Manager must consume the architect's completed `solution.md`.
 
 The Business Analyst coordinates but must not silently replace either owner's judgement.
 
 ## Source authority
+
+Canonical principle:
 
 ```text
 validated artifacts = orientation/context
@@ -64,13 +70,24 @@ generated/analysis/technology.md     # if present
 generated/strategy/strategy.md
 ```
 
-Before finalizing `solution.md`, inspect the complete source inventory and classify every source:
+Before finalizing `solution.md`, inspect the **complete source inventory** and classify every source:
 
 ```text
 REVIEW_IN_DEPTH | TARGETED_REVIEW | SKIP
 ```
 
-Review original/native evidence directly whenever it may materially affect functionality, processes, users, domain rules, data, integrations, architecture/stack/platform, security/identity, NFRs, operations, deployment/infrastructure, legacy/migration/transition, diagrams/tables/visual relationships.
+Review original/native evidence directly whenever it may materially affect:
+
+- functional requirements, processes, users or domain rules;
+- data;
+- integrations/interfaces/protocols;
+- architecture/stack/platform;
+- security/identity;
+- NFRs such as availability, performance or scalability;
+- operations/observability;
+- deployment/infrastructure;
+- legacy/migration/transition;
+- diagrams/tables/visual relationships.
 
 A document is not irrelevant merely because it is non-technical. Functional understanding is mandatory for valid architecture.
 
@@ -88,17 +105,40 @@ generated/strategy/strategy.md
 generated/solution/solution.md
 ```
 
-The Delivery Manager also inspects the complete source inventory and directly reviews original/native sources that may materially affect execution scope/work packages, functional decomposition, deliverables, dependencies/customer participation, access/environments/data prerequisites, methodology/governance, testing/acceptance, migration/transition/cutover, operational readiness/support, execution milestones/regulatory dates and third-party coordination.
+The Delivery Manager also inspects the complete source inventory and directly reviews original/native sources that may materially affect:
 
-It must not create the plan solely from `solution.md` or summaries when original evidence could change delivery structure.
+- execution scope/work packages;
+- functional decomposition;
+- deliverables;
+- dependencies/customer participation;
+- access/environments/data prerequisites;
+- methodology/governance;
+- testing/acceptance;
+- migration/transition/cutover;
+- operational readiness/support;
+- execution milestones/regulatory dates;
+- third-party coordination.
+
+It must not create the plan solely from `solution.md` or other summaries when original evidence could change delivery structure.
 
 ## Optional deep specialists
 
-Optional specialists are additional to the three base roles. Typical examples include security/cryptography, AWS/Azure/GCP, OpenShift/Red Hat, network, SAP/mainframe, database/performance, data/AI and specific domain SMEs.
+Optional specialists are additional to the three base roles. Typical examples:
+
+```text
+security/cryptography
+AWS/Azure/GCP
+OpenShift/Red Hat
+network
+SAP/mainframe
+database/performance
+data/AI
+specific domain SME
+```
 
 The Solution Architect or Delivery Manager should normally be sufficient for proposal-level work. Consult an optional specialist only for a bounded question requiring deeper expertise.
 
-Default maximum: 2 optional specialist consultations in phase 3. If more seem necessary, stop and ask the human rather than creating fan-out.
+Default maximum: **2 optional specialist consultations** in phase 3. If more seem necessary, stop and ask the human rather than creating fan-out.
 
 For every consultation specify:
 
@@ -112,7 +152,17 @@ Optional specialists do not own canonical files or workflow state.
 
 ## No-estimation rule
 
-Phase 3 must not produce person-hours/person-days, story points/velocity, S/M/L or hidden sizing, team size/headcount/FTE/allocation, estimated weeks/months/duration, price/cost/margin or commercial commitment dates. Customer-imposed dates/cadence may be recorded as FACT.
+Phase 3 must not produce:
+
+- person-hours/person-days;
+- story points/velocity;
+- S/M/L or hidden sizing;
+- team size/headcount/FTE/allocation;
+- estimated weeks/months/duration;
+- price/cost/margin;
+- commercial commitment dates.
+
+Customer-imposed dates/cadence may be recorded as `FACT`.
 
 # A. `solution.md` — owner: Solution Architect
 
@@ -154,7 +204,9 @@ For material technical statements distinguish when useful:
 FACT | PRINCIPLE | PROPOSAL | DECISION | ASSUMPTION
 ```
 
-Do not fabricate internal reusable assets. Do not claim a custom development has no third-party dependencies; SBOM/dependency management should reflect normal framework/library dependencies.
+A `PROPOSAL` is not automatically a committed detailed-design decision.
+
+Do not fabricate internal reusable assets. Do not claim a custom development has no third-party dependencies: normal framework/library dependencies exist unless evidence says otherwise; SBOM/dependency management should reflect that.
 
 # B. `solution-plan.md` — owner: Delivery Manager
 
@@ -164,11 +216,33 @@ Write exactly:
 generated/solution/solution-plan.md
 ```
 
-This is an unestimated work breakdown answering what high-level work must be performed to materialize `solution.md`.
+This is an unestimated work breakdown answering:
 
-Choose the natural structure: sequential phases/increments, parallel workstreams with increments, or hybrid common inception + parallel workstreams + integrated validation/cutover.
+```text
+What high-level work must be performed to materialize solution.md?
+```
 
-For each workstream/phase/increment include stable ID/name, objective/outcome, scope included, high-level tasks, dependencies/prerequisites, outputs/deliverables when known, customer/third-party participation, high-level acceptance/exit condition and related risks/TBDs.
+Choose the natural structure:
+
+```text
+A. sequential phases/increments
+B. parallel workstreams with increments
+C. hybrid: common inception + parallel workstreams + integrated validation/cutover
+```
+
+Do not force sprints. If sprint-like units are used, they are planning units, not duration commitments.
+
+For each workstream/phase/increment include:
+
+- stable ID/name;
+- objective/outcome;
+- scope included;
+- high-level tasks;
+- dependencies/prerequisites;
+- outputs/deliverables when known;
+- customer/third-party participation;
+- high-level acceptance/exit condition;
+- related risks/TBDs.
 
 Each task contains at least:
 
@@ -178,16 +252,47 @@ Task ID | Task name | Description
 
 Consider when applicable: inception, access/environments, architecture validation, platform/CI-CD, application foundation, frontend/UX, backend/domain, integrations, data/migration, security, observability/operations, testing/acceptance, deployment/cutover, documentation/training/handover.
 
-Every major functional and technical capability in `solution.md` must map to work, including user-facing UI/frontend capabilities where required. End with `solution capability → workstream(s)`.
+### Coverage check
+
+Every major functional and technical capability in `solution.md` must map to work, including user-facing UI/frontend capabilities where required.
+
+End with:
+
+```text
+solution capability → workstream(s)
+```
 
 # C. Business Analyst coherence review
 
-After both files exist, the coordinator Business Analyst reviews them without creating another artifact. Check alignment with strategy, scope/out-of-scope, human decisions, customer requirements, mutual consistency, capability coverage, assumptions/TBDs, specialist advice boundaries, no invented estimates/commercial commitments, and readiness for slide planning.
+After both files exist, the coordinator Business Analyst reviews them without creating another artifact.
+
+Check:
+
+- alignment with approved `strategy.md` and strategic story;
+- scope/out-of-scope and human decisions preserved;
+- customer requirements not silently changed;
+- solution and plan mutually consistent;
+- all major capabilities covered by work;
+- assumptions/TBDs aligned;
+- optional specialist advice did not become unsupported promise;
+- no estimate/commercial interest invented;
+- artifacts are ready to feed later slide inventory/storytelling.
 
 If correction is needed, route it back to the relevant owner and update that owner's canonical file.
 
 ## Completion
 
-Complete only when upstream phases are approved; Architect inspected full inventory and relevant originals; `solution.md` exists; Delivery Manager inspected full inventory and relevant execution evidence after reading `solution.md`; `solution-plan.md` exists; capability-to-work coverage is complete; no estimate appears; optional specialist consultations are bounded and recorded; Business Analyst completed coherence review; and no slide planning started.
+Complete only when:
+
+1. upstream phases are approved;
+2. Solution Architect inspected the full inventory and relevant original evidence;
+3. `solution.md` exists;
+4. Delivery Manager inspected the full inventory and relevant execution evidence after reading `solution.md`;
+5. `solution-plan.md` exists;
+6. capability-to-work coverage is complete;
+7. no estimate appears;
+8. optional specialist consultations are bounded and recorded;
+9. Business Analyst completed coherence review;
+10. no slide planning started.
 
 Set `solution.status: waiting_for_human` and STOP.
