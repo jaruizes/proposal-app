@@ -11,11 +11,13 @@ from agent_platform.application.knowledge import KnowledgeService
 from agent_platform.application.models import ModelProvider
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.application.repositories import AgentRepository, ExecutionRepository, KnowledgeRepository, SkillRepository
+from agent_platform.application.retrieval import KnowledgeRetrievalService
 from agent_platform.application.runtime import AgentRuntime
 from agent_platform.application.tools import ToolRegistry
 from agent_platform.config import get_settings
 from agent_platform.persistence.database import get_session
 from agent_platform.persistence.repositories import PostgresAgentRepository, PostgresExecutionRepository, PostgresKnowledgeRepository, PostgresSkillRepository
+from agent_platform.persistence.retrieval import PostgresKnowledgeSearchBackend
 from agent_platform.providers import AnthropicModelProvider, HashEmbeddingProvider, McpRegistry, McpServerDefinition
 
 
@@ -68,6 +70,16 @@ async def get_knowledge_file_service(
 
 
 KnowledgeFileServiceDep = Annotated[KnowledgeFileService, Depends(get_knowledge_file_service)]
+
+
+async def get_knowledge_retrieval_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    embedding_provider: EmbeddingProviderDep,
+) -> KnowledgeRetrievalService:
+    return KnowledgeRetrievalService(PostgresKnowledgeSearchBackend(session), embedding_provider)
+
+
+KnowledgeRetrievalServiceDep = Annotated[KnowledgeRetrievalService, Depends(get_knowledge_retrieval_service)]
 
 
 def get_agent_runtime(agents: AgentRegistryDep, skills: SkillRegistryDep, executions: ExecutionRepositoryDep, model_provider: ModelProviderDep) -> AgentRuntime:
