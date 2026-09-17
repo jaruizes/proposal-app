@@ -63,7 +63,7 @@
     <header><div><span class="eyebrow">NUEVA EJECUCIÓN</span><h2>Crear nueva oferta</h2><p>Configura el flujo antes de iniciar el procesamiento.</p></div><button class="icon-btn" (click)="closeCreate()">×</button></header>
     <div class="modal-body">
       <div class="form-grid two"><label><span>Nombre</span><input [(ngModel)]="draft.name" placeholder="Ej. REDEIA · SSIR" /></label><label><span>Idioma de la presentación</span><select [(ngModel)]="draft.presentationLanguage"><option>Español</option><option>English</option><option>Français</option></select></label></div>
-      <div class="form-grid two"><label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="draft.inputDriveFolder" /></label><label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="draft.outputDriveFolder" /></label></div>
+      <div class="form-grid two"><label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="draft.inputDriveFolder" placeholder="ID o URL de la carpeta de entrada" /></label><label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="draft.outputDriveFolder" placeholder="ID o URL de la carpeta de salida" /></label></div>
       <label><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Nombre del documento final" /></label>
       <div class="section-title"><div><h3>Configuración IA</h3><p>Configuración de proveedor y modelos por fase.</p></div></div>
       <div class="form-grid two"><label><span>Proveedor</span><select [(ngModel)]="draft.provider"><option *ngFor="let p of (providerModels | keyvalue)">{{p.key}}</option></select></label><div class="provider-chip">{{draft.provider}}</div></div>
@@ -71,6 +71,6 @@
       <div class="section-title"><div><h3>Estructura de presentación</h3><p>Configuración equivalente a presentation-guidance.yaml.</p></div><button class="ghost small" (click)="addSection()">＋ Añadir sección</button></div>
       <div class="sections-editor"><div class="section-row" *ngFor="let s of draft.sections; let i = index"><input type="checkbox" [(ngModel)]="s.enabled" /><input class="grow" [(ngModel)]="s.name" /><label class="compact"><span>Máx. slides</span><input type="number" min="1" [(ngModel)]="s.maxSlides" /></label><button class="icon-btn subtle" (click)="removeSection(i)">×</button></div></div>
     </div>
-    <footer><button class="ghost" (click)="closeCreate()">Cancelar</button><button class="primary" [disabled]="!draft.name || !draft.presentationName" (click)="saveCreate()">Guardar e iniciar</button></footer>
+    <footer><button class="ghost" (click)="closeCreate()">Cancelar</button><button class="primary" [disabled]="!draft.name || !draft.presentationName || !draft.inputDriveFolder || !draft.outputDriveFolder" (click)="saveCreate()">Guardar e iniciar</button></footer>
   </section>
 </div>
