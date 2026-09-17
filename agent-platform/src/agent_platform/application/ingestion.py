@@ -9,7 +9,13 @@ from agent_platform.application.repositories import KnowledgeRepository
 from agent_platform.domain import KnowledgeChunk, KnowledgeDocumentStatus
 
 
-SUPPORTED_TEXT_MEDIA_TYPES = {"text/plain", "text/markdown", "text/x-markdown"}
+SUPPORTED_TEXT_MEDIA_TYPES = {
+    "text/plain",
+    "text/markdown",
+    "text/x-markdown",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 
 class KnowledgeIngestionError(RuntimeError):
@@ -103,7 +109,6 @@ class KnowledgeIngestionService:
         await self._repository.update_document(
             document.model_copy(update={"status": KnowledgeDocumentStatus.PROCESSING})
         )
-
         try:
             chunker = TextChunker(chunk_size=chunk_size, overlap=overlap)
             raw_chunks = chunker.split(normalized)
@@ -134,12 +139,7 @@ class KnowledgeIngestionService:
                 if len(result.vectors) != len(chunks):
                     raise KnowledgeIngestionError("Embedding provider returned an unexpected vector count")
                 chunks = [
-                    chunk.model_copy(
-                        update={
-                            "embedding": vector,
-                            "embedding_model": result.model,
-                        }
-                    )
+                    chunk.model_copy(update={"embedding": vector, "embedding_model": result.model})
                     for chunk, vector in zip(chunks, result.vectors, strict=True)
                 ]
                 embedding_model = result.model
