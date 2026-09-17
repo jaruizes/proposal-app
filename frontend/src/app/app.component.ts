@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ExecutionService } from './execution.service';
-import { OfferExecution, Phase, SectionConfig } from './models';
+import { AgentExecutionTelemetry, OfferExecution, Phase, SectionConfig } from './models';
 
 type PhaseArtifact={type:string;version:number;title:string;content:string};
 
@@ -14,13 +14,19 @@ export class AppComponent {
   selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
   selectedArtifact=computed(()=>this.selectedArtifacts()[this.selectedArtifactIndex()]||this.selectedArtifacts()[0]);
   stats=computed(()=>{const items=this.svc.executions();return{total:items.length,working:items.filter(x=>x.overallStatus==='Trabajando').length,waiting:items.filter(x=>x.overallStatus==='Esperando aprobación').length};});
+  agentStats=computed(()=>{const items=this.svc.agentExecutions();return{running:items.filter(x=>x.status==='RUNNING').length,failed:items.filter(x=>x.status==='FAILED').length,input:items.reduce((sum,x)=>sum+(x.inputTokens||0),0),output:items.reduce((sum,x)=>sum+(x.outputTokens||0),0)};});
   openCreate(){this.draft=this.newDraft();this.createOpen.set(true);} closeCreate(){this.createOpen.set(false);} saveCreate(){this.svc.create(this.draft);this.createOpen.set(false);}
-  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
-  back(){this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
+  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);this.svc.watchAgents(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
+  back(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
   chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
   approve(){const e=this.selected(),p=this.selectedPhase();if(e&&p){this.svc.approve(e.id,p.key);this.selectedPhaseKey.set(null);this.resetArtifactView();}}
   sendRefine(){const e=this.selected(),p=this.selectedPhase();if(e&&p&&this.chatMessage.trim()){this.svc.refine(e.id,p.key,this.chatMessage.trim());this.chatMessage='';}}
   statusClass(status:string){return status==='Trabajando'?'working':status==='Esperando aprobación'?'waiting':status==='Completado'?'approved':'cancelled';} phaseClass(status:string){return status.replace('_','-');} currentModels(){return this.providerModels[this.draft.provider]||[];} addSection(){this.draft.sections.push({name:'Nueva sección',maxSlides:3,enabled:true});} removeSection(i:number){this.draft.sections.splice(i,1);}
+  agentStatusClass(status:string){return status==='RUNNING'?'running':status==='COMPLETED'?'completed':status==='FAILED'?'failed':'pending';}
+  agentStatusLabel(status:string){return status==='RUNNING'?'Trabajando':status==='COMPLETED'?'Completado':status==='FAILED'?'Error':status;}
+  agentDuration(agent:AgentExecutionTelemetry){const start=agent.startedAt?new Date(agent.startedAt).getTime():0;if(!start)return '—';const end=agent.completedAt?new Date(agent.completedAt).getTime():Date.now();const seconds=Math.max(0,Math.round((end-start)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
+  agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Análisis',STRATEGY:'Estrategia',SOLUTION:'Solución',SLIDE_PLAN:'Plan narrativo',PRESENTATION:'Presentación'};return labels[phase]||phase;}
+  formatTokens(value:number){return new Intl.NumberFormat('es-ES').format(value||0);}
 
   phaseArtifacts(phase:Phase|undefined):PhaseArtifact[]{
     const output=phase?.output?.trim();
