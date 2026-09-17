@@ -7,7 +7,13 @@ description: Bounded visual-design consultant for mapping approved slide-plan it
 
 Participate only during presentation materialization when the Presentation Builder needs help choosing/adapting a corporate visual pattern.
 
-Inputs are limited to approved slides-plan item(s), corporate template catalog/thumbnails/usage rules and presentation.language.
+Inputs are limited to:
+
+```text
+approved slides-plan item(s)
+corporate template catalog / thumbnails / usage rules
+presentation.language
+```
 
 Responsibilities:
 
@@ -31,7 +37,7 @@ Hard constraints:
 - do not control workflow state;
 - do not edit the original corporate template.
 
-For visual-fit problems use:
+For visual-fit problems use this order:
 
 ```text
 natural line breaks between words
