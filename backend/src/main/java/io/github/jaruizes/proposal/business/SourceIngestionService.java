@@ -115,9 +115,10 @@ public class SourceIngestionService {
                         extracted = text(tools.execute("slides_get_presentation", Map.of("presentationId", fileId)));
                         visualPath = exportGoogleNative(offer.id(), code, fileId, name, "application/pdf");
                     } else if (SHEETS_MIME.equals(mime)) {
-                        extracted = text(tools.execute("sheets_get_spreadsheet", Map.of("spreadsheetId", fileId)));
+                        var metadata = text(tools.execute("sheets_get_spreadsheet", Map.of("spreadsheetId", fileId)));
+                        extracted = metadata + "\n\n# Google Sheets values\n" + readSheetValues(fileId, metadata, warnings, code, name);
                         var xlsx = exportGoogleNative(offer.id(), code, fileId, name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                        if (xlsx != null) extracted += "\n\n# Extracted workbook text\n" + extractor.extract(resolve(xlsx));
+                        if (xlsx != null) extracted += "\n\n# Extracted workbook text (auxiliary)\n" + extractor.extract(resolve(xlsx));
                         visualPath = exportGoogleNative(offer.id(), code + "-visual", fileId, name, "application/pdf");
                     } else {
                         var outputPath = "workspace/%s/working/sources/%s-%s".formatted(offer.id(), code, safeName(name));
@@ -166,6 +167,31 @@ public class SourceIngestionService {
         } catch (Exception e) {
             throw new IllegalStateException("Source ingestion failed", e);
         }
+    }
+
+    private String readSheetValues(String spreadsheetId, String metadata, List<String> warnings, String code, String name) {
+        var result = new StringBuilder();
+        try {
+            var root = json.readTree(metadata);
+            var sheets = root.path("sheets");
+            if (!sheets.isArray()) return "[No sheets found in spreadsheet metadata]";
+            for (var sheet : sheets) {
+                var title = sheet.path("properties").path("title").asText("");
+                if (title.isBlank()) continue;
+                var range = "'" + title.replace("'", "''") + "'";
+                try {
+                    var values = text(tools.execute("sheets_get_values", Map.of("spreadsheetId", spreadsheetId, "range", range)));
+                    result.append("\n## Sheet: ").append(title).append("\n").append(values).append("\n");
+                } catch (Exception ex) {
+                    warnings.add(code + " " + name + " [sheet " + title + "]: " + ex.getMessage());
+                    result.append("\n## Sheet: ").append(title).append("\n[Unable to read values: ").append(ex.getMessage()).append("]\n");
+                }
+            }
+        } catch (Exception ex) {
+            warnings.add(code + " " + name + " [sheet metadata]: " + ex.getMessage());
+            return "[Unable to parse spreadsheet metadata: " + ex.getMessage() + "]";
+        }
+        return result.isEmpty() ? "[No readable sheet values found]" : result.toString();
     }
 
     private List<DriveSource> listFilesRecursively(String rootFolderId) throws Exception {
