@@ -10,7 +10,7 @@ import java.util.UUID;
 public interface ArtifactRepositoryPort {
     Artifact save(Artifact artifact);
 
-    List<Artifact> findArtifactsByOfferId(UUID offerId);
+    List<Artifact> findByOfferId(UUID offerId);
 
     Optional<Artifact> findLatest(UUID offerId, ArtifactType type);
 
