@@ -14,6 +14,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   agent-platform:
     build:
       context: ..
@@ -26,6 +35,12 @@ services:
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hash}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hash-embedding-v1}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
+      CACHE_BACKEND: ${CACHE_BACKEND:-valkey}
+      CACHE_URL: ${CACHE_URL:-redis://valkey:6379/0}
+      CACHE_PREFIX: ${CACHE_PREFIX:-agent-platform}
+      EMBEDDING_CACHE_TTL_SECONDS: ${EMBEDDING_CACHE_TTL_SECONDS:-86400}
+      RETRIEVAL_CACHE_TTL_SECONDS: ${RETRIEVAL_CACHE_TTL_SECONDS:-900}
+      COGNITIVE_CACHE_TTL_SECONDS: ${COGNITIVE_CACHE_TTL_SECONDS:-900}
       GOOGLE_WORKSPACE_MCP_ENABLED: ${GOOGLE_WORKSPACE_MCP_ENABLED:-true}
       GOOGLE_WORKSPACE_MCP_COMMAND: node
       GOOGLE_WORKSPACE_MCP_SCRIPT: /opt/mcp/google-workspace/dist/server.js
@@ -39,6 +54,8 @@ services:
       - ../workspace:/opt/workspace
     depends_on:
       postgres:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

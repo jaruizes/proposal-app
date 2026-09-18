@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
+from agent_platform.application.cache import CacheService, stable_cache_key
 from agent_platform.application.embeddings import EmbeddingProvider, EmbeddingRequest
 from agent_platform.domain.retrieval import RetrievalHit, RetrievalMode, RetrievalQuery, RetrievalResult
 
@@ -25,26 +26,33 @@ class RetrievalCandidate:
 
 
 class KnowledgeSearchBackend(Protocol):
-    async def vector_search(
-        self,
-        *,
-        query_vector: list[float],
-        embedding_model: str,
-        query: RetrievalQuery,
-        limit: int,
-    ) -> list[RetrievalCandidate]: ...
-
+    async def vector_search(self, *, query_vector: list[float], embedding_model: str, query: RetrievalQuery, limit: int) -> list[RetrievalCandidate]: ...
     async def keyword_search(self, *, query: RetrievalQuery, limit: int) -> list[RetrievalCandidate]: ...
-
     async def parent_for(self, candidate: RetrievalCandidate) -> RetrievalCandidate | None: ...
 
 
 class KnowledgeRetrievalService:
-    def __init__(self, backend: KnowledgeSearchBackend, embedding_provider: EmbeddingProvider) -> None:
+    def __init__(
+        self,
+        backend: KnowledgeSearchBackend,
+        embedding_provider: EmbeddingProvider,
+        cache: CacheService | None = None,
+        *,
+        cache_ttl_seconds: int = 900,
+    ) -> None:
         self._backend = backend
         self._embedding_provider = embedding_provider
+        self._cache = cache
+        self._cache_ttl_seconds = cache_ttl_seconds
 
     async def retrieve(self, query: RetrievalQuery) -> RetrievalResult:
+        cache_key = stable_cache_key(query.model_dump(mode="json"))
+        if self._cache is not None:
+            cached = await self._cache.get_json("retrieval", cache_key)
+            if cached is not None:
+                result = RetrievalResult.model_validate(cached)
+                return result.model_copy(update={"metadata": {**result.metadata, "cache": "hit"}})
+
         candidate_k = max(query.top_k, query.candidate_k)
         embedding_model: str | None = None
         vector_candidates: list[RetrievalCandidate] = []
@@ -70,34 +78,27 @@ class KnowledgeRetrievalService:
         elif query.mode is RetrievalMode.KEYWORD:
             ranked = [(candidate, candidate.score, RetrievalMode.KEYWORD) for candidate in keyword_candidates]
         else:
-            ranked = self._rrf(
-                vector_candidates,
-                keyword_candidates,
-                vector_weight=query.vector_weight,
-                keyword_weight=query.keyword_weight,
-            )
+            ranked = self._rrf(vector_candidates, keyword_candidates, vector_weight=query.vector_weight, keyword_weight=query.keyword_weight)
 
         hits: list[RetrievalHit] = []
         for candidate, score, method in ranked[: query.top_k]:
             parent = await self._backend.parent_for(candidate) if query.expand_parents else None
-            hits.append(
-                RetrievalHit(
-                    chunk_id=candidate.chunk_id,
-                    document_id=candidate.document_id,
-                    knowledge_base_key=candidate.knowledge_base_key,
-                    title=candidate.title,
-                    content=candidate.content,
-                    score=float(score),
-                    retrieval_method=method,
-                    metadata=candidate.metadata,
-                    source_uri=candidate.source_uri,
-                    parent_chunk_id=parent.chunk_id if parent else None,
-                    parent_content=parent.content if parent else None,
-                    parent_metadata=parent.metadata if parent else None,
-                )
-            )
+            hits.append(RetrievalHit(
+                chunk_id=candidate.chunk_id,
+                document_id=candidate.document_id,
+                knowledge_base_key=candidate.knowledge_base_key,
+                title=candidate.title,
+                content=candidate.content,
+                score=float(score),
+                retrieval_method=method,
+                metadata=candidate.metadata,
+                source_uri=candidate.source_uri,
+                parent_chunk_id=parent.chunk_id if parent else None,
+                parent_content=parent.content if parent else None,
+                parent_metadata=parent.metadata if parent else None,
+            ))
 
-        return RetrievalResult(
+        result = RetrievalResult(
             query=query.text,
             mode=query.mode,
             hits=hits,
@@ -108,18 +109,16 @@ class KnowledgeRetrievalService:
                 "keyword_candidates": len(keyword_candidates),
                 "expand_parents": query.expand_parents,
                 "fusion": "rrf-v1" if query.mode is RetrievalMode.HYBRID else None,
+                "cache": "miss" if self._cache is not None else "disabled",
             },
         )
+        if self._cache is not None:
+            stored = result.model_copy(update={"metadata": {**result.metadata, "cache": "stored"}})
+            await self._cache.set_json("retrieval", cache_key, stored.model_dump(mode="json"), ttl_seconds=self._cache_ttl_seconds)
+        return result
 
     @staticmethod
-    def _rrf(
-        vector_candidates: list[RetrievalCandidate],
-        keyword_candidates: list[RetrievalCandidate],
-        *,
-        vector_weight: float,
-        keyword_weight: float,
-        rrf_k: int = 60,
-    ) -> list[tuple[RetrievalCandidate, float, RetrievalMode]]:
+    def _rrf(vector_candidates: list[RetrievalCandidate], keyword_candidates: list[RetrievalCandidate], *, vector_weight: float, keyword_weight: float, rrf_k: int = 60) -> list[tuple[RetrievalCandidate, float, RetrievalMode]]:
         candidates: dict[UUID, RetrievalCandidate] = {}
         scores: dict[UUID, float] = {}
         for rank, candidate in enumerate(vector_candidates, start=1):
