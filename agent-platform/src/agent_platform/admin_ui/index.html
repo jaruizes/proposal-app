@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Agent Platform Admin</title>
+  <link rel="stylesheet" href="/admin/styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">A</span><div><strong>Agent Platform</strong><small>Administration</small></div></div>
+    <nav id="nav"></nav>
+    <div class="sidebar-foot"><span id="health-dot" class="dot"></span><span id="health-label">Checking platform…</span></div>
+  </aside>
+  <main>
+    <header>
+      <div><span class="eyebrow">INDEPENDENT AGENT PLATFORM</span><h1 id="page-title">Dashboard</h1></div>
+      <div class="header-actions"><button id="refresh-btn" class="secondary">Refresh</button><a class="primary" href="/docs" target="_blank">API docs ↗</a></div>
+    </header>
+    <section id="content"></section>
+  </main>
+</div>
+<div id="toast"></div>
+<script src="/admin/app.js"></script>
+</body>
+</html>
