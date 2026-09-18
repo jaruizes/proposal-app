@@ -5,13 +5,31 @@ services:
       POSTGRES_DB: agent_platform
       POSTGRES_USER: agent_platform
       POSTGRES_PASSWORD: agent_platform
-    ports:["5433:5432"]
-    volumes:[agent-platform-postgres-data:/var/lib/postgresql/data]
-    healthcheck:{test:["CMD-SHELL","pg_isready -U agent_platform -d agent_platform"],interval:5s,timeout:3s,retries:10}
+    ports:
+      - "5433:5432"
+    volumes:
+      - agent-platform-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U agent_platform -d agent_platform
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   valkey:
     image: valkey/valkey:8-alpine
-    ports:["6379:6379"]
-    healthcheck:{test:["CMD","valkey-cli","ping"],interval:5s,timeout:3s,retries:10}
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test:
+        - CMD
+        - valkey-cli
+        - ping
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     environment:
@@ -19,17 +37,23 @@ services:
     ports:
       - "16686:16686"
       - "4319:4317"
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.137.0
-    command:["--config=/etc/otelcol/config.yaml"]
+    command:
+      - --config=/etc/otelcol/config.yaml
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
     ports:
       - "4317:4317"
       - "4318:4318"
-    depends_on:[jaeger]
+    depends_on:
+      - jaeger
+
   agent-platform:
-    build:{context:..,dockerfile:agent-platform/Dockerfile}
+    build:
+      context: ..
+      dockerfile: agent-platform/Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://agent_platform:agent_platform@postgres:5432/agent_platform
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -53,12 +77,27 @@ services:
       GOOGLE_WORKSPACE_MCP_CWD: /opt/mcp/google-workspace
       GOOGLE_OAUTH_CREDENTIALS: /run/secrets/google/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /run/secrets/google/google-token.json
-    ports:["8000:8000"]
-    volumes:["../.secrets:/run/secrets/google","../workspace:/opt/workspace"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../.secrets:/run/secrets/google
+      - ../workspace:/opt/workspace
     depends_on:
-      postgres:{condition:service_healthy}
-      valkey:{condition:service_healthy}
-      otel-collector:{condition:service_started}
-    healthcheck:{test:["CMD","python","-c","import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"],interval:5s,timeout:3s,retries:10}
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   agent-platform-postgres-data:
