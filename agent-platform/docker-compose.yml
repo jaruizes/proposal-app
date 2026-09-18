@@ -59,6 +59,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       ANTHROPIC_DEFAULT_MODEL: ${ANTHROPIC_DEFAULT_MODEL:-claude-sonnet-4-6}
+      ANTHROPIC_MAX_RETRIES: ${ANTHROPIC_MAX_RETRIES:-2}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hash}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hash-embedding-v1}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
@@ -71,6 +72,15 @@ services:
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-proposal-agent-platform}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+      API_KEY_ENABLED: ${API_KEY_ENABLED:-false}
+      API_KEY: ${API_KEY:-}
+      PROTECT_METRICS: ${PROTECT_METRICS:-false}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-31457280}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-240}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-20}
+      DATABASE_POOL_RECYCLE_SECONDS: ${DATABASE_POOL_RECYCLE_SECONDS:-1800}
       GOOGLE_WORKSPACE_MCP_ENABLED: ${GOOGLE_WORKSPACE_MCP_ENABLED:-true}
       GOOGLE_WORKSPACE_MCP_COMMAND: node
       GOOGLE_WORKSPACE_MCP_SCRIPT: /opt/mcp/google-workspace/dist/server.js
@@ -80,7 +90,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../.secrets:/run/secrets/google
+      - ../.secrets:/run/secrets/google:ro
       - ../workspace:/opt/workspace
     depends_on:
       postgres:
@@ -94,9 +104,9 @@ services:
         - CMD
         - python
         - -c
-        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
-      interval: 5s
-      timeout: 3s
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')
+      interval: 10s
+      timeout: 5s
       retries: 10
 
 volumes:

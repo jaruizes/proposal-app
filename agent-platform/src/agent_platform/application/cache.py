@@ -20,6 +20,7 @@ class CacheProvider(Protocol):
     async def get(self,key:str)->str|None:...
     async def set(self,key:str,value:str,ttl_seconds:int|None=None)->None:...
     async def delete_prefix(self,prefix:str)->int:...
+    async def ping(self)->bool:...
 
 
 class InMemoryCacheProvider:
@@ -39,6 +40,7 @@ class InMemoryCacheProvider:
             keys=[key for key in self._values if key.startswith(prefix)]
             for key in keys:self._values.pop(key,None)
             return len(keys)
+    async def ping(self):return True
 
 
 @dataclass
@@ -62,6 +64,7 @@ class CacheService:
     async def invalidate_namespace(self,namespace):
         with timed_span("cache.invalidate",cache_namespace=namespace):
             deleted=await self._provider.delete_prefix(self._namespace_prefix(namespace));self._ns(namespace).invalidations+=1;CACHE_OPS.labels(namespace,"invalidate","ok").inc();return deleted
+    async def ping(self):return await self._provider.ping()
     def stats(self):
         return{namespace:{"hits":stats.hits,"misses":stats.misses,"writes":stats.writes,"invalidations":stats.invalidations} for namespace,stats in sorted(self._stats.items())}
 

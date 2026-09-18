@@ -30,5 +30,8 @@ class ValkeyCacheProvider:
             deleted += int(await self._client.delete(*batch))
         return deleted
 
+    async def ping(self) -> bool:
+        return bool(await self._client.ping())
+
 
 __all__ = ["ValkeyCacheProvider"]
