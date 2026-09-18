@@ -2,13 +2,7 @@ import json
 from typing import Any
 
 from agent_platform.application.models import ModelMessage, ModelRequest, ModelRole
-from agent_platform.domain import (
-    AgentDefinition,
-    AgentExecutionRequest,
-    CognitiveContext,
-    CognitiveSection,
-    SkillDefinition,
-)
+from agent_platform.domain import AgentDefinition, AgentExecutionRequest, CognitiveContext, CognitiveSection, SkillDefinition
 
 
 _SECTION_TITLES = {
@@ -26,26 +20,19 @@ _SECTION_TITLES = {
 class AgentPromptAssembler:
     """Build a provider-neutral model request from definitions plus cognitive context."""
 
-    def build(
-        self,
-        agent: AgentDefinition,
-        skill: SkillDefinition | None,
-        request: AgentExecutionRequest,
-        cognitive_context: CognitiveContext | None = None,
-    ) -> ModelRequest:
+    def build(self, agent: AgentDefinition, skill: SkillDefinition | None, request: AgentExecutionRequest,
+              cognitive_context: CognitiveContext | None = None) -> ModelRequest:
         system_sections = [f"# Agent\n{agent.name}", f"# Role\n{agent.role}"]
         if agent.description:
             system_sections.append(f"# Description\n{agent.description}")
         if agent.capabilities:
             system_sections.append("# Capabilities\n" + "\n".join(f"- {item}" for item in agent.capabilities))
         if skill is not None:
-            system_sections.extend(
-                [
-                    f"# Skill\n{skill.name}",
-                    f"# Skill objective\n{skill.objective}",
-                    f"# Instructions\n{skill.instructions}",
-                ]
-            )
+            system_sections.extend([
+                f"# Skill\n{skill.name}",
+                f"# Skill objective\n{skill.objective}",
+                f"# Instructions\n{skill.instructions}",
+            ])
             if skill.output_schema:
                 system_sections.append(
                     "# Expected output schema\n```json\n"
@@ -77,7 +64,7 @@ class AgentPromptAssembler:
         return ModelRequest(
             system_prompt="\n\n".join(system_sections),
             messages=[ModelMessage(role=ModelRole.USER, content="\n\n".join(user_sections))],
-            model=agent.model_policy.preferred_model,
+            model=request.model or agent.model_policy.preferred_model,
             temperature=agent.model_policy.temperature,
             max_output_tokens=agent.model_policy.max_output_tokens,
             metadata={
@@ -86,6 +73,7 @@ class AgentPromptAssembler:
                 "skill_key": skill.key if skill else None,
                 "skill_version": skill.version if skill else None,
                 "correlation_id": str(request.correlation_id) if request.correlation_id else None,
+                "requested_model": request.model,
                 "cognitive_context": context.summary(),
             },
         )
@@ -103,32 +91,15 @@ class AgentPromptAssembler:
 
         items: list[CognitiveContextItem] = []
         if request.context:
-            items.append(
-                CognitiveContextItem(
-                    key="application-context",
-                    section=CognitiveSection.BUSINESS_CONTEXT,
-                    content=request.context,
-                    source=ApplicationContextContributor.name,
-                    priority=100,
-                    required=True,
-                    label=EpistemicLabel.UNCLASSIFIED,
-                )
-            )
+            items.append(CognitiveContextItem(
+                key="application-context", section=CognitiveSection.BUSINESS_CONTEXT,
+                content=request.context, source=ApplicationContextContributor.name,
+                priority=100, required=True, label=EpistemicLabel.UNCLASSIFIED,
+            ))
         for index, attachment in enumerate(request.attachments):
-            items.append(
-                CognitiveContextItem(
-                    key=f"attachment:{index}:{attachment.name}",
-                    section=CognitiveSection.SOURCE_MATERIAL,
-                    content={
-                        "name": attachment.name,
-                        "media_type": attachment.media_type,
-                        "uri": attachment.uri,
-                        "content": attachment.content,
-                    },
-                    source="attachments",
-                    priority=95,
-                    required=True,
-                    metadata=attachment.metadata,
-                )
-            )
+            items.append(CognitiveContextItem(
+                key=f"attachment:{index}:{attachment.name}", section=CognitiveSection.SOURCE_MATERIAL,
+                content={"name": attachment.name, "media_type": attachment.media_type, "uri": attachment.uri, "content": attachment.content},
+                source="attachments", priority=95, required=True, metadata=attachment.metadata,
+            ))
         return CognitiveContext(items=items)

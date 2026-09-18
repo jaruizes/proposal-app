@@ -5,13 +5,87 @@ services:
       POSTGRES_DB: proposal
       POSTGRES_USER: proposal
       POSTGRES_PASSWORD: proposal
-    ports: ["5432:5432"]
-    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U proposal -d proposal"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  agent-platform-postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: agent_platform
+      POSTGRES_USER: agent_platform
+      POSTGRES_PASSWORD: agent_platform
+    ports:
+      - "5433:5432"
+    volumes:
+      - agent-platform-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_platform -d agent_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  agent-platform:
+    build:
+      context: .
+      dockerfile: agent-platform/Dockerfile
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && python -m agent_platform.bootstrap --sync && uvicorn agent_platform.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agent_platform:agent_platform@agent-platform-postgres:5432/agent_platform
+      AGENT_RUNTIME: ${AGENT_RUNTIME:-langgraph}
+      LANGGRAPH_CHECKPOINT_DATABASE_URL: postgresql://agent_platform:agent_platform@agent-platform-postgres:5432/agent_platform
+      LANGGRAPH_STRICT_MSGPACK: "true"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_DEFAULT_MODEL: ${ANTHROPIC_DEFAULT_MODEL:-claude-sonnet-4-6}
+      ANTHROPIC_TIMEOUT_SECONDS: ${ANTHROPIC_TIMEOUT_SECONDS:-300}
+      ANTHROPIC_MAX_RETRIES: ${ANTHROPIC_MAX_RETRIES:-0}
+      CACHE_BACKEND: valkey
+      CACHE_URL: redis://valkey:6379/0
+      OBSERVABILITY_ENABLED: "true"
+      OTEL_SERVICE_NAME: proposal-agent-platform
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      GOOGLE_WORKSPACE_MCP_ENABLED: "true"
+      GOOGLE_WORKSPACE_MCP_COMMAND: node
+      GOOGLE_WORKSPACE_MCP_SCRIPT: /opt/mcp/google-workspace/dist/server.js
+      GOOGLE_WORKSPACE_MCP_CWD: /opt/mcp/google-workspace
+      GOOGLE_OAUTH_CREDENTIALS: /run/secrets/google/google-oauth-credentials.json
+      GOOGLE_OAUTH_TOKEN: /run/secrets/google/google-token.json
+    volumes:
+      - ./.secrets:/run/secrets/google:ro
+      - proposal-workspace:/opt/workspace
+    ports:
+      - "8000:8000"
+    depends_on:
+      agent-platform-postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   backend:
     build:
@@ -21,8 +95,8 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/proposal
       DB_USER: proposal
       DB_PASSWORD: proposal
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_FALLBACK_TO_MOCK: ${ANTHROPIC_FALLBACK_TO_MOCK:-false}
+      AGENT_PLATFORM_URL: http://agent-platform:8000
+      AGENT_PLATFORM_EXECUTION_TIMEOUT: 10m
       GOOGLE_OAUTH_CREDENTIALS: /app/.secrets/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /app/.secrets/google-token.json
       GOOGLE_SLIDES_TEMPLATE_ID: ${GOOGLE_SLIDES_TEMPLATE_ID:-}
@@ -32,35 +106,52 @@ services:
     volumes:
       - ./.secrets:/app/.secrets:ro
       - proposal-workspace:/app/workspace
-    ports: ["8080:8080"]
+    ports:
+      - "8080:8080"
     depends_on:
-      postgres: { condition: service_healthy }
-      otel-collector: { condition: service_started }
+      postgres:
+        condition: service_healthy
+      agent-platform:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   frontend:
     build: ./frontend
-    ports: ["4200:80"]
-    depends_on: [backend]
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.136.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
-    volumes: ["./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro"]
-    ports: ["4317:4317", "4318:4318"]
-    depends_on: [tempo]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - tempo
 
   tempo:
     image: grafana/tempo:2.8.2
     command: ["-config.file=/etc/tempo.yaml"]
-    volumes: ["./observability/tempo.yaml:/etc/tempo.yaml:ro", "tempo-data:/var/tempo"]
-    ports: ["3200:3200"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
 
   prometheus:
     image: prom/prometheus:v3.6.0
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
-    volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
-    ports: ["9090:9090"]
-    depends_on: [backend]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
 
   grafana:
     image: grafana/grafana:12.2.0
@@ -72,11 +163,15 @@ services:
       - grafana-data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports: ["3000:3000"]
-    depends_on: [prometheus, tempo]
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
 
 volumes:
   postgres-data:
+  agent-platform-postgres-data:
   tempo-data:
   grafana-data:
   proposal-workspace:

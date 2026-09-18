@@ -29,7 +29,7 @@ class Attachment(BaseModel):
 
 
 class AgentExecutionRequest(BaseModel):
-    """Provider-neutral request accepted by the future Agent Platform API."""
+    """Provider-neutral execution request accepted by deterministic clients."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -37,6 +37,7 @@ class AgentExecutionRequest(BaseModel):
     agent_key: str = Field(min_length=1)
     skill_key: str | None = None
     objective: str = Field(min_length=1)
+    model: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
     attachments: list[Attachment] = Field(default_factory=list)
     constraints: dict[str, Any] = Field(default_factory=dict)
@@ -74,8 +75,6 @@ class AgentError(BaseModel):
 
 
 class AgentExecution(BaseModel):
-    """Persistable execution state, independent of any concrete runtime."""
-
     model_config = ConfigDict(frozen=True)
 
     id: UUID = Field(default_factory=uuid4)
@@ -96,8 +95,6 @@ class AgentExecution(BaseModel):
 
 
 class AgentExecutionResult(BaseModel):
-    """Stable result contract returned to deterministic client applications."""
-
     model_config = ConfigDict(frozen=True)
 
     execution_id: UUID
