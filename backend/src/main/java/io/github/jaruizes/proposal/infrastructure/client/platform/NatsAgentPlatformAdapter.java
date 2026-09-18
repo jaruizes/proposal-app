@@ -149,7 +149,7 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
         running = false;
         consumer.shutdownNow();
         try { subscription.unsubscribe(); } catch (Exception ignored) {}
-        try { connection.close(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        try { connection.close(); } catch (Exception ignored) {}
     }
 
     private static String nullIfBlank(String value) { return value == null || value.isBlank() ? null : value; }
