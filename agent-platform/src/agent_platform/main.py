@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -18,11 +19,19 @@ from agent_platform.api.tools import router as tools_router
 from agent_platform.application.hardening import HardeningMiddleware
 from agent_platform.application.observability import configure_observability
 from agent_platform.config import get_settings
+from agent_platform.infrastructure.nats_execution import get_nats_execution_transport
 
 settings=get_settings()
 configure_observability(service_name=settings.otel_service_name,enabled=settings.observability_enabled,otlp_endpoint=settings.otel_exporter_otlp_endpoint)
 
-app=FastAPI(title="Proposal Agent Platform",version="0.1.0",description="Independent runtime and API for configurable agents, skills and cognitive services.")
+@asynccontextmanager
+async def lifespan(app:FastAPI):
+    transport=get_nats_execution_transport()
+    await transport.start()
+    try:yield
+    finally:await transport.stop()
+
+app=FastAPI(title="Proposal Agent Platform",version="0.1.0",description="Independent runtime and API for configurable agents, skills and cognitive services.",lifespan=lifespan)
 app.add_middleware(HardeningMiddleware,settings=settings)
 app.include_router(health_router)
 app.include_router(agents_router);app.include_router(skills_router);app.include_router(executions_router);app.include_router(tools_router);app.include_router(knowledge_router);app.include_router(retrieval_router);app.include_router(memory_router);app.include_router(cache_router);app.include_router(ontology_router);app.include_router(admin_router)

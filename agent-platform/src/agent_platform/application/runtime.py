@@ -26,12 +26,16 @@ class AgentRuntime:
             skill=await self._skills.get(request.skill_key)
             if not skill.enabled:raise AgentRuntimeValidationError("Skill is disabled")
             if request.skill_key not in agent.skills:raise AgentRuntimeValidationError("Skill is not assigned to agent")
-        execution=AgentExecution(correlation_id=request.correlation_id,agent_key=request.agent_key,skill_key=request.skill_key,objective=request.objective,trace_id=trace_id_or_new())
+        if request.execution_id is not None:
+            existing=await self._executions.get(request.execution_id)
+            if existing is not None:return existing
+        execution=AgentExecution(id=request.execution_id or __import__("uuid").uuid4(),correlation_id=request.correlation_id,agent_key=request.agent_key,skill_key=request.skill_key,objective=request.objective,trace_id=trace_id_or_new())
         await self._executions.create(execution);await self._record(execution,"execution.queued")
         return execution
 
     async def execute(self,request):
         execution=await self.submit(request)
+        if execution.status in {ExecutionStatus.COMPLETED,ExecutionStatus.FAILED,ExecutionStatus.CANCELLED}:return execution
         return await self.run(execution,request)
 
     async def run(self,execution,request):

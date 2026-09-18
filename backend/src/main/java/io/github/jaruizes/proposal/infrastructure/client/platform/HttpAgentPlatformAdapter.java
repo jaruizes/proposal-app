@@ -6,7 +6,7 @@ import io.github.jaruizes.proposal.domain.model.AgentTask;
 import io.github.jaruizes.proposal.domain.model.LlmRequest;
 import io.github.jaruizes.proposal.domain.model.LlmResult;
 import io.github.jaruizes.proposal.domain.ports.AgentPlatformPort;
-import org.springframework.http.HttpHeaders;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.*;
 
 @Component
+@ConditionalOnProperty(name = "agent-platform.transport", havingValue = "http")
 public class HttpAgentPlatformAdapter implements AgentPlatformPort {
     private final AgentPlatformProperties properties;
     private final WebClient client;
@@ -31,6 +32,7 @@ public class HttpAgentPlatformAdapter implements AgentPlatformPort {
     @Override
     public LlmResult execute(AgentTask task, String model, String context, List<LlmRequest.Attachment> attachments) {
         var body = new LinkedHashMap<String,Object>();
+        body.put("execution_id", task.id().toString());
         body.put("correlation_id", task.offerId().toString());
         body.put("agent_key", task.agentKey());
         body.put("skill_key", task.skillKey());
@@ -54,70 +56,44 @@ public class HttpAgentPlatformAdapter implements AgentPlatformPort {
                 "metadata", Map.of("visual_attachment", true, "source", "spring", "base64_omitted", true)
         )).toList());
 
-        JsonNode submitted = client.post()
-                .uri("/v1/executions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-                .block();
-
+        JsonNode submitted = client.post().uri("/v1/executions").contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body).retrieve().bodyToMono(JsonNode.class).block();
         if (submitted == null || submitted.path("id").asText().isBlank()) {
             throw new DomainException("Agent Platform returned an invalid submission response");
         }
         var executionId = submitted.path("id").asText();
         waitForCompletion(executionId);
 
-        JsonNode result = client.get()
-                .uri("/v1/executions/{id}/result", executionId)
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-                .block();
-
+        JsonNode result = client.get().uri("/v1/executions/{id}/result", executionId)
+                .retrieve().bodyToMono(JsonNode.class).block();
         if (result == null) throw new DomainException("Agent Platform returned an empty result");
         if (!"COMPLETED".equals(result.path("status").asText())) {
-            var message = result.path("error").path("message").asText("Agent Platform execution failed");
-            throw new DomainException(message);
+            throw new DomainException(result.path("error").path("message").asText("Agent Platform execution failed"));
         }
         var artifacts = result.path("artifacts");
         if (!artifacts.isArray() || artifacts.isEmpty()) throw new DomainException("Agent Platform returned no artifact");
-
         var usage = result.path("usage");
-        return new LlmResult(
-                artifacts.get(0).path("content").asText(),
-                result.path("model").asText(model),
-                usage.path("input_tokens").asLong(0),
-                usage.path("output_tokens").asLong(0),
-                nullIfBlank(result.path("provider_request_id").asText())
-        );
+        return new LlmResult(artifacts.get(0).path("content").asText(), result.path("model").asText(model),
+                usage.path("input_tokens").asLong(0), usage.path("output_tokens").asLong(0),
+                nullIfBlank(result.path("provider_request_id").asText()));
     }
 
     private void waitForCompletion(String executionId) {
         var deadline = Instant.now().plus(properties.executionTimeout());
         while (Instant.now().isBefore(deadline)) {
-            JsonNode execution = client.get()
-                    .uri("/v1/executions/{id}", executionId)
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .block();
+            JsonNode execution = client.get().uri("/v1/executions/{id}", executionId)
+                    .retrieve().bodyToMono(JsonNode.class).block();
             if (execution == null) throw new DomainException("Agent Platform execution disappeared");
             var status = execution.path("status").asText();
             if ("COMPLETED".equals(status)) return;
             if ("FAILED".equals(status) || "CANCELLED".equals(status)) {
-                var message = execution.path("error").path("message").asText("Agent Platform execution " + status);
-                throw new DomainException(message);
+                throw new DomainException(execution.path("error").path("message").asText("Agent Platform execution " + status));
             }
-            try {
-                Thread.sleep(properties.pollInterval().toMillis());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new DomainException("Interrupted while waiting for Agent Platform execution");
-            }
+            try { Thread.sleep(properties.pollInterval().toMillis()); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new DomainException("Interrupted while waiting for Agent Platform execution"); }
         }
         throw new DomainException("Agent Platform execution timed out after " + properties.executionTimeout());
     }
 
-    private static String nullIfBlank(String value) {
-        return value == null || value.isBlank() ? null : value;
-    }
+    private static String nullIfBlank(String value) { return value == null || value.isBlank() ? null : value; }
 }

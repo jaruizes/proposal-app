@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 
@@ -33,19 +32,17 @@ public class AgentRuntimeService {
         this.meterRegistry = meterRegistry;
     }
 
-    public LlmResult execute(AgentTask task, String model, String context) {
-        return execute(task, model, context, List.of());
-    }
+    public LlmResult execute(AgentTask task, String model, String context) { return execute(task, model, context, List.of()); }
 
     public LlmResult execute(AgentTask task, String model, String context, List<LlmRequest.Attachment> attachments) {
         var started = Instant.now();
-        var id = UUID.randomUUID();
+        var id = task.id();
         var observation = Observation.createNotStarted("proposal.agent.platform.execution", observationRegistry)
                 .lowCardinalityKeyValue("agent", task.agentKey())
                 .lowCardinalityKeyValue("skill", task.skillKey() == null ? "none" : task.skillKey())
                 .lowCardinalityKeyValue("phase", task.phase().name().toLowerCase(Locale.ROOT))
                 .highCardinalityKeyValue("offer.id", task.offerId().toString())
-                .highCardinalityKeyValue("local.agent.execution.id", id.toString())
+                .highCardinalityKeyValue("agent.execution.id", id.toString())
                 .start();
 
         executions.save(new AgentExecution(id, task.offerId(), task.phase(), task.agentKey(), AgentTaskStatus.RUNNING,
@@ -77,16 +74,12 @@ public class AgentRuntimeService {
                     .tag("agent", task.agentKey()).tag("phase", task.phase().name().toLowerCase(Locale.ROOT))
                     .tag("status", "error").register(meterRegistry));
             throw ex;
-        } finally {
-            observation.stop();
-        }
+        } finally { observation.stop(); }
     }
 
     public List<LlmResult> executeParallel(List<AgentTask> tasks, String model, String context) {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            var futures = tasks.stream()
-                    .map(task -> CompletableFuture.supplyAsync(() -> execute(task, model, context), executor))
-                    .toList();
+            var futures = tasks.stream().map(task -> CompletableFuture.supplyAsync(() -> execute(task, model, context), executor)).toList();
             return futures.stream().map(CompletableFuture::join).toList();
         }
     }

@@ -29,10 +29,9 @@ class Attachment(BaseModel):
 
 
 class AgentExecutionRequest(BaseModel):
-    """Provider-neutral execution request accepted by deterministic clients."""
-
     model_config = ConfigDict(frozen=True)
 
+    execution_id: UUID | None = None
     correlation_id: UUID | None = None
     agent_key: str = Field(min_length=1)
     skill_key: str | None = None
@@ -45,7 +44,6 @@ class AgentExecutionRequest(BaseModel):
 
 class AgentArtifact(BaseModel):
     model_config = ConfigDict(frozen=True)
-
     type: str = Field(min_length=1)
     content: str
     media_type: str = "text/markdown"
@@ -54,7 +52,6 @@ class AgentArtifact(BaseModel):
 
 class AgentUsage(BaseModel):
     model_config = ConfigDict(frozen=True)
-
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     cache_read_tokens: int = Field(default=0, ge=0)
@@ -67,7 +64,6 @@ class AgentUsage(BaseModel):
 
 class AgentError(BaseModel):
     model_config = ConfigDict(frozen=True)
-
     code: str = Field(min_length=1)
     message: str = Field(min_length=1)
     retryable: bool = False
@@ -76,7 +72,6 @@ class AgentError(BaseModel):
 
 class AgentExecution(BaseModel):
     model_config = ConfigDict(frozen=True)
-
     id: UUID = Field(default_factory=uuid4)
     correlation_id: UUID | None = None
     agent_key: str = Field(min_length=1)
@@ -96,7 +91,6 @@ class AgentExecution(BaseModel):
 
 class AgentExecutionResult(BaseModel):
     model_config = ConfigDict(frozen=True)
-
     execution_id: UUID
     status: ExecutionStatus
     artifacts: list[AgentArtifact] = Field(default_factory=list)

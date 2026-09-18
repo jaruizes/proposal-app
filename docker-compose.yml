@@ -31,6 +31,20 @@ services:
       timeout: 3s
       retries: 10
 
+  nats:
+    image: nats:2.11-alpine
+    command: ["-js", "-m", "8222", "-sd", "/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz | grep -q ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   valkey:
     image: valkey/valkey:8-alpine
     ports:
@@ -54,6 +68,8 @@ services:
       AGENT_RUNTIME: ${AGENT_RUNTIME:-langgraph}
       LANGGRAPH_CHECKPOINT_DATABASE_URL: postgresql://agent_platform:agent_platform@agent-platform-postgres:5432/agent_platform
       LANGGRAPH_STRICT_MSGPACK: "true"
+      NATS_ENABLED: "true"
+      NATS_URL: nats://nats:4222
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_DEFAULT_MODEL: ${ANTHROPIC_DEFAULT_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_TIMEOUT_SECONDS: ${ANTHROPIC_TIMEOUT_SECONDS:-300}
@@ -77,6 +93,8 @@ services:
     depends_on:
       agent-platform-postgres:
         condition: service_healthy
+      nats:
+        condition: service_healthy
       valkey:
         condition: service_healthy
       otel-collector:
@@ -95,8 +113,10 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/proposal
       DB_USER: proposal
       DB_PASSWORD: proposal
+      AGENT_PLATFORM_TRANSPORT: nats
       AGENT_PLATFORM_URL: http://agent-platform:8000
       AGENT_PLATFORM_EXECUTION_TIMEOUT: 10m
+      NATS_URL: nats://nats:4222
       GOOGLE_OAUTH_CREDENTIALS: /app/.secrets/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /app/.secrets/google-token.json
       GOOGLE_SLIDES_TEMPLATE_ID: ${GOOGLE_SLIDES_TEMPLATE_ID:-}
@@ -110,6 +130,8 @@ services:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      nats:
         condition: service_healthy
       agent-platform:
         condition: service_healthy
@@ -172,6 +194,7 @@ services:
 volumes:
   postgres-data:
   agent-platform-postgres-data:
+  nats-data:
   tempo-data:
   grafana-data:
   proposal-workspace:
