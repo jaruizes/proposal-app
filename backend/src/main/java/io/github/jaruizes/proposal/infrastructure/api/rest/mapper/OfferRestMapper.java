@@ -21,7 +21,7 @@ public final class OfferRestMapper {
         }
         var prs=phases.stream().sorted(Comparator.comparingInt(p->p.phase().ordinal()))
                 .map(p->new OfferResponse.PhaseResponse(key(p.phase()),p.phase().label(),phaseStatus(p.status()),
-                        Optional.ofNullable(byPhase.get(p.phase())).map(StringBuilder::toString).orElse(null))).toList();
+                        Optional.ofNullable(byPhase.get(p.phase())).map(StringBuilder::toString).orElse(null),p.errorMessage())).toList();
         return new OfferResponse(o.id(),o.name(),o.customer(),o.presentationLanguage(),o.inputDriveFolder(),o.outputDriveFolder(),
                 o.presentationName(),o.aiProvider(),o.models(),o.presentationGuidance(),o.currentPhase().label(),overall(o.status()),o.createdAt(),prs);
     }

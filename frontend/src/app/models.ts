@@ -1,5 +1,5 @@
-export type PhaseStatus='pending'|'working'|'waiting_approval'|'approved'|'cancelled';
-export interface Phase{key:string;label:string;status:PhaseStatus;output?:string;}
+export type PhaseStatus='pending'|'working'|'waiting_approval'|'approved'|'cancelled'|'failed'|'stale';
+export interface Phase{key:string;label:string;status:PhaseStatus;output?:string;errorMessage?:string;}
 export interface SectionConfig{name:string;maxSlides:number;enabled:boolean;}
 export interface AgentExecutionTelemetry{
   id:string;

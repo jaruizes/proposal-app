@@ -36,9 +36,21 @@
 
     <ng-container *ngIf="view() === 'detail' && selected() as exec">
       <section class="detail-summary panel"><div><span class="mono muted">{{exec.id}}</span><h2>{{exec.presentationName}}</h2></div><span class="status-pill" [ngClass]="statusClass(exec.overallStatus)"><i></i>{{exec.overallStatus}}</span></section>
+      <section class="offer-error-panel" *ngIf="exec.overallStatus === 'Error'">
+        <div class="offer-error-icon">!</div>
+        <div class="offer-error-copy">
+          <strong>{{offerErrorTitle()}}</strong>
+          <p>{{offerFriendlyError()}}</p>
+          <details *ngIf="offerErrorMessage()">
+            <summary>Ver detalle técnico</summary>
+            <pre>{{offerErrorMessage()}}</pre>
+          </details>
+        </div>
+      </section>
+
       <section class="state-machine panel">
         <div class="panel-head"><div><h2>Flujo de generación</h2><p>Cada fase requiere validación antes de continuar.</p></div></div>
-        <div class="steps"><ng-container *ngFor="let p of exec.phases; let i = index"><button class="step" [class.clickable]="phaseClickable(p)" [ngClass]="phaseClass(p.status)" (click)="choosePhase(p)"><span class="step-index">{{p.status === 'approved' ? '✓' : i + 1}}</span><span><strong>{{p.label}}</strong><small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : 'Pendiente'}}</small></span></button><div class="step-line" *ngIf="i < exec.phases.length - 1"></div></ng-container></div>
+        <div class="steps"><ng-container *ngFor="let p of exec.phases; let i = index"><button class="step" [class.clickable]="phaseClickable(p)" [ngClass]="phaseClass(p.status)" (click)="choosePhase(p)"><span class="step-index">{{p.status === 'approved' ? '✓' : p.status === 'failed' ? '!' : i + 1}}</span><span><strong>{{p.label}}</strong><small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : p.status === 'failed' ? 'Error' : 'Pendiente'}}</small></span></button><div class="step-line" *ngIf="i < exec.phases.length - 1"></div></ng-container></div>
       </section>
 
       <section class="panel agent-activity-panel">
@@ -73,7 +85,10 @@
               <div><strong>{{formatTokens(agent.outputTokens)}}</strong><small>salida</small></div>
               <div><strong>{{formatTokens(agent.inputTokens + agent.outputTokens)}}</strong><small>total</small></div>
             </div>
-            <div class="agent-error" *ngIf="agent.errorMessage"><strong>Error</strong><span>{{agent.errorMessage}}</span></div>
+            <div class="agent-error friendly" *ngIf="agent.errorMessage">
+              <div><strong>Qué ha ocurrido</strong><span>{{friendlyAgentError(agent)}}</span></div>
+              <details><summary>Ver detalle técnico</summary><pre>{{agent.errorMessage}}</pre></details>
+            </div>
           </article>
         </div>
       </section>

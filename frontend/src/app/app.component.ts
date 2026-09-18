@@ -14,7 +14,7 @@ export class AppComponent {
   selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
   selectedArtifact=computed(()=>this.selectedArtifacts()[this.selectedArtifactIndex()]||this.selectedArtifacts()[0]);
   stats=computed(()=>{const items=this.svc.executions();return{total:items.length,working:items.filter(x=>x.overallStatus==='Trabajando').length,waiting:items.filter(x=>x.overallStatus==='Esperando aprobación').length};});
-  agentStats=computed(()=>{const items=this.svc.agentExecutions();return{running:items.filter(x=>x.status==='RUNNING').length,failed:items.filter(x=>x.status==='FAILED').length,input:items.reduce((sum,x)=>sum+(x.inputTokens||0),0),output:items.reduce((sum,x)=>sum+(x.outputTokens||0),0)};});
+  agentStats=computed(()=>{const items=this.svc.agentExecutions();return{running:items.filter(x=>x.status==='RUNNING').length,failed:items.filter(x=>x.status==='FAILED').length,input:items.reduce((sum,x)=>sum+(x.inputTokens||0),0),output:items.reduce((sum,x)=>sum+(x.outputTokens||0),0)};});\n  latestFailedAgent=computed(()=>this.svc.agentExecutions().find(x=>x.status==='FAILED'));\n  failedPhase=computed(()=>this.selected()?.phases.find(p=>p.status==='failed'));\n  offerErrorMessage=computed(()=>this.latestFailedAgent()?.errorMessage||this.failedPhase()?.errorMessage||'');
   openCreate(){this.draft=this.newDraft();this.createOpen.set(true);} closeCreate(){this.createOpen.set(false);} saveCreate(){this.svc.create(this.draft);this.createOpen.set(false);}
   openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);this.svc.watchAgents(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
   back(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
@@ -27,6 +27,33 @@ export class AppComponent {
   agentDuration(agent:AgentExecutionTelemetry){const start=agent.startedAt?new Date(agent.startedAt).getTime():0;if(!start)return '—';const end=agent.completedAt?new Date(agent.completedAt).getTime():Date.now();const seconds=Math.max(0,Math.round((end-start)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
   agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Análisis',STRATEGY:'Estrategia',SOLUTION:'Solución',SLIDE_PLAN:'Plan narrativo',PRESENTATION:'Presentación'};return labels[phase]||phase;}
   formatTokens(value:number){return new Intl.NumberFormat('es-ES').format(value||0);}
+  friendlyErrorCause(raw:string|undefined):string {
+    if(!raw?.trim())return 'Se produjo un error inesperado durante la ejecución del agente.';
+    const value=raw.toLowerCase();
+    if(/max[_ -]?tokens|token limit|too many tokens|context window|context length|maximum.*token/.test(value)) return 'se alcanzó el límite máximo de tokens permitido para esta ejecución.';
+    if(/timeout|timed out|readtimeout|apitimeouterror/.test(value)) return 'la generación superó el tiempo máximo permitido.';
+    if(/rate.?limit|too many requests|\\b429\\b|overload/.test(value)) return 'el proveedor de IA está temporalmente saturado y no pudo atender la solicitud.';
+    if(/connection|network|dns|connection reset|connection refused|broken pipe|unreachable/.test(value)) return 'se produjo un problema de red al comunicarse con un servicio necesario.';
+    if(/nats|jetstream|command.*error|message.*ack/.test(value)) return 'se produjo un problema en la comunicación interna con la plataforma de agentes.';
+    if(/knowledge|retriev|vector|embedding/.test(value)) return 'no se pudo recuperar correctamente la información necesaria de la base de conocimiento.';
+    if(/tool|mcp|google workspace/.test(value)) return 'no se pudo acceder a una herramienta externa necesaria para completar la tarea.';
+    if(/validat|schema|format|parse|invalid json/.test(value)) return 'la respuesta generada no cumplía el formato esperado para esta fase.';
+    if(/auth|unauthor|forbidden|api.?key|\\b401\\b|\\b403\\b/.test(value)) return 'no se pudo autenticar correctamente contra uno de los servicios necesarios.';
+    return 'se produjo un error inesperado durante la ejecución del agente.';
+  }
+  friendlyAgentError(agent:AgentExecutionTelemetry):string {
+    const objective=(agent.objective||'ejecutar la fase '+this.agentPhaseLabel(agent.phase).toLowerCase()).trim();
+    const readable=objective.charAt(0).toLowerCase()+objective.slice(1);
+    return 'El agente encargado de '+readable+' terminó con error: '+this.friendlyErrorCause(agent.errorMessage);
+  }
+  offerErrorTitle():string {
+    const phase=this.failedPhase();
+    return phase?'No se pudo completar la fase "'+phase.label+'".':'No se pudo completar la ejecución de la oferta.';
+  }
+  offerFriendlyError():string {
+    const agent=this.latestFailedAgent();
+    return agent?this.friendlyAgentError(agent):'La fase no pudo completarse: '+this.friendlyErrorCause(this.offerErrorMessage());
+  }
 
   phaseArtifacts(phase:Phase|undefined):PhaseArtifact[]{
     const output=phase?.output?.trim();
