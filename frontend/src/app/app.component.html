@@ -50,7 +50,19 @@
 
       <section class="state-machine panel">
         <div class="panel-head"><div><h2>Flujo de generación</h2><p>Cada fase requiere validación antes de continuar.</p></div></div>
-        <div class="steps"><ng-container *ngFor="let p of exec.phases; let i = index"><button class="step" [class.clickable]="phaseClickable(p)" [ngClass]="phaseClass(p.status)" (click)="choosePhase(p)"><span class="step-index">{{p.status === 'approved' ? '✓' : p.status === 'failed' ? '!' : i + 1}}</span><span><strong>{{p.label}}</strong><small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : p.status === 'failed' ? 'Error' : 'Pendiente'}}</small></span></button><div class="step-line" *ngIf="i < exec.phases.length - 1"></div></ng-container></div>
+        <div class="steps">
+          <ng-container *ngFor="let p of exec.phases; let i = index">
+            <div class="step" [class.clickable]="phaseClickable(p)" [ngClass]="phaseClass(p.status)" (click)="choosePhase(p)">
+              <span class="step-index">{{p.status === 'approved' ? '✓' : p.status === 'failed' ? '!' : i + 1}}</span>
+              <span class="step-content">
+                <strong>{{p.label}}</strong>
+                <small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : p.status === 'failed' ? 'Error' : 'Pendiente'}}</small>
+                <button *ngIf="p.status === 'waiting_approval'" class="step-approve-btn" (click)="$event.stopPropagation(); selectedPhaseKey.set(p.key); approve()">✓ Validar y continuar</button>
+              </span>
+            </div>
+            <div class="step-line" *ngIf="i < exec.phases.length - 1"></div>
+          </ng-container>
+        </div>
       </section>
 
       <section class="panel agent-activity-panel">
@@ -122,7 +134,6 @@
           <div class="chat-head"><div><span class="online-dot"></span><strong>Refinar con IA</strong></div><small>La fase volverá a “Trabajando”</small></div>
           <div class="chat-body"><div class="bot-message">Describe el cambio que quieres aplicar al artefacto de <strong>{{phase.label}}</strong>.</div></div>
           <div class="chat-input"><textarea [(ngModel)]="chatMessage" placeholder="Ej. Cambia Kubernetes por OpenShift..."></textarea><button (click)="sendRefine()">Enviar ↗</button></div>
-          <button class="approve-btn" (click)="approve()">✓ Validar y continuar</button>
         </aside>
       </section>
       <ng-template #chooseHint><div class="panel empty-state">Selecciona un paso validado o pendiente de aprobación para ver su salida.</div></ng-template>
