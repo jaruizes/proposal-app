@@ -26,15 +26,21 @@ class Knowledge:
 
 
 @pytest.mark.asyncio
-async def test_concepts_relationships_and_alias_tagging():
+async def test_concepts_relationships_alias_tagging_and_query_expansion():
     repo=Repo();service=OntologyService(repo,Knowledge())
     await service.create_concept(OntologyConcept(key="technology.openshift",name="OpenShift",type="technology",aliases=["OCP","Red Hat OpenShift"]))
     await service.create_concept(OntologyConcept(key="platform.container",name="Container Platform",type="platform"))
+    await service.create_concept(OntologyConcept(key="platform.kubernetes",name="Kubernetes",type="platform",aliases=["K8s"]))
     relationship=await service.create_relationship(OntologyRelationship(source_key="technology.openshift",relation="IS_A",target_key="platform.container"))
+    await service.create_relationship(OntologyRelationship(source_key="platform.container",relation="RELATED_TO",target_key="platform.kubernetes"))
     assert relationship.relation=="IS_A"
     target=uuid4();mappings=await service.tag_text(target_type=OntologyTargetType.CHUNK,target_id=target,content="The target runtime is OCP with GitOps.")
     assert [m.concept_key for m in mappings]==["technology.openshift"]
     assert mappings[0].metadata["matched_term"]=="OCP"
+    context=await service.resolve_query("We need a Container Platform",max_hops=2,max_concepts=10)
+    assert context.seed_concepts==["platform.container"]
+    assert context.concept_weights["technology.openshift"]==pytest.approx(0.7)
+    assert context.concept_weights["platform.kubernetes"]==pytest.approx(0.7)
 
 
 @pytest.mark.asyncio

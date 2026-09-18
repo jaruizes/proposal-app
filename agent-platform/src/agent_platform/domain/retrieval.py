@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class RetrievalMode(StrEnum):
     VECTOR = "vector"
     KEYWORD = "keyword"
+    GRAPH = "graph"
     HYBRID = "hybrid"
 
 
@@ -33,6 +34,10 @@ class RetrievalQuery(BaseModel):
     expand_parents: bool = True
     vector_weight: float = Field(default=1.0, gt=0)
     keyword_weight: float = Field(default=1.0, gt=0)
+    ontology_enabled: bool = True
+    ontology_weight: float = Field(default=1.0, gt=0)
+    ontology_max_hops: int = Field(default=1, ge=0, le=3)
+    ontology_max_concepts: int = Field(default=12, ge=1, le=50)
 
 
 class RetrievalHit(BaseModel):

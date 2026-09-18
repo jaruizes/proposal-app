@@ -63,8 +63,8 @@ KnowledgeIngestionServiceDep=Annotated[KnowledgeIngestionService,Depends(get_kno
 async def get_knowledge_file_service(knowledge_service:KnowledgeServiceDep,ingestion_service:KnowledgeIngestionServiceDep)->KnowledgeFileService:return KnowledgeFileService(knowledge_service,ingestion_service)
 KnowledgeFileServiceDep=Annotated[KnowledgeFileService,Depends(get_knowledge_file_service)]
 
-async def get_knowledge_retrieval_service(session:Annotated[AsyncSession,Depends(get_session)],embedding_provider:EmbeddingProviderDep,cache:CacheServiceDep)->KnowledgeRetrievalService:
-    settings=get_settings();return KnowledgeRetrievalService(PostgresKnowledgeSearchBackend(session),embedding_provider,cache,cache_ttl_seconds=settings.retrieval_cache_ttl_seconds)
+async def get_knowledge_retrieval_service(session:Annotated[AsyncSession,Depends(get_session)],embedding_provider:EmbeddingProviderDep,cache:CacheServiceDep,ontology:OntologyServiceDep)->KnowledgeRetrievalService:
+    settings=get_settings();return KnowledgeRetrievalService(PostgresKnowledgeSearchBackend(session),embedding_provider,cache,ontology,cache_ttl_seconds=settings.retrieval_cache_ttl_seconds)
 KnowledgeRetrievalServiceDep=Annotated[KnowledgeRetrievalService,Depends(get_knowledge_retrieval_service)]
 
 async def get_cognitive_context_builder(retrieval_service:KnowledgeRetrievalServiceDep,memory_service:MemoryServiceDep,cache:CacheServiceDep)->CognitiveContextBuilder:

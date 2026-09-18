@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
@@ -12,6 +13,17 @@ from agent_platform.domain.ontology import OntologyConcept, OntologyMapping, Ont
 class OntologyError(RuntimeError): pass
 class OntologyNotFoundError(OntologyError): pass
 class OntologyConflictError(OntologyError): pass
+
+
+@dataclass(frozen=True)
+class OntologyQueryContext:
+    seed_concepts: list[str]
+    concept_weights: dict[str, float]
+    max_hops: int
+
+    @property
+    def expanded_concepts(self) -> list[str]:
+        return [key for key in self.concept_weights if key not in set(self.seed_concepts)]
 
 
 class OntologyRepository(Protocol):
@@ -66,19 +78,44 @@ class OntologyService:
     async def list_mappings(self,target_type:OntologyTargetType|None=None,target_id:UUID|None=None):
         return await self._repository.list_mappings(target_type,target_id)
 
+    async def match_concepts(self, content: str, *, max_concepts: int = 50) -> list[OntologyConcept]:
+        normalized=content.casefold()
+        matches=[]
+        for concept in await self._repository.list_concepts():
+            if not concept.enabled: continue
+            terms=[concept.name,*concept.aliases,concept.key.split(".")[-1].replace("-"," ")]
+            if any(re.search(r"(?<!\w)"+re.escape(term.strip().casefold())+r"(?!\w)",normalized) for term in terms if term and term.strip()):
+                matches.append(concept)
+            if len(matches)>=max_concepts: break
+        return matches
+
+    async def resolve_query(self, text: str, *, max_hops: int = 1, max_concepts: int = 12) -> OntologyQueryContext:
+        seeds=await self.match_concepts(text,max_concepts=max_concepts)
+        seed_keys=[concept.key for concept in seeds]
+        weights={key:1.0 for key in seed_keys}
+        frontier=list(seed_keys)
+        for depth in range(1,max_hops+1):
+            if not frontier or len(weights)>=max_concepts: break
+            next_frontier=[]
+            for key in frontier:
+                for relationship in await self._repository.list_relationships(key):
+                    neighbor=relationship.target_key if relationship.source_key==key else relationship.source_key
+                    if neighbor in weights: continue
+                    weights[neighbor]=max(0.35,1.0-(0.3*depth))
+                    next_frontier.append(neighbor)
+                    if len(weights)>=max_concepts: break
+                if len(weights)>=max_concepts: break
+            frontier=next_frontier
+        return OntologyQueryContext(seed_concepts=seed_keys,concept_weights=weights,max_hops=max_hops)
+
     async def tag_text(self,*,target_type:OntologyTargetType,target_id:UUID,content:str)->list[OntologyMapping]:
-        concepts=await self._repository.list_concepts()
+        concepts=await self.match_concepts(content)
         normalized=content.casefold()
         mappings=[]
         for concept in concepts:
-            if not concept.enabled: continue
             terms=[concept.name,*concept.aliases,concept.key.split(".")[-1].replace("-"," ")]
-            matched=None
-            for term in sorted({t.strip() for t in terms if t and t.strip()},key=len,reverse=True):
-                if re.search(r"(?<!\w)"+re.escape(term.casefold())+r"(?!\w)",normalized):
-                    matched=term; break
-            if matched:
-                mappings.append(OntologyMapping(target_type=target_type,target_id=target_id,concept_key=concept.key,confidence=1.0,source="deterministic",metadata={"matched_term":matched}))
+            matched=next((term for term in sorted({t.strip() for t in terms if t and t.strip()},key=len,reverse=True) if re.search(r"(?<!\w)"+re.escape(term.casefold())+r"(?!\w)",normalized)),concept.name)
+            mappings.append(OntologyMapping(target_type=target_type,target_id=target_id,concept_key=concept.key,confidence=1.0,source="deterministic",metadata={"matched_term":matched}))
         result=await self._repository.replace_mappings(target_type,target_id,mappings)
         await self._invalidate()
         return result
