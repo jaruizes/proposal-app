@@ -10,26 +10,19 @@ services:
     volumes:
       - agent-platform-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U agent_platform -d agent_platform
+      test: [CMD-SHELL, "pg_isready -U agent_platform -d agent_platform"]
       interval: 5s
       timeout: 3s
       retries: 10
-
   valkey:
     image: valkey/valkey:8-alpine
     ports:
       - "6379:6379"
     healthcheck:
-      test:
-        - CMD
-        - valkey-cli
-        - ping
+      test: [CMD, valkey-cli, ping]
       interval: 5s
       timeout: 3s
       retries: 10
-
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     environment:
@@ -37,7 +30,6 @@ services:
     ports:
       - "16686:16686"
       - "4319:4317"
-
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.137.0
     command:
@@ -49,7 +41,6 @@ services:
       - "4318:4318"
     depends_on:
       - jaeger
-
   agent-platform:
     build:
       context: ..
@@ -57,9 +48,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://agent_platform:agent_platform@postgres:5432/agent_platform
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       ANTHROPIC_DEFAULT_MODEL: ${ANTHROPIC_DEFAULT_MODEL:-claude-sonnet-4-6}
-      ANTHROPIC_MAX_RETRIES: ${ANTHROPIC_MAX_RETRIES:-2}
+      ANTHROPIC_TIMEOUT_SECONDS: ${ANTHROPIC_TIMEOUT_SECONDS:-300}
+      ANTHROPIC_MAX_RETRIES: ${ANTHROPIC_MAX_RETRIES:-0}
+      ANTHROPIC_RETRY_BASE_SECONDS: ${ANTHROPIC_RETRY_BASE_SECONDS:-0.5}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hash}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hash-embedding-v1}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
@@ -100,14 +92,9 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
       interval: 10s
       timeout: 5s
       retries: 10
-
 volumes:
   agent-platform-postgres-data:

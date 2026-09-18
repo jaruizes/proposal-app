@@ -11,36 +11,48 @@ from agent_platform.application.registries import AgentRegistry,DefinitionNotFou
 from agent_platform.application.repositories import ExecutionRepository
 from agent_platform.domain import AgentArtifact,AgentError,AgentExecution,AgentExecutionRequest,AgentExecutionResult,AgentUsage,ExecutionStatus
 
-
 class AgentRuntimeValidationError(RuntimeError):pass
 
-
 class AgentRuntime:
-    def __init__(self,agents,skills,executions,model_provider,prompt_assembler=None,cognitive_context_builder=None,memory_service=None,cache=None)->None:self._agents=agents;self._skills=skills;self._executions=executions;self._model_provider=model_provider;self._prompt_assembler=prompt_assembler or AgentPromptAssembler();self._cognitive_context_builder=cognitive_context_builder or CognitiveContextBuilder();self._memory_service=memory_service;self._cache=cache
+    def __init__(self,agents,skills,executions,model_provider,prompt_assembler=None,cognitive_context_builder=None,memory_service=None,cache=None)->None:
+        self._agents=agents;self._skills=skills;self._executions=executions;self._model_provider=model_provider
+        self._prompt_assembler=prompt_assembler or AgentPromptAssembler();self._cognitive_context_builder=cognitive_context_builder or CognitiveContextBuilder()
+        self._memory_service=memory_service;self._cache=cache
+
+    async def submit(self,request):
+        agent=await self._agents.get(request.agent_key)
+        if not agent.enabled:raise AgentRuntimeValidationError("Agent is disabled")
+        if request.skill_key is not None:
+            skill=await self._skills.get(request.skill_key)
+            if not skill.enabled:raise AgentRuntimeValidationError("Skill is disabled")
+            if request.skill_key not in agent.skills:raise AgentRuntimeValidationError("Skill is not assigned to agent")
+        execution=AgentExecution(correlation_id=request.correlation_id,agent_key=request.agent_key,skill_key=request.skill_key,objective=request.objective,trace_id=trace_id_or_new())
+        await self._executions.create(execution);await self._record(execution,"execution.queued")
+        return execution
 
     async def execute(self,request):
+        execution=await self.submit(request)
+        return await self.run(execution,request)
+
+    async def run(self,execution,request):
         started=time.perf_counter();skill_label=request.skill_key or "-"
         with timed_span("agent.execution",agent=request.agent_key,skill=skill_label,correlation_id=str(request.correlation_id) if request.correlation_id else None):
-            agent=await self._agents.get(request.agent_key)
-            if not agent.enabled:raise AgentRuntimeValidationError("Agent is disabled")
-            skill=None
-            if request.skill_key is not None:
-                skill=await self._skills.get(request.skill_key)
-                if not skill.enabled:raise AgentRuntimeValidationError("Skill is disabled")
-                if request.skill_key not in agent.skills:raise AgentRuntimeValidationError("Skill is not assigned to agent")
-            execution=AgentExecution(correlation_id=request.correlation_id,agent_key=request.agent_key,skill_key=request.skill_key,objective=request.objective,trace_id=trace_id_or_new())
-            await self._executions.create(execution);await self._record(execution,"execution.queued")
+            agent=await self._agents.get(request.agent_key);skill=None
+            if request.skill_key is not None:skill=await self._skills.get(request.skill_key)
             running=execution.model_copy(update={"status":ExecutionStatus.RUNNING,"runtime":"native-python-v1","started_at":datetime.now(timezone.utc)})
             await self._executions.update(running);await self._record(running,"execution.running")
             try:
                 with timed_span("cognitive.context.build"):
                     cognitive_context=await self._cognitive_context_builder.build(agent,skill,request)
                 await self._executions.add_event(running.id,"cognitive.context.built",cognitive_context.summary())
-                model_request=self._prompt_assembler.build(agent,skill,request,cognitive_context);cache_config=self._execution_cache_config(skill);cache_hit=False;model_result=None;cache_key=None
+                model_request=self._prompt_assembler.build(agent,skill,request,cognitive_context)
+                cache_config=self._execution_cache_config(skill);cache_hit=False;model_result=None;cache_key=None
                 if self._cache is not None and cache_config["enabled"]:
-                    cache_key=stable_cache_key({"agent":[agent.key,agent.version],"skill":[skill.key,skill.version] if skill else None,"model_request":model_request.model_dump(mode="json")});cached=await self._cache.get_json("execution",cache_key)
+                    cache_key=stable_cache_key({"agent":[agent.key,agent.version],"skill":[skill.key,skill.version] if skill else None,"model_request":model_request.model_dump(mode="json")})
+                    cached=await self._cache.get_json("execution",cache_key)
                     if cached is not None:
-                        model_result=ModelResult.model_validate(cached).model_copy(update={"usage":ModelUsage(),"provider_request_id":None,"metadata":{"platform_cache_hit":True}});cache_hit=True;await self._executions.add_event(running.id,"execution.cache.hit",{"key":cache_key})
+                        model_result=ModelResult.model_validate(cached).model_copy(update={"usage":ModelUsage(),"provider_request_id":None,"metadata":{"platform_cache_hit":True}})
+                        cache_hit=True;await self._executions.add_event(running.id,"execution.cache.hit",{"key":cache_key})
                     else:await self._executions.add_event(running.id,"execution.cache.miss",{"key":cache_key})
                 if model_result is None:
                     with timed_span("model.generate",model=model_request.model or "default"):model_result=await self._model_provider.generate(model_request)
@@ -73,8 +85,8 @@ class AgentRuntime:
         if skill is None or not isinstance(skill.constraints,dict):return True
         config=skill.constraints.get("memory",{});return bool(config.get("auto_capture",True)) if isinstance(config,dict) else True
     async def _fail(self,execution,code,message,*,retryable=False):
-        error=AgentError(code=code,message=message,retryable=retryable);failed=execution.model_copy(update={"status":ExecutionStatus.FAILED,"error":error,"completed_at":datetime.now(timezone.utc)});await self._executions.update(failed);await self._record(failed,"execution.failed");return AgentExecutionResult(execution_id=failed.id,status=failed.status,usage=failed.usage,model=failed.model,provider_request_id=failed.provider_request_id,trace_id=failed.trace_id,error=error)
+        error=AgentError(code=code,message=message,retryable=retryable);failed=execution.model_copy(update={"status":ExecutionStatus.FAILED,"error":error,"completed_at":datetime.now(timezone.utc)})
+        await self._executions.update(failed);await self._record(failed,"execution.failed");return AgentExecutionResult(execution_id=failed.id,status=failed.status,usage=failed.usage,model=failed.model,provider_request_id=failed.provider_request_id,trace_id=failed.trace_id,error=error)
     async def _record(self,execution,event_type):await self._executions.add_event(execution.id,event_type,execution.model_dump(mode="json"))
-
 
 __all__=["AgentRuntime","AgentRuntimeValidationError","DefinitionNotFoundError"]
