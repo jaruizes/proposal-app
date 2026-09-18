@@ -1,7 +1,9 @@
 from __future__ import annotations
 import asyncio
+
 from agent_platform.application.cache import CachedEmbeddingProvider
 from agent_platform.application.cognitive import ApplicationContextContributor,AttachmentContextContributor,CognitiveContextBuilder,KnowledgeRetrievalContributor,MemoryContextContributor
+from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
 from agent_platform.application.memory import MemoryService
 from agent_platform.application.ontology import OntologyService
 from agent_platform.application.registries import AgentRegistry,SkillRegistry
@@ -29,7 +31,19 @@ class ExecutionDispatcher:
             embeddings=CachedEmbeddingProvider(HashEmbeddingProvider(dimensions=settings.embedding_dimensions,model=settings.embedding_model),cache,ttl_seconds=settings.embedding_cache_ttl_seconds)
             retrieval=KnowledgeRetrievalService(PostgresKnowledgeSearchBackend(session),embeddings,cache,ontology,cache_ttl_seconds=settings.retrieval_cache_ttl_seconds)
             context=CognitiveContextBuilder(contributors=[ApplicationContextContributor(),AttachmentContextContributor(),MemoryContextContributor(memory),KnowledgeRetrievalContributor(retrieval,cache,cache_ttl_seconds=settings.cognitive_cache_ttl_seconds)])
-            runtime=AgentRuntime(AgentRegistry(agent_repo,skill_repo),SkillRegistry(skill_repo),execution_repo,AnthropicModelProvider(),cognitive_context_builder=context,memory_service=memory,cache=cache)
+            common=dict(
+                agents=AgentRegistry(agent_repo,skill_repo),
+                skills=SkillRegistry(skill_repo),
+                executions=execution_repo,
+                model_provider=AnthropicModelProvider(),
+                cognitive_context_builder=context,
+                memory_service=memory,
+                cache=cache,
+            )
+            if settings.agent_runtime.lower()=="langgraph":
+                runtime=LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url)
+            else:
+                runtime=AgentRuntime(**common)
             execution=await execution_repo.get(execution_id)
             if execution is not None:await runtime.run(execution,request)
 

@@ -47,6 +47,9 @@ services:
       dockerfile: agent-platform/Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://agent_platform:agent_platform@postgres:5432/agent_platform
+      AGENT_RUNTIME: ${AGENT_RUNTIME:-langgraph}
+      LANGGRAPH_CHECKPOINT_DATABASE_URL: ${LANGGRAPH_CHECKPOINT_DATABASE_URL:-postgresql://agent_platform:agent_platform@postgres:5432/agent_platform}
+      LANGGRAPH_STRICT_MSGPACK: "true"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_DEFAULT_MODEL: ${ANTHROPIC_DEFAULT_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_TIMEOUT_SECONDS: ${ANTHROPIC_TIMEOUT_SECONDS:-300}

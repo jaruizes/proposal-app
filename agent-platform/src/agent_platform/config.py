@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings,SettingsConfigDict
 class Settings(BaseSettings):
     model_config=SettingsConfigDict(env_file=".env",extra="ignore")
     database_url:str="postgresql+asyncpg://agent_platform:agent_platform@localhost:5433/agent_platform"
+    agent_runtime:str="langgraph"
+    langgraph_checkpoint_database_url:str="postgresql://agent_platform:agent_platform@localhost:5433/agent_platform"
     anthropic_api_key:str|None=None;anthropic_base_url:str|None=None;anthropic_default_model:str="claude-sonnet-4-6"
     anthropic_timeout_seconds:float=300.0;anthropic_default_max_output_tokens:int=4096;anthropic_max_retries:int=0;anthropic_retry_base_seconds:float=0.5
     embedding_provider:str="hash";embedding_model:str="hash-embedding-v1";embedding_dimensions:int=384
