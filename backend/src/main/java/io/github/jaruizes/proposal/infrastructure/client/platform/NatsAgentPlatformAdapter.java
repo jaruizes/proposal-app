@@ -135,9 +135,6 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
                         message.nak();
                     }
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
             } catch (Exception ignored) {
                 try { Thread.sleep(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
             }
