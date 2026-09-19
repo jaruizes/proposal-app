@@ -229,8 +229,12 @@ public class OfferWorkflowService {
         var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.SOLUTION_PLAN));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst","compose-proposal",
                 "Redactar oferta detallada","Execute compose-proposal exactly. Produce ONLY the complete canonical proposal.md in Markdown. Follow PROPOSAL GUIDANCE as authoritative structure/depth guidance. Never invent prices, effort, staffing, dates, contractual commitments or customer facts."+refinement(refinement)),
-                model(offer,"proposal"),context+"\n\n# PROPOSAL GUIDANCE\n"+Objects.toString(offer.proposalGuidance(),"none"));
+                model(offer,"proposal"),context+"\n\n# PROPOSAL GUIDANCE JSON\n"+proposalGuidanceJson(offer.proposalGuidance()));
         saveArtifact(offer.id(),PhaseType.PROPOSAL,ArtifactType.PROPOSAL,result.content());
+    }
+
+    private String proposalGuidanceJson(Object guidance){
+        try{return json.writeValueAsString(guidance);}catch(com.fasterxml.jackson.core.JsonProcessingException e){throw new DomainException("Invalid proposal guidance");}
     }
 
     private void runSlidePlan(Offer offer,String refinement){
