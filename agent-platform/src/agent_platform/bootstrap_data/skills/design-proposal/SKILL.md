@@ -3,7 +3,7 @@ name: design-proposal
 description: Execute phase 4 slide planning. The Business Analyst / Offer Owner produces the approved hierarchical presentation contract: sections, subsections, structural covers and content slides.
 ---
 
-# Fase 4 — Planificación narrativa de la presentación
+# Fase 5 — Planificación narrativa de la presentación
 
 Input:
 
@@ -31,6 +31,7 @@ Require:
 analysis.status: approved
 strategy.status: approved
 solution.status: approved
+proposal.status: approved
 ```
 
 Require:
@@ -40,6 +41,7 @@ generated/analysis/opportunity-brief.md
 generated/strategy/strategy.md
 generated/solution/solution.md
 generated/solution/solution-plan.md
+generated/proposal/proposal.md
 ```
 
 Read when present:

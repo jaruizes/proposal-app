@@ -4,62 +4,218 @@
     "description": "Bootstrap snapshot of the agents and skills used by the existing Proposal Copilot runtime before integration with the independent platform."
   },
   "skills": [
-    {"key":"create-offer","source":"skills/create-offer/SKILL.md","inputs":["workspace"],"output_schema":{}},
-    {"key":"ingest-sources","source":"skills/ingest-sources/SKILL.md","inputs":["workspace"],"output_schema":{}},
-    {"key":"analyze-opportunity","source":"skills/analyze-opportunity/SKILL.md","inputs":["workspace","source-manifest"],"output_schema":{}},
-    {"key":"build-strategy","source":"skills/build-strategy/SKILL.md","inputs":["workspace","approved-analysis"],"output_schema":{}},
-    {"key":"define-solution","source":"skills/define-solution/SKILL.md","inputs":["workspace","approved-analysis","approved-strategy","source-manifest"],"output_schema":{}},
-    {"key":"design-proposal","source":"skills/design-proposal/SKILL.md","inputs":["workspace","approved-analysis","approved-strategy","approved-solution"],"output_schema":{}},
-    {"key":"generate-presentation","source":"skills/generate-presentation/SKILL.md","inputs":["workspace","approved-slides-plan","presentation-config"],"output_schema":{}}
+    {
+      "key": "create-offer",
+      "source": "skills/create-offer/SKILL.md",
+      "inputs": [
+        "workspace"
+      ],
+      "output_schema": {}
+    },
+    {
+      "key": "ingest-sources",
+      "source": "skills/ingest-sources/SKILL.md",
+      "inputs": [
+        "workspace"
+      ],
+      "output_schema": {}
+    },
+    {
+      "key": "analyze-opportunity",
+      "source": "skills/analyze-opportunity/SKILL.md",
+      "inputs": [
+        "workspace",
+        "source-manifest"
+      ],
+      "output_schema": {}
+    },
+    {
+      "key": "build-strategy",
+      "source": "skills/build-strategy/SKILL.md",
+      "inputs": [
+        "workspace",
+        "approved-analysis"
+      ],
+      "output_schema": {}
+    },
+    {
+      "key": "define-solution",
+      "source": "skills/define-solution/SKILL.md",
+      "inputs": [
+        "workspace",
+        "approved-analysis",
+        "approved-strategy",
+        "source-manifest"
+      ],
+      "output_schema": {}
+    },
+    {
+      "key": "compose-proposal",
+      "source": "skills/compose-proposal/SKILL.md",
+      "inputs": [
+        "workspace",
+        "approved-analysis",
+        "approved-strategy",
+        "approved-solution",
+        "proposal-guidance"
+      ],
+      "output_schema": {}
+    },
+    {
+      "key": "design-proposal",
+      "source": "skills/design-proposal/SKILL.md",
+      "inputs": [
+        "workspace",
+        "approved-analysis",
+        "approved-strategy",
+        "approved-solution"
+      ],
+      "output_schema": {}
+    },
+    {
+      "key": "generate-presentation",
+      "source": "skills/generate-presentation/SKILL.md",
+      "inputs": [
+        "workspace",
+        "approved-slides-plan",
+        "presentation-config"
+      ],
+      "output_schema": {}
+    }
   ],
   "agents": [
     {
-      "key":"business-analyst",
-      "source":"agents/business-analyst.md",
-      "capabilities":["opportunity-analysis","response-strategy","slide-planning","coherence-review"],
-      "skills":["analyze-opportunity","build-strategy","define-solution","design-proposal"],
-      "allowed_tools":["source.read","source.search","knowledge.search"],
-      "model_policy":{"preferred_model":"claude-sonnet-4-6","temperature":0.1,"max_output_tokens":16000}
+      "key": "business-analyst",
+      "source": "agents/business-analyst.md",
+      "capabilities": [
+        "opportunity-analysis",
+        "response-strategy",
+        "proposal-authoring",
+        "slide-planning",
+        "coherence-review"
+      ],
+      "skills": [
+        "analyze-opportunity",
+        "build-strategy",
+        "define-solution",
+        "compose-proposal",
+        "design-proposal"
+      ],
+      "allowed_tools": [
+        "source.read",
+        "source.search",
+        "knowledge.search"
+      ],
+      "model_policy": {
+        "preferred_model": "claude-sonnet-4-6",
+        "temperature": 0.1,
+        "max_output_tokens": 16000
+      }
     },
     {
-      "key":"solution-architect",
-      "source":"agents/solution-architect.md",
-      "capabilities":["architecture-design","technical-decisions","source-analysis"],
-      "skills":["define-solution"],
-      "allowed_tools":["source.read","source.search","knowledge.search","ontology.query"],
-      "model_policy":{"preferred_model":"claude-sonnet-4-6","temperature":0.1,"max_output_tokens":16000}
+      "key": "solution-architect",
+      "source": "agents/solution-architect.md",
+      "capabilities": [
+        "architecture-design",
+        "technical-decisions",
+        "source-analysis"
+      ],
+      "skills": [
+        "define-solution"
+      ],
+      "allowed_tools": [
+        "source.read",
+        "source.search",
+        "knowledge.search",
+        "ontology.query"
+      ],
+      "model_policy": {
+        "preferred_model": "claude-sonnet-4-6",
+        "temperature": 0.1,
+        "max_output_tokens": 16000
+      }
     },
     {
-      "key":"delivery-manager",
-      "source":"agents/delivery-manager.md",
-      "capabilities":["delivery-planning","work-breakdown","risk-coordination"],
-      "skills":["define-solution"],
-      "allowed_tools":["source.read","source.search","knowledge.search"],
-      "model_policy":{"preferred_model":"claude-sonnet-4-6","temperature":0.1,"max_output_tokens":16000}
+      "key": "delivery-manager",
+      "source": "agents/delivery-manager.md",
+      "capabilities": [
+        "delivery-planning",
+        "work-breakdown",
+        "risk-coordination"
+      ],
+      "skills": [
+        "define-solution"
+      ],
+      "allowed_tools": [
+        "source.read",
+        "source.search",
+        "knowledge.search"
+      ],
+      "model_policy": {
+        "preferred_model": "claude-sonnet-4-6",
+        "temperature": 0.1,
+        "max_output_tokens": 16000
+      }
     },
     {
-      "key":"presentation-builder",
-      "source":"agents/presentation-builder.md",
-      "capabilities":["presentation-materialization","visual-mapping"],
-      "skills":["generate-presentation"],
-      "allowed_tools":["presentation.read","presentation.write","source.read"],
-      "model_policy":{"preferred_model":"claude-sonnet-4-6","temperature":0.1,"max_output_tokens":16000}
+      "key": "presentation-builder",
+      "source": "agents/presentation-builder.md",
+      "capabilities": [
+        "presentation-materialization",
+        "visual-mapping"
+      ],
+      "skills": [
+        "generate-presentation"
+      ],
+      "allowed_tools": [
+        "presentation.read",
+        "presentation.write",
+        "source.read"
+      ],
+      "model_policy": {
+        "preferred_model": "claude-sonnet-4-6",
+        "temperature": 0.1,
+        "max_output_tokens": 16000
+      }
     },
     {
-      "key":"security-specialist",
-      "source":"agents/security-specialist.md",
-      "capabilities":["security-review","cryptography"],
-      "skills":["define-solution"],
-      "allowed_tools":["source.read","knowledge.search"],
-      "model_policy":{"preferred_model":"claude-sonnet-4-6","temperature":0.1,"max_output_tokens":16000}
+      "key": "security-specialist",
+      "source": "agents/security-specialist.md",
+      "capabilities": [
+        "security-review",
+        "cryptography"
+      ],
+      "skills": [
+        "define-solution"
+      ],
+      "allowed_tools": [
+        "source.read",
+        "knowledge.search"
+      ],
+      "model_policy": {
+        "preferred_model": "claude-sonnet-4-6",
+        "temperature": 0.1,
+        "max_output_tokens": 16000
+      }
     },
     {
-      "key":"corporate-slide-designer",
-      "source":"agents/corporate-slide-designer.md",
-      "capabilities":["corporate-layout-selection","visual-qa"],
-      "skills":["generate-presentation"],
-      "allowed_tools":["presentation.read"],
-      "model_policy":{"preferred_model":"claude-sonnet-4-6","temperature":0.1,"max_output_tokens":16000}
+      "key": "corporate-slide-designer",
+      "source": "agents/corporate-slide-designer.md",
+      "capabilities": [
+        "corporate-layout-selection",
+        "visual-qa"
+      ],
+      "skills": [
+        "generate-presentation"
+      ],
+      "allowed_tools": [
+        "presentation.read"
+      ],
+      "model_policy": {
+        "preferred_model": "claude-sonnet-4-6",
+        "temperature": 0.1,
+        "max_output_tokens": 16000
+      }
     }
   ]
 }
