@@ -30,6 +30,8 @@ public class OfferJpaEntity {
     private String aiProvider;
     @Column(name = "models_json", columnDefinition = "text")
     private String modelsJson;
+    @Column(name = "proposal_guidance_json", columnDefinition = "text")
+    private String proposalGuidanceJson;
     @Column(name = "presentation_guidance_json", columnDefinition = "text")
     private String presentationGuidanceJson;
     @Column(name = "current_phase")
@@ -64,6 +66,8 @@ public class OfferJpaEntity {
     public void setAiProvider(String aiProvider) { this.aiProvider = aiProvider; }
     public String getModelsJson() { return modelsJson; }
     public void setModelsJson(String modelsJson) { this.modelsJson = modelsJson; }
+    public String getProposalGuidanceJson() { return proposalGuidanceJson; }
+    public void setProposalGuidanceJson(String proposalGuidanceJson) { this.proposalGuidanceJson = proposalGuidanceJson; }
     public String getPresentationGuidanceJson() { return presentationGuidanceJson; }
     public void setPresentationGuidanceJson(String presentationGuidanceJson) { this.presentationGuidanceJson = presentationGuidanceJson; }
     public String getCurrentPhase() { return currentPhase; }
