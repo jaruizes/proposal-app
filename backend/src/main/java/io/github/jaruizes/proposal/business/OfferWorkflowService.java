@@ -294,7 +294,7 @@ public class OfferWorkflowService {
     private static String stripFences(String raw){var s=raw.trim();if(s.startsWith("```")){var first=s.indexOf('\n');var last=s.lastIndexOf("```");if(first>=0&&last>first)s=s.substring(first+1,last).trim();}return s;}
 
     public record CreateOfferCommand(String name,String customer,String language,String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object proposalGuidance,Object presentationGuidance) {}
-    public record UpdateOfferConfigurationCommand(String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object presentationGuidance) {}
+    public record UpdateOfferConfigurationCommand(String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object proposalGuidance,Object presentationGuidance) {}
 
     static final class JsonFragments {
         private static final ObjectMapper MAPPER=new ObjectMapper();
