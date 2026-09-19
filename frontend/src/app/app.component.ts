@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ExecutionService } from './execution.service';
-import { AgentExecutionTelemetry, OfferExecution, Phase, SectionConfig } from './models';
+import { AgentExecutionTelemetry, OfferExecution, Phase, ProposalSectionConfig, SectionConfig } from './models';
 
 type PhaseArtifact={type:string;version:number;title:string;content:string};
 
@@ -19,7 +19,7 @@ export class AppComponent {
   failedPhase=computed(()=>this.selected()?.phases.find(p=>p.status==='failed'));
   offerErrorMessage=computed(()=>this.latestFailedAgent()?.errorMessage||this.failedPhase()?.errorMessage||'');
   openCreate(){this.draft=this.newDraft();this.createOpen.set(true);} closeCreate(){this.createOpen.set(false);} saveCreate(){this.svc.create(this.draft);this.createOpen.set(false);}
-  openConfig(){const e=this.selected();if(!e)return;this.configDraft={presentationLanguage:e.presentationLanguage,inputDriveFolder:e.inputDriveFolder,outputDriveFolder:e.outputDriveFolder,presentationName:e.presentationName,presentationTemplateId:e.presentationTemplateId||'',aiProvider:e.provider,models:{...e.models},presentationGuidance:e.sections};this.configOpen.set(true);}
+  openConfig(){const e=this.selected();if(!e)return;this.configDraft={presentationLanguage:e.presentationLanguage,inputDriveFolder:e.inputDriveFolder,outputDriveFolder:e.outputDriveFolder,presentationName:e.presentationName,presentationTemplateId:e.presentationTemplateId||'',aiProvider:e.provider,models:{...e.models},proposalGuidance:structuredClone(e.proposalGuidance||{sections:this.svc.defaultProposalSections}),presentationGuidance:e.sections};this.configOpen.set(true);}
   closeConfig(){this.configOpen.set(false);}
   saveConfig(){const e=this.selected();if(!e)return;this.svc.updateConfiguration(e.id,this.configDraft).subscribe(updated=>{this.svc.executions.update(items=>items.map(x=>x.id===updated.id?updated:x));this.configOpen.set(false);});}
   retryFailedPhase(){const e=this.selected(),p=this.failedPhase();if(e&&p)this.svc.retry(e.id,p.key);}
@@ -28,11 +28,11 @@ export class AppComponent {
   chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
   approve(){const e=this.selected(),p=this.selectedPhase();if(e&&p){this.svc.approve(e.id,p.key);this.selectedPhaseKey.set(null);this.resetArtifactView();}}
   sendRefine(){const e=this.selected(),p=this.selectedPhase();if(e&&p&&this.chatMessage.trim()){this.svc.refine(e.id,p.key,this.chatMessage.trim());this.chatMessage='';}}
-  statusClass(status:string){return status==='Trabajando'?'working':status==='Esperando aprobación'?'waiting':status==='Completado'?'approved':'cancelled';} phaseClass(status:string){return status.replace('_','-');} currentModels(){return this.providerModels[this.draft.provider]||[];} addSection(){this.draft.sections.push({name:'Nueva sección',maxSlides:3,enabled:true});} removeSection(i:number){this.draft.sections.splice(i,1);}
+  statusClass(status:string){return status==='Trabajando'?'working':status==='Esperando aprobación'?'waiting':status==='Completado'?'approved':'cancelled';} phaseClass(status:string){return status.replace('_','-');} currentModels(){return this.providerModels[this.draft.provider]||[];} addSection(){this.draft.sections.push({name:'Nueva sección',maxSlides:3,enabled:true});} removeSection(i:number){this.draft.sections.splice(i,1);} addProposalSection(target:'draft'|'config'='draft'){const section:ProposalSectionConfig={name:'Nueva sección',enabled:true,depth:'STANDARD',guidance:''};if(target==='draft')this.draft.proposalSections.push(section);else{this.configDraft.proposalGuidance=this.configDraft.proposalGuidance||{sections:[]};this.configDraft.proposalGuidance.sections.push(section);}} removeProposalSection(i:number,target:'draft'|'config'='draft'){if(target==='draft')this.draft.proposalSections.splice(i,1);else this.configDraft.proposalGuidance.sections.splice(i,1);}
   agentStatusClass(status:string){return status==='RUNNING'?'running':status==='COMPLETED'?'completed':status==='FAILED'?'failed':'pending';}
   agentStatusLabel(status:string){return status==='RUNNING'?'Trabajando':status==='COMPLETED'?'Completado':status==='FAILED'?'Error':status;}
   agentDuration(agent:AgentExecutionTelemetry){const start=agent.startedAt?new Date(agent.startedAt).getTime():0;if(!start)return '—';const end=agent.completedAt?new Date(agent.completedAt).getTime():Date.now();const seconds=Math.max(0,Math.round((end-start)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
-  agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Análisis',STRATEGY:'Estrategia',SOLUTION:'Solución',SLIDE_PLAN:'Plan narrativo',PRESENTATION:'Presentación'};return labels[phase]||phase;}
+  agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Análisis',STRATEGY:'Estrategia',SOLUTION:'Solución',PROPOSAL:'Oferta detallada',SLIDE_PLAN:'Plan narrativo',PRESENTATION:'Presentación'};return labels[phase]||phase;}
   formatTokens(value:number){return new Intl.NumberFormat('es-ES').format(value||0);}
   friendlyErrorCause(raw:string|undefined):string {
     if(!raw?.trim())return 'Se produjo un error inesperado durante la ejecución del agente.';
@@ -109,5 +109,5 @@ export class AppComponent {
   private tableCells(line:string){return line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());}
   private inlineMarkdown(value:string){let s=this.escapeHtml(value);s=s.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>');return s;}
   private escapeHtml(value:string){return value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
-  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',presentationTemplateId:'',provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',strategy:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
+  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',presentationTemplateId:'',provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',strategy:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',proposal:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},proposalSections:structuredClone(this.svc.defaultProposalSections) as ProposalSectionConfig[],sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
 }

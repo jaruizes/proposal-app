@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { AgentExecutionTelemetry, OfferExecution, SectionConfig } from './models';
+import { AgentExecutionTelemetry, OfferExecution, ProposalSectionConfig, SectionConfig } from './models';
 @Injectable({ providedIn: 'root' })
 export class ExecutionService {
   executions = signal<OfferExecution[]>([]);
@@ -11,6 +11,18 @@ export class ExecutionService {
     { name: 'Alcance y consideraciones', maxSlides: 5, enabled: true },
     { name: '¿Qué proponemos?', maxSlides: 10, enabled: true },
     { name: '¿Cómo lo vamos a hacer?', maxSlides: 10, enabled: true }
+  ];
+  readonly defaultProposalSections: ProposalSectionConfig[] = [
+    { name:'Resumen ejecutivo', enabled:true, depth:'SUMMARY', guidance:'Sintetizar reto, propuesta de valor y resultados esperados.' },
+    { name:'Entendimiento del reto', enabled:true, depth:'STANDARD', guidance:'Explicar contexto, necesidades y condicionantes sin inventar hechos.' },
+    { name:'Objetivos y alcance', enabled:true, depth:'STANDARD', guidance:'Cubrir objetivos, alcance, exclusiones y dependencias conocidas.' },
+    { name:'Requisitos y condicionantes', enabled:true, depth:'DETAILED', guidance:'Responder a requisitos funcionales, no funcionales y restricciones relevantes.' },
+    { name:'Estrategia de respuesta', enabled:true, depth:'STANDARD', guidance:'Conectar necesidades con la estrategia aprobada.' },
+    { name:'Solución propuesta', enabled:true, depth:'DETAILED', guidance:'Describir la solución funcional y técnica con suficiente profundidad.' },
+    { name:'Arquitectura e integraciones', enabled:true, depth:'DETAILED', guidance:'Detallar arquitectura, componentes, datos, integraciones, seguridad y operación cuando aplique.' },
+    { name:'Enfoque de ejecución', enabled:true, depth:'DETAILED', guidance:'Describir fases, workstreams, entregables, gobierno y dependencias sin inventar estimaciones.' },
+    { name:'Calidad, riesgos y supuestos', enabled:true, depth:'STANDARD', guidance:'Explicitar calidad, riesgos, mitigaciones, supuestos y cuestiones pendientes.' },
+    { name:'Valor añadido y próximos pasos', enabled:true, depth:'STANDARD', guidance:'Resumir diferenciadores sustentados y siguientes pasos.' }
   ];
   private events = new Map<string, EventSource>();
   private agentPollers = new Map<string, ReturnType<typeof setInterval>>();
@@ -23,7 +35,7 @@ export class ExecutionService {
   }
 
   create(data: any) {
-    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName, presentationTemplateId:data.presentationTemplateId, aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, slidePlanning:data.models.slides, presentation:data.models.slides }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
+    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName, presentationTemplateId:data.presentationTemplateId, aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, proposal:data.models.proposal, slidePlanning:data.models.slides, presentation:data.models.slides }, proposalGuidance:{ sections:data.proposalSections.filter((s:ProposalSectionConfig)=>s.enabled) }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
     this.http.post<OfferExecution>('/api/offers',request).subscribe(offer=>{this.executions.update(items=>[offer,...items.filter(i=>i.id!==offer.id)]);this.watch(offer.id);this.watchAgents(offer.id);});
   }
 

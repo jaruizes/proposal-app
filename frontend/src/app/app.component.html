@@ -151,7 +151,19 @@
       <div class="form-grid two"><label><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Nombre del documento final" /></label><label><span>Plantilla corporativa · Google Slides</span><input [(ngModel)]="draft.presentationTemplateId" placeholder="ID o URL de la presentación plantilla" /></label></div>
       <div class="section-title"><div><h3>Configuración IA</h3><p>Configuración de proveedor y modelos por fase.</p></div></div>
       <div class="form-grid two"><label><span>Proveedor</span><select [(ngModel)]="draft.provider"><option *ngFor="let p of (providerModels | keyvalue)">{{p.key}}</option></select></label><div class="provider-chip">{{draft.provider}}</div></div>
-      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solution',l:'Solución'}, {k:'slides',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="draft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
+      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solution',l:'Solución'}, {k:'proposal',l:'Oferta'}, {k:'slides',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="draft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
+      <div class="section-title"><div><h3>Estructura de la oferta detallada</h3><p>El agente respetará el orden, profundidad e indicaciones de estas secciones.</p></div><button class="ghost small" (click)="addProposalSection()">＋ Añadir sección</button></div>
+      <div class="proposal-sections-editor">
+        <div class="proposal-section-row" *ngFor="let s of draft.proposalSections; let i = index">
+          <input type="checkbox" [(ngModel)]="s.enabled" />
+          <div class="proposal-section-fields">
+            <input [(ngModel)]="s.name" placeholder="Nombre de sección" />
+            <select [(ngModel)]="s.depth"><option value="SUMMARY">Resumen</option><option value="STANDARD">Estándar</option><option value="DETAILED">Detallada</option></select>
+            <input class="guidance-input" [(ngModel)]="s.guidance" placeholder="Indicaciones para el agente..." />
+          </div>
+          <button class="icon-btn subtle" (click)="removeProposalSection(i)">×</button>
+        </div>
+      </div>
       <div class="section-title"><div><h3>Estructura de presentación</h3><p>Configuración equivalente a presentation-guidance.yaml.</p></div><button class="ghost small" (click)="addSection()">＋ Añadir sección</button></div>
       <div class="sections-editor"><div class="section-row" *ngFor="let s of draft.sections; let i = index"><input type="checkbox" [(ngModel)]="s.enabled" /><input class="grow" [(ngModel)]="s.name" /><label class="compact"><span>Máx. slides</span><input type="number" min="1" [(ngModel)]="s.maxSlides" /></label><button class="icon-btn subtle" (click)="removeSection(i)">×</button></div></div>
     </div>
@@ -166,8 +178,20 @@
       <div class="form-grid two"><label><span>Idioma de la presentación</span><select [(ngModel)]="configDraft.presentationLanguage"><option value="es">Español</option><option value="en">English</option><option value="fr">Français</option></select></label><label><span>Plantilla corporativa · Google Slides</span><input [(ngModel)]="configDraft.presentationTemplateId" placeholder="ID o URL de la presentación plantilla" /></label></div>
       <div class="form-grid two"><label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="configDraft.inputDriveFolder" /></label><label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="configDraft.outputDriveFolder" /></label></div>
       <label><span>Nombre de la presentación</span><input [(ngModel)]="configDraft.presentationName" /></label>
+      <div class="section-title"><div><h3>Estructura de la oferta detallada</h3><p>Editable mientras la oferta evoluciona; se aplicará en la fase Oferta detallada.</p></div><button class="ghost small" (click)="addProposalSection('config')">＋ Añadir sección</button></div>
+      <div class="proposal-sections-editor">
+        <div class="proposal-section-row" *ngFor="let s of configDraft.proposalGuidance?.sections; let i=index">
+          <input type="checkbox" [(ngModel)]="s.enabled" />
+          <div class="proposal-section-fields">
+            <input [(ngModel)]="s.name" />
+            <select [(ngModel)]="s.depth"><option value="SUMMARY">Resumen</option><option value="STANDARD">Estándar</option><option value="DETAILED">Detallada</option></select>
+            <input class="guidance-input" [(ngModel)]="s.guidance" placeholder="Indicaciones para el agente..." />
+          </div>
+          <button class="icon-btn subtle" (click)="removeProposalSection(i,'config')">×</button>
+        </div>
+      </div>
       <div class="section-title"><div><h3>Modelos IA</h3><p>Se pueden ajustar antes de ejecutar fases pendientes o reintentos.</p></div></div>
-      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solutionArchitecture',l:'Solución'}, {k:'slidePlanning',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="configDraft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
+      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solutionArchitecture',l:'Solución'}, {k:'proposal',l:'Oferta'}, {k:'slidePlanning',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="configDraft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
     </div>
     <footer><button class="ghost" (click)="closeConfig()">Cancelar</button><button class="primary" (click)="saveConfig()">Guardar configuración</button></footer>
   </section>
