@@ -7,7 +7,7 @@ import java.util.UUID;
 
 public record OfferResponse(
         UUID id,String name,String customer,String presentationLanguage,String inputDriveFolder,String outputDriveFolder,
-        String presentationName,String provider,Map<String,String> models,Object sections,String currentStep,
+        String presentationName,String presentationTemplateId,String provider,Map<String,String> models,Object sections,String currentStep,
         String overallStatus,Instant createdAt,List<PhaseResponse> phases) {
     public record PhaseResponse(String key,String label,String status,String output,String errorMessage) {}
 }

@@ -28,23 +28,26 @@ public class OfferWorkflowService {
     private final SlidePlanValidator slidePlanValidator;
     private final TaskExecutor phaseTaskExecutor;
     private final ObjectMapper json = new ObjectMapper();
+    private final String defaultPresentationTemplateId;
 
     public OfferWorkflowService(OfferRepositoryPort offers, PhaseRepositoryPort phases,
                                 ArtifactRepositoryPort artifacts, AgentExecutionRepositoryPort agentExecutions,
                                 AgentRuntimeService agents, AgentRegistryService agentRegistry,
                                 SourceIngestionService sources, PresentationPort presentations,
                                 SlidePlanValidator slidePlanValidator,
-                                @Qualifier("agentTaskExecutor") TaskExecutor phaseTaskExecutor) {
+                                @Qualifier("agentTaskExecutor") TaskExecutor phaseTaskExecutor,
+                                @org.springframework.beans.factory.annotation.Value("${presentation.template-id:}") String defaultPresentationTemplateId) {
         this.offers=offers; this.phases=phases; this.artifacts=artifacts; this.agentExecutions=agentExecutions;
         this.agents=agents; this.agentRegistry=agentRegistry; this.sources=sources; this.presentations=presentations;
-        this.slidePlanValidator=slidePlanValidator; this.phaseTaskExecutor=phaseTaskExecutor;
+        this.slidePlanValidator=slidePlanValidator; this.phaseTaskExecutor=phaseTaskExecutor; this.defaultPresentationTemplateId=defaultPresentationTemplateId;
     }
 
     @Transactional
     public Offer create(CreateOfferCommand command) {
+        validateConfiguration(command.presentationLanguage(),command.inputDriveFolder(),command.outputDriveFolder(),command.presentationName(),command.presentationTemplateId(),command.aiProvider(),command.models(),command.presentationGuidance());
         var now=Instant.now();
         var offer=new Offer(UUID.randomUUID(),command.name(),command.customer(),command.language(),command.presentationLanguage(),
-                command.inputDriveFolder(),command.outputDriveFolder(),command.presentationName(),command.aiProvider(),
+                command.inputDriveFolder(),command.outputDriveFolder(),command.presentationName(),resolvedTemplateId(command.presentationTemplateId()),command.aiProvider(),
                 command.models(),command.presentationGuidance(),PhaseType.ANALYSIS,ExecutionStatus.RUNNING,now,now);
         offer=offers.save(offer);
         for(var phase:PhaseType.values()) phases.save(new PhaseExecution(UUID.randomUUID(),offer.id(),phase,
@@ -71,6 +74,33 @@ public class OfferWorkflowService {
         phases.save(new PhaseExecution(n.id(),offerId,next,ExecutionStatus.RUNNING,n.version(),null,Instant.now(),null));
         offers.save(copyOffer(offer,next,ExecutionStatus.RUNNING));
         submitPhase(offerId,next,null);
+    }
+
+    @Transactional
+    public Offer updateConfiguration(UUID offerId,UpdateOfferConfigurationCommand command){
+        var current=find(offerId);
+        var presentationLanguage=blankOr(command.presentationLanguage(),current.presentationLanguage());
+        var inputDriveFolder=blankOr(command.inputDriveFolder(),current.inputDriveFolder());
+        var outputDriveFolder=blankOr(command.outputDriveFolder(),current.outputDriveFolder());
+        var presentationName=blankOr(command.presentationName(),current.presentationName());
+        var presentationTemplateId=resolvedTemplateId(blankOr(command.presentationTemplateId(),current.presentationTemplateId()));
+        var aiProvider=blankOr(command.aiProvider(),current.aiProvider());
+        var models=command.models()==null||command.models().isEmpty()?current.models():command.models();
+        var guidance=command.presentationGuidance()==null?current.presentationGuidance():command.presentationGuidance();
+        validateConfiguration(presentationLanguage,inputDriveFolder,outputDriveFolder,presentationName,presentationTemplateId,aiProvider,models,guidance);
+        var updated=new Offer(current.id(),current.name(),current.customer(),current.language(),presentationLanguage,inputDriveFolder,outputDriveFolder,presentationName,presentationTemplateId,aiProvider,models,guidance,current.currentPhase(),current.status(),current.createdAt(),Instant.now());
+        return offers.save(updated);
+    }
+
+    @Transactional
+    public void retry(UUID offerId,PhaseType phaseType){
+        var phase=phases.find(offerId,phaseType).orElseThrow(()->new DomainException("Phase not found"));
+        if(phase.status()!=ExecutionStatus.FAILED) throw new DomainException("Only failed phases can be retried");
+        var offer=find(offerId);
+        validateConfiguration(offer.presentationLanguage(),offer.inputDriveFolder(),offer.outputDriveFolder(),offer.presentationName(),offer.presentationTemplateId(),offer.aiProvider(),offer.models(),offer.presentationGuidance());
+        phases.save(new PhaseExecution(phase.id(),offerId,phaseType,ExecutionStatus.RUNNING,phase.version()+1,null,Instant.now(),null));
+        offers.save(copyOffer(offer,phaseType,ExecutionStatus.RUNNING));
+        submitPhase(offerId,phaseType,null);
     }
 
     @Transactional
@@ -218,10 +248,26 @@ public class OfferWorkflowService {
     private String refinement(String r){return r==null||r.isBlank()?"":"\n\n# HUMAN REFINEMENT (authoritative)\n"+r;}
     private void markWaiting(UUID offerId,PhaseType type){var p=phases.find(offerId,type).orElseThrow();phases.save(new PhaseExecution(p.id(),offerId,type,ExecutionStatus.WAITING_FOR_HUMAN,p.version(),null,p.startedAt(),Instant.now()));offers.save(copyOffer(find(offerId),type,ExecutionStatus.WAITING_FOR_HUMAN));}
     private void markFailed(UUID offerId,PhaseType type,Exception e){var p=phases.find(offerId,type).orElseThrow();phases.save(new PhaseExecution(p.id(),offerId,type,ExecutionStatus.FAILED,p.version(),e.getMessage(),p.startedAt(),Instant.now()));offers.save(copyOffer(find(offerId),type,ExecutionStatus.FAILED));}
-    private Offer copyOffer(Offer o,PhaseType phase,ExecutionStatus status){return new Offer(o.id(),o.name(),o.customer(),o.language(),o.presentationLanguage(),o.inputDriveFolder(),o.outputDriveFolder(),o.presentationName(),o.aiProvider(),o.models(),o.presentationGuidance(),phase,status,o.createdAt(),Instant.now());}
+    private Offer copyOffer(Offer o,PhaseType phase,ExecutionStatus status){return new Offer(o.id(),o.name(),o.customer(),o.language(),o.presentationLanguage(),o.inputDriveFolder(),o.outputDriveFolder(),o.presentationName(),o.presentationTemplateId(),o.aiProvider(),o.models(),o.presentationGuidance(),phase,status,o.createdAt(),Instant.now());}
+    private String resolvedTemplateId(String value){return value==null||value.isBlank()?Objects.toString(defaultPresentationTemplateId,"").trim():value.trim();}
+    private static String blankOr(String value,String fallback){return value==null||value.isBlank()?fallback:value.trim();}
+    private void validateConfiguration(String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object guidance){
+        var missing=new ArrayList<String>();
+        if(presentationLanguage==null||presentationLanguage.isBlank())missing.add("idioma de presentación");
+        if(inputDriveFolder==null||inputDriveFolder.isBlank())missing.add("carpeta de entrada de Google Drive");
+        if(outputDriveFolder==null||outputDriveFolder.isBlank())missing.add("carpeta de salida de Google Drive");
+        if(presentationName==null||presentationName.isBlank())missing.add("nombre de la presentación");
+        if(resolvedTemplateId(presentationTemplateId).isBlank())missing.add("plantilla corporativa de Google Slides");
+        if(aiProvider==null||aiProvider.isBlank())missing.add("proveedor de IA");
+        var requiredModels=List.of("analysis","strategy","solutionArchitecture","deliveryPlanning","slidePlanning","presentation");
+        for(var key:requiredModels)if(models==null||models.get(key)==null||models.get(key).isBlank())missing.add("modelo IA para "+key);
+        if(guidance==null)missing.add("estructura de presentación");
+        if(!missing.isEmpty())throw new DomainException("No se puede iniciar/completar la oferta. Faltan requisitos de configuración: "+String.join(", ",missing));
+    }
     private static String stripFences(String raw){var s=raw.trim();if(s.startsWith("```")){var first=s.indexOf('\n');var last=s.lastIndexOf("```");if(first>=0&&last>first)s=s.substring(first+1,last).trim();}return s;}
 
-    public record CreateOfferCommand(String name,String customer,String language,String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String aiProvider,Map<String,String> models,Object presentationGuidance) {}
+    public record CreateOfferCommand(String name,String customer,String language,String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object presentationGuidance) {}
+    public record UpdateOfferConfigurationCommand(String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object presentationGuidance) {}
 
     static final class JsonFragments {
         private static final ObjectMapper MAPPER=new ObjectMapper();

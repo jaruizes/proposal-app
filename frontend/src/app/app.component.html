@@ -16,7 +16,7 @@
       <div class="top-actions">
         <span class="environment">● Backend conectado</span>
         <button *ngIf="view() === 'home'" class="primary" (click)="openCreate()">＋ Crear nueva oferta</button>
-        <button *ngIf="view() === 'detail'" class="ghost" (click)="back()">← Volver</button>
+        <button *ngIf="view() === 'detail'" class="ghost" (click)="openConfig()">⚙ Configurar oferta</button><button *ngIf="view() === 'detail'" class="ghost" (click)="back()">← Volver</button>
       </div>
     </header>
 
@@ -41,6 +41,7 @@
         <div class="offer-error-copy">
           <strong>{{offerErrorTitle()}}</strong>
           <p>{{offerFriendlyError()}}</p>
+          <button class="ghost small error-retry" *ngIf="failedPhase()" (click)="retryFailedPhase()">↻ Reintentar fase</button>
           <details *ngIf="offerErrorMessage()">
             <summary>Ver detalle técnico</summary>
             <pre>{{offerErrorMessage()}}</pre>
@@ -147,13 +148,27 @@
     <div class="modal-body">
       <div class="form-grid two"><label><span>Nombre</span><input [(ngModel)]="draft.name" placeholder="Ej. REDEIA · SSIR" /></label><label><span>Idioma de la presentación</span><select [(ngModel)]="draft.presentationLanguage"><option>Español</option><option>English</option><option>Français</option></select></label></div>
       <div class="form-grid two"><label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="draft.inputDriveFolder" placeholder="ID o URL de la carpeta de entrada" /></label><label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="draft.outputDriveFolder" placeholder="ID o URL de la carpeta de salida" /></label></div>
-      <label><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Nombre del documento final" /></label>
+      <div class="form-grid two"><label><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Nombre del documento final" /></label><label><span>Plantilla corporativa · Google Slides</span><input [(ngModel)]="draft.presentationTemplateId" placeholder="ID o URL de la presentación plantilla" /></label></div>
       <div class="section-title"><div><h3>Configuración IA</h3><p>Configuración de proveedor y modelos por fase.</p></div></div>
       <div class="form-grid two"><label><span>Proveedor</span><select [(ngModel)]="draft.provider"><option *ngFor="let p of (providerModels | keyvalue)">{{p.key}}</option></select></label><div class="provider-chip">{{draft.provider}}</div></div>
       <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solution',l:'Solución'}, {k:'slides',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="draft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
       <div class="section-title"><div><h3>Estructura de presentación</h3><p>Configuración equivalente a presentation-guidance.yaml.</p></div><button class="ghost small" (click)="addSection()">＋ Añadir sección</button></div>
       <div class="sections-editor"><div class="section-row" *ngFor="let s of draft.sections; let i = index"><input type="checkbox" [(ngModel)]="s.enabled" /><input class="grow" [(ngModel)]="s.name" /><label class="compact"><span>Máx. slides</span><input type="number" min="1" [(ngModel)]="s.maxSlides" /></label><button class="icon-btn subtle" (click)="removeSection(i)">×</button></div></div>
     </div>
-    <footer><button class="ghost" (click)="closeCreate()">Cancelar</button><button class="primary" [disabled]="!draft.name || !draft.presentationName || !draft.inputDriveFolder || !draft.outputDriveFolder" (click)="saveCreate()">Guardar e iniciar</button></footer>
+    <footer><button class="ghost" (click)="closeCreate()">Cancelar</button><button class="primary" [disabled]="!draft.name || !draft.presentationName || !draft.presentationTemplateId || !draft.inputDriveFolder || !draft.outputDriveFolder" (click)="saveCreate()">Guardar e iniciar</button></footer>
+  </section>
+</div>
+
+<div class="modal-backdrop" *ngIf="configOpen()">
+  <section class="modal config-modal">
+    <header><div><span class="eyebrow">CONFIGURACIÓN DE OFERTA</span><h2>Editar configuración</h2><p>Estos cambios se aplicarán a las fases pendientes o a una fase fallida que vuelvas a ejecutar.</p></div><button class="icon-btn" (click)="closeConfig()">×</button></header>
+    <div class="modal-body">
+      <div class="form-grid two"><label><span>Idioma de la presentación</span><select [(ngModel)]="configDraft.presentationLanguage"><option value="es">Español</option><option value="en">English</option><option value="fr">Français</option></select></label><label><span>Plantilla corporativa · Google Slides</span><input [(ngModel)]="configDraft.presentationTemplateId" placeholder="ID o URL de la presentación plantilla" /></label></div>
+      <div class="form-grid two"><label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="configDraft.inputDriveFolder" /></label><label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="configDraft.outputDriveFolder" /></label></div>
+      <label><span>Nombre de la presentación</span><input [(ngModel)]="configDraft.presentationName" /></label>
+      <div class="section-title"><div><h3>Modelos IA</h3><p>Se pueden ajustar antes de ejecutar fases pendientes o reintentos.</p></div></div>
+      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solutionArchitecture',l:'Solución'}, {k:'slidePlanning',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="configDraft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
+    </div>
+    <footer><button class="ghost" (click)="closeConfig()">Cancelar</button><button class="primary" (click)="saveConfig()">Guardar configuración</button></footer>
   </section>
 </div>

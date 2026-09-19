@@ -23,12 +23,14 @@ export class ExecutionService {
   }
 
   create(data: any) {
-    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName, aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, slidePlanning:data.models.slides, presentation:data.models.slides }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
+    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName, presentationTemplateId:data.presentationTemplateId, aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, slidePlanning:data.models.slides, presentation:data.models.slides }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
     this.http.post<OfferExecution>('/api/offers',request).subscribe(offer=>{this.executions.update(items=>[offer,...items.filter(i=>i.id!==offer.id)]);this.watch(offer.id);this.watchAgents(offer.id);});
   }
 
   get(id:string){return this.executions().find(e=>e.id===id);}
   approve(id:string,phaseKey:string){this.http.post<void>(`/api/offers/${id}/phases/${phaseKey}/approve`,{}).subscribe(()=>this.refreshOne(id));}
+  updateConfiguration(id:string,data:any){return this.http.put<OfferExecution>(`/api/offers/${id}/configuration`,data);}
+  retry(id:string,phaseKey:string){this.http.post<void>(`/api/offers/${id}/phases/${phaseKey}/retry`,{}).subscribe(()=>{this.refreshOne(id);this.refreshAgents(id);});}
   refine(id:string,phaseKey:string,message:string){this.http.post<void>(`/api/offers/${id}/phases/${phaseKey}/refine`,{instruction:message}).subscribe(()=>{this.refreshOne(id);this.refreshAgents(id);});}
 
   watch(id:string){

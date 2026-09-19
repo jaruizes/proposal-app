@@ -10,7 +10,7 @@ type PhaseArtifact={type:string;version:number;title:string;content:string};
 export class AppComponent {
   svc=inject(ExecutionService); view=signal<'home'|'detail'>('home'); selectedId=signal<string|null>(null); selectedPhaseKey=signal<string|null>(null); selectedArtifactIndex=signal(0); createOpen=signal(false); configOpen=signal(false); showRawMarkdown=signal(false); chatMessage='';
   providerModels:Record<string,string[]>={ANTHROPIC:['claude-sonnet-4-6','claude-opus-4-6'],'AWS Bedrock':['claude-sonnet-4-6'],OpenAI:['gpt-5.6']};
-  draft:any=this.newDraft(); selected=computed(()=>this.selectedId()?this.svc.get(this.selectedId()!):undefined); selectedPhase=computed(()=>this.selected()?.phases.find(p=>p.key===this.selectedPhaseKey()));
+  draft:any=this.newDraft(); configDraft:any={}; selected=computed(()=>this.selectedId()?this.svc.get(this.selectedId()!):undefined); selectedPhase=computed(()=>this.selected()?.phases.find(p=>p.key===this.selectedPhaseKey()));
   selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
   selectedArtifact=computed(()=>this.selectedArtifacts()[this.selectedArtifactIndex()]||this.selectedArtifacts()[0]);
   stats=computed(()=>{const items=this.svc.executions();return{total:items.length,working:items.filter(x=>x.overallStatus==='Trabajando').length,waiting:items.filter(x=>x.overallStatus==='Esperando aprobación').length};});
@@ -19,6 +19,10 @@ export class AppComponent {
   failedPhase=computed(()=>this.selected()?.phases.find(p=>p.status==='failed'));
   offerErrorMessage=computed(()=>this.latestFailedAgent()?.errorMessage||this.failedPhase()?.errorMessage||'');
   openCreate(){this.draft=this.newDraft();this.createOpen.set(true);} closeCreate(){this.createOpen.set(false);} saveCreate(){this.svc.create(this.draft);this.createOpen.set(false);}
+  openConfig(){const e=this.selected();if(!e)return;this.configDraft={presentationLanguage:e.presentationLanguage,inputDriveFolder:e.inputDriveFolder,outputDriveFolder:e.outputDriveFolder,presentationName:e.presentationName,presentationTemplateId:e.presentationTemplateId||'',aiProvider:e.provider,models:{...e.models},presentationGuidance:e.sections};this.configOpen.set(true);}
+  closeConfig(){this.configOpen.set(false);}
+  saveConfig(){const e=this.selected();if(!e)return;this.svc.updateConfiguration(e.id,this.configDraft).subscribe(updated=>{this.svc.executions.update(items=>items.map(x=>x.id===updated.id?updated:x));this.configOpen.set(false);});}
+  retryFailedPhase(){const e=this.selected(),p=this.failedPhase();if(e&&p)this.svc.retry(e.id,p.key);}
   openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);this.svc.watchAgents(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
   back(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
   chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
@@ -105,5 +109,5 @@ export class AppComponent {
   private tableCells(line:string){return line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());}
   private inlineMarkdown(value:string){let s=this.escapeHtml(value);s=s.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>');return s;}
   private escapeHtml(value:string){return value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
-  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',strategy:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
+  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',presentationTemplateId:'',provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',strategy:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
 }

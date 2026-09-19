@@ -26,19 +26,20 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     private final AgentRuntimeService agents;
     private final OfferRepositoryPort offers;
     private final ObjectMapper json = new ObjectMapper();
-    private final String templateId;
+    private final String defaultTemplateId;
     private final int maxQaIterations;
 
     public McpGoogleSlidesPresentationAdapter(ToolGatewayPort tools, AgentRuntimeService agents, OfferRepositoryPort offers,
             @Value("${presentation.template-id:}") String templateId,
             @Value("${presentation.visual-qa.max-fix-iterations:3}") int maxQaIterations) {
-        this.tools=tools; this.agents=agents; this.offers=offers; this.templateId=templateId; this.maxQaIterations=maxQaIterations;
+        this.tools=tools; this.agents=agents; this.offers=offers; this.defaultTemplateId=templateId; this.maxQaIterations=maxQaIterations;
     }
 
     @Override
     public PresentationResult materialize(UUID offerId,String slidesPlan,String outputFolder,String documentName) {
-        requireTemplate();
         var offer=offers.findById(offerId).orElseThrow(() -> new IllegalStateException("Offer not found"));
+        var templateId=resolvedTemplateId(offer);
+        requireTemplate(templateId);
         var templateStructure=text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId)));
 
         // Presentation Builder maps the frozen slide-plan onto the live corporate template.
@@ -146,7 +147,8 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     private String model(Offer offer){return offer.models().getOrDefault("presentation",offer.models().getOrDefault("presentationGeneration","claude-sonnet-4-6"));}
     private Map<String,Object> replacePresentationId(Map<String,Object> source,String id){var result=new LinkedHashMap<String,Object>();source.forEach((k,v)->result.put(k,replace(v,id)));return result;}
     private Object replace(Object value,String id){if(value instanceof String s)return s.replace("$PRESENTATION_ID",id);if(value instanceof Map<?,?> m){var out=new LinkedHashMap<String,Object>();m.forEach((k,v)->out.put(String.valueOf(k),replace(v,id)));return out;}if(value instanceof List<?> l)return l.stream().map(v->replace(v,id)).toList();return value;}
-    private void requireTemplate(){if(templateId==null||templateId.isBlank())throw new IllegalStateException("GOOGLE_SLIDES_TEMPLATE_ID/presentation.template-id is required for phase 5");}
+    private String resolvedTemplateId(Offer offer){return offer.presentationTemplateId()!=null&&!offer.presentationTemplateId().isBlank()?offer.presentationTemplateId().trim():Objects.toString(defaultTemplateId,"").trim();}
+    private void requireTemplate(String templateId){if(templateId==null||templateId.isBlank())throw new IllegalStateException("A Google Slides template is required for phase 5");}
     private static String text(Map<String,Object> r){return Objects.toString(r.get("text"),"");}
     private static String stripFences(String raw){var s=raw.trim();if(s.startsWith("```")){var first=s.indexOf('\n');var last=s.lastIndexOf("```");if(first>=0&&last>first)s=s.substring(first+1,last).trim();}return s;}
     private static String driveId(String value){if(value==null)return "";var v=value.trim();var marker="/folders/";var i=v.indexOf(marker);if(i>=0){var x=v.substring(i+marker.length());var q=x.indexOf('?');return q>=0?x.substring(0,q):x;}return v;}

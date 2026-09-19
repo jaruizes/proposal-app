@@ -24,6 +24,8 @@ public class OfferJpaEntity {
     private String outputDriveFolder;
     @Column(name = "presentation_name")
     private String presentationName;
+    @Column(name = "presentation_template_id")
+    private String presentationTemplateId;
     @Column(name = "ai_provider")
     private String aiProvider;
     @Column(name = "models_json", columnDefinition = "text")
@@ -56,6 +58,8 @@ public class OfferJpaEntity {
     public void setOutputDriveFolder(String outputDriveFolder) { this.outputDriveFolder = outputDriveFolder; }
     public String getPresentationName() { return presentationName; }
     public void setPresentationName(String presentationName) { this.presentationName = presentationName; }
+    public String getPresentationTemplateId() { return presentationTemplateId; }
+    public void setPresentationTemplateId(String presentationTemplateId) { this.presentationTemplateId = presentationTemplateId; }
     public String getAiProvider() { return aiProvider; }
     public void setAiProvider(String aiProvider) { this.aiProvider = aiProvider; }
     public String getModelsJson() { return modelsJson; }
