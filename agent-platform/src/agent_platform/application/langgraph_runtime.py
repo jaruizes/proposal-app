@@ -19,6 +19,9 @@ class LangGraphState(TypedDict, total=False):
     model_result: dict
     cache_hit: bool
     cache_key: str | None
+    proposal_sections: list[dict]
+    proposal_drafts: dict[str, str]
+    proposal_content: str
 
 
 class LangGraphAgentRuntime(AgentRuntime):
@@ -224,8 +227,12 @@ class LangGraphAgentRuntime(AgentRuntime):
         builder.add_node("build_context", build_context)
         builder.add_node("invoke_model", invoke_model)
         builder.add_edge(START, "build_context")
-        builder.add_edge("build_context", "invoke_model")
-        builder.add_edge("invoke_model", END)
+        if execution.skill_key == "compose-proposal":
+            from agent_platform.application.proposal_graph import add_proposal_nodes
+            add_proposal_nodes(builder, self, execution)
+        else:
+            builder.add_edge("build_context", "invoke_model")
+            builder.add_edge("invoke_model", END)
         return builder
 
 

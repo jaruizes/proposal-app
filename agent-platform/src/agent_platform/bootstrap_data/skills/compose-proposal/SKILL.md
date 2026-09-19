@@ -67,6 +67,11 @@ The document should work for human evaluation and automated AI screening:
 
 ## Canonical output
 
+When the LangGraph proposal workflow invokes this skill, its intermediate calls
+request one section body or a JSON review. Follow the current stage instruction
+for those calls. Only the assembled, globally reviewed result is the canonical
+proposal. A review with unresolved issues fails the phase for human retry.
+
 Return ONLY the complete Markdown for:
 
 `generated/proposal/proposal.md`

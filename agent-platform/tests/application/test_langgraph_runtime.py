@@ -5,6 +5,7 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
+from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.domain import AgentDefinition, AgentExecution, AgentExecutionRequest, ExecutionStatus, SkillDefinition
@@ -47,3 +48,76 @@ async def test_langgraph_runtime_preserves_platform_contract():
     assert "langgraph.node.context.completed" in event_types
     assert "langgraph.node.model.completed" in event_types
     assert "langgraph.execution.completed" in event_types
+
+
+class ProposalProvider:
+    def __init__(self, issues=False, revise_once=False):
+        self.calls=[]
+        self.issues=issues
+        self.revise_once=revise_once
+
+    async def generate(self, request: ModelRequest):
+        stage=request.messages[0].content.split("# Current stage\n")[-1]
+        self.calls.append(stage)
+        if stage.startswith("Write ONLY the body"):
+            content="Evidence-backed draft."
+        elif stage.startswith("Review and correct ONLY"):
+            content="Evidence-backed reviewed body."
+        elif stage.startswith("Review the complete proposal"):
+            needs_revision=self.issues or (self.revise_once and sum(s.startswith("Review the complete proposal") for s in self.calls)==1)
+            content='{"issues":[{"section":"Technical approach","instruction":"Clarify coverage"}]}' if needs_revision else '{"issues":[]}'
+        else:
+            content="Evidence-backed revised body."
+        return ModelResult(content=content,model="test-model",usage=ModelUsage(input_tokens=10,output_tokens=4))
+
+
+@pytest.mark.asyncio
+async def test_proposal_graph_preserves_configured_order_and_usage():
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider()
+    runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
+    guidance='{"sections":[{"name":"Executive summary","depth":"SUMMARY"},{"name":"Ignored","enabled":false},{"name":"Technical approach","depth":"DETAILED","guidance":"Explain integrations"}]}'
+    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance})
+    result=await runtime.execute(request)
+    assert result.status is ExecutionStatus.COMPLETED
+    content=result.artifacts[0].content
+    assert content.startswith("# Example\n\n## Executive summary\n")
+    assert content.index("## Executive summary") < content.index("## Technical approach")
+    assert "Ignored" not in content
+    assert result.usage.input_tokens==50
+    assert [e["event_type"] for e in await er.list_events(result.execution_id)].count("proposal.section.reviewed")==2
+
+
+@pytest.mark.asyncio
+async def test_proposal_global_review_failure_does_not_publish_partial_artifact():
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider(issues=True)
+    runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
+    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+'{"sections":[{"name":"Technical approach"}]}'})
+    result=await runtime.execute(request)
+    assert result.status is ExecutionStatus.FAILED
+    assert result.artifacts==[]
+    assert any(e["event_type"]=="proposal.section.revised" for e in await er.list_events(result.execution_id))
+
+
+@pytest.mark.asyncio
+async def test_proposal_global_review_revises_only_affected_section():
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider(revise_once=True)
+    runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
+    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+'{"sections":[{"name":"Executive summary"},{"name":"Technical approach"}]}'})
+    result=await runtime.execute(request)
+    assert result.status is ExecutionStatus.COMPLETED
+    assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
+    assert "## Executive summary\n\nEvidence-backed reviewed body." in result.artifacts[0].content
+    assert result.usage.input_tokens==70
+
+
+def test_proposal_rejects_missing_or_invalid_guidance():
+    with pytest.raises(ProposalPlanError):
+        configured_sections(AgentExecutionRequest(agent_key="ba",objective="Compose"))
+    with pytest.raises(ProposalPlanError):
+        configured_sections(AgentExecutionRequest(agent_key="ba",objective="Compose",context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+'{"sections":[{"name":"Same"},{"name":"Same"}]}' }))

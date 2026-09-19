@@ -15,6 +15,7 @@ EXPECTED_SKILLS = {
     "analyze-opportunity",
     "build-strategy",
     "define-solution",
+    "compose-proposal",
     "design-proposal",
     "generate-presentation",
 }
