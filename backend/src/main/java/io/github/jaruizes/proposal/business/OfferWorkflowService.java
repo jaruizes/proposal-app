@@ -210,14 +210,14 @@ public class OfferWorkflowService {
         var approved=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY));
 
         // Triage the complete source inventory before loading expensive original evidence.
-        var triageContext=approved+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest();
+        var triageContext=approved+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+refinement(refinement);
         var triage=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
                 "Triage de fuentes y especialistas opcionales","""
                 Before designing the solution, use the approved current-offer artifacts plus the source manifest to decide which ORIGINAL customer sources require review.
                 Classify every source as REVIEW_IN_DEPTH, TARGETED_REVIEW or SKIP. Select originals whenever exact technical constraints, versions, integrations, security, data, volumes, SLAs, diagrams or other factual details may affect the solution.
                 Return ONLY JSON: {"sourceReview":[{"id":"DOC-001","disposition":"REVIEW_IN_DEPTH","reason":"..."}],"specialistConsultations":[{"agentKey":"security-specialist","question":"..."}]}.
                 Maximum two consultations. Do not request base roles as specialists.
-                """).withOutputFormat("json"),model(offer,"solutionArchitecture"),triageContext);
+                """).withOutputFormat("json").withCheckpoint("solution.triage"),model(offer,"solutionArchitecture"),triageContext);
 
         var selectedSources=sources.selectForSolution(sourceBundle,triage.content());
         var evidenceContext=approved+"\n\n# SOURCE MANIFEST (SELECTED ORIGINALS)\n"+selectedSources.manifest()
@@ -235,7 +235,7 @@ public class OfferWorkflowService {
                 Include: solutionSummary, principles, logicalArchitecture, components, integrations, data, security, resilience, observability, infrastructure, legacyAndTransition, decisionsAndTradeoffs, deliveryConstraints, risks, capabilityProfiles, assumptionsAndTbds, proposalHighlights, sourceReview, specialistValidations.
                 Distinguish FACT, PRINCIPLE, PROPOSAL, DECISION and ASSUMPTION where material. Do not estimate effort, staffing, duration, cost or price.
                 Be selective: keep the complete JSON below roughly 20,000 characters. Do not duplicate source text.
-                """).withOutputFormat("json"),model(offer,"solutionArchitecture"),blueprintContext,selectedSources.visualAttachments());
+                """).withOutputFormat("json").withCheckpoint("solution.blueprint"),model(offer,"solutionArchitecture"),blueprintContext+refinement(refinement),selectedSources.visualAttachments());
 
         // Draft independent bounded blocks from the compact blueprint. These calls intentionally do not receive
         // the original corpus again: the preceding architect-owned blueprint is the grounded hand-off.
@@ -300,7 +300,7 @@ public class OfferWorkflowService {
                 Return ONLY compact JSON with: recommendedMethodology, rationale, inceptionOrDiscovery, reestimationOrDecisionGates, workstreams, milestones, dependencies, governance, customerAndThirdPartyParticipation, acceptanceAndValidation, cutoverTransitionHandover, risksAndTbds, capabilityCoverage, sourceReview.
                 Preserve material evidence locators. Do not redefine the technical solution and do not estimate effort, staffing, duration, cost or price.
                 Keep the JSON below roughly 16,000 characters and avoid duplicating source text.
-                """).withOutputFormat("json"),model(offer,"deliveryPlanning"),deliveryReviewContext,selectedSources.visualAttachments());
+                """).withOutputFormat("json").withCheckpoint("delivery.grounding"),model(offer,"deliveryPlanning"),deliveryReviewContext,selectedSources.visualAttachments());
 
         var deliveryContext=offerContext(offer)+"\n\n# solution.md\n"+solution+"\n\n# INTERNAL DELIVERY REVIEW\n"+deliveryReview.content();
         var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
@@ -308,17 +308,17 @@ public class OfferWorkflowService {
                 Execute section B of define-solution. Produce ONLY the complete unestimated delivery-plan.md as raw Markdown, without an outer code fence or filename heading.
                 Use the supplied solution.md and INTERNAL DELIVERY REVIEW. Cover methodology/lifecycle, inception or discovery where appropriate, decision/re-estimation gates, workstreams, milestones, dependencies, governance, customer/third-party participation, acceptance, cutover/transition/handover, risks/TBDs and capability → workstream coverage.
                 Do not redefine the technical solution. Do not estimate effort, staffing, duration, cost or price. Keep the document focused and below 4,500 words.
-                """),model(offer,"deliveryPlanning"),deliveryContext);
+                """).withCheckpoint("delivery.plan"),model(offer,"deliveryPlanning"),deliveryContext);
         var deliveryPlan=delivery.content();
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.DELIVERY_PLAN,deliveryPlan);
 
         agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"business-analyst","define-solution",
-                "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and delivery-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text"),
+                "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and delivery-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text").withCheckpoint("solution.coherence-review"),
                 model(offer,"solutionArchitecture"),approved+"\n\n# solution.md\n"+solution+"\n\n# delivery-plan.md\n"+deliveryPlan);
     }
 
     private AgentTask solutionPartTask(Offer offer,String objective,String prompt){
-        return AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,objective,prompt).withOutputFormat("json");
+        var key=switch(objective){\n            case "Redactar solución · arquitectura base" -> "solution.part.architecture";\n            case "Redactar solución · seguridad y operación" -> "solution.part.security-operations";\n            case "Redactar solución · decisiones y delivery" -> "solution.part.decisions-delivery";\n            case "Redactar solución · cierre y trazabilidad" -> "solution.part.traceability";\n            default -> "solution.part."+Integer.toHexString(objective.hashCode());\n        };\n        return AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,objective,prompt).withOutputFormat("json").withCheckpoint(key);
     }
 
     private String markdownFromJson(LlmResult result){
@@ -364,7 +364,7 @@ public class OfferWorkflowService {
             root.path("specialistConsultations").forEach(node->{
                 if(requested.size()>=2)return;
                 var key=node.path("agentKey").asText(); var question=node.path("question").asText();
-                try{var definition=agentRegistry.get(key);if("Specialist".equals(definition.role())) requested.add(AgentTask.of(offer.id(),PhaseType.SOLUTION,key,"define-solution","Consulta especializada",question).withOutputFormat("text"));}catch(Exception ignored){}
+                try{var definition=agentRegistry.get(key);if("Specialist".equals(definition.role())) {var checkpoint="solution.specialist."+requested.size()+"."+key;requested.add(AgentTask.of(offer.id(),PhaseType.SOLUTION,key,"define-solution","Consulta especializada",question).withOutputFormat("text").withCheckpoint(checkpoint));}}catch(Exception ignored){}
             });
             if(requested.isEmpty())return "\n\n# OPTIONAL SPECIALIST CONSULTATIONS\nNone requested.";
             // Keep bounded fan-out. Specialist consultations do not own canonical artifacts.
