@@ -36,6 +36,12 @@ public class AgentExecutionJpaEntity {
     private Instant completedAt;
     @Column(name = "error_message", columnDefinition = "text")
     private String errorMessage;
+    @Column(name = "checkpoint_key")
+    private String checkpointKey;
+    @Column(name = "input_fingerprint")
+    private String inputFingerprint;
+    @Column(name = "reused_from_execution_id")
+    private UUID reusedFromExecutionId;
 
     public AgentExecutionJpaEntity() {}
 
@@ -67,4 +73,10 @@ public class AgentExecutionJpaEntity {
     public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+    public String getCheckpointKey() { return checkpointKey; }
+    public void setCheckpointKey(String checkpointKey) { this.checkpointKey = checkpointKey; }
+    public String getInputFingerprint() { return inputFingerprint; }
+    public void setInputFingerprint(String inputFingerprint) { this.inputFingerprint = inputFingerprint; }
+    public UUID getReusedFromExecutionId() { return reusedFromExecutionId; }
+    public void setReusedFromExecutionId(UUID reusedFromExecutionId) { this.reusedFromExecutionId = reusedFromExecutionId; }
 }
