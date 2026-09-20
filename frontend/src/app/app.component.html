@@ -2,7 +2,8 @@
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark">P</span><span>Proposal<span class="brand-accent">Flow</span></span></div>
     <nav>
-      <button class="nav-item active"><span>⌂</span><span>Ofertas</span></button>
+      <button class="nav-item" [class.active]="view()==='home' || view()==='detail'" (click)="openHome()"><span>⌂</span><span>Ofertas</span></button>
+      <button class="nav-item" [class.active]="view()==='knowledge'" (click)="openKnowledge()"><span>▤</span><span>Conocimiento</span></button>
       <button class="nav-item"><span>◫</span><span>Plantillas</span></button>
       <button class="nav-item"><span>◇</span><span>Proveedores IA</span></button>
       <button class="nav-item"><span>⚙</span><span>Configuración</span></button>
@@ -12,13 +13,15 @@
 
   <main class="main-content">
     <header class="topbar">
-      <div><span class="eyebrow">PROPOSAL AGENT PLATFORM</span><h1>{{ view() === 'home' ? 'Panel de ofertas' : selected()?.name }}</h1></div>
+      <div><span class="eyebrow">PROPOSAL AGENT PLATFORM</span><h1>{{ view() === 'home' ? 'Panel de ofertas' : view() === 'knowledge' ? 'Conocimiento y RAG' : selected()?.name }}</h1></div>
       <div class="top-actions">
         <span class="environment">● Backend conectado</span>
         <button *ngIf="view() === 'home'" class="primary" (click)="openCreate()">＋ Crear nueva oferta</button>
         <button *ngIf="view() === 'detail'" class="ghost" (click)="openConfig()">⚙ Configurar oferta</button><button *ngIf="view() === 'detail'" class="ghost" (click)="back()">← Volver</button>
       </div>
     </header>
+
+    <app-knowledge *ngIf="view() === 'knowledge'"></app-knowledge>
 
     <ng-container *ngIf="view() === 'home'">
       <section class="stat-grid">

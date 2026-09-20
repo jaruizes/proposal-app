@@ -1,6 +1,10 @@
 spring:
   application:
     name: proposal-platform-backend
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 27MB
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/proposal}
     username: ${DB_USER:proposal}

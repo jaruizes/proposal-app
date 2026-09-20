@@ -6,6 +6,7 @@ from agent_platform.application.chunking import ChunkingStrategyName
 from agent_platform.application.document_parsers import DocumentParseError, DocumentParserRegistry
 from agent_platform.application.ingestion import KnowledgeIngestionResult, KnowledgeIngestionService
 from agent_platform.application.knowledge import KnowledgeService
+from agent_platform.application.knowledge_classification import DeterministicKnowledgeClassifier
 from agent_platform.application.metadata_enrichment import MetadataEnrichmentProfile
 from agent_platform.domain import KnowledgeDocument
 
@@ -29,10 +30,12 @@ class KnowledgeFileService:
         knowledge_service: KnowledgeService,
         ingestion_service: KnowledgeIngestionService,
         parser_registry: DocumentParserRegistry | None = None,
+        classifier: DeterministicKnowledgeClassifier | None = None,
     ) -> None:
         self._knowledge_service = knowledge_service
         self._ingestion_service = ingestion_service
         self._parsers = parser_registry or DocumentParserRegistry()
+        self._classifier = classifier or DeterministicKnowledgeClassifier()
 
     async def upload(
         self,
@@ -66,6 +69,9 @@ class KnowledgeFileService:
         except DocumentParseError as exc:
             raise KnowledgeFileUploadError(str(exc)) from exc
 
+        classified_metadata = dict(metadata)
+        classified_metadata["classification"] = self._classifier.classify(knowledge_base_key, classified_metadata)
+
         document = KnowledgeDocument(
             knowledge_base_key=knowledge_base_key,
             title=filename,
@@ -73,7 +79,7 @@ class KnowledgeFileService:
             media_type=parsed.media_type,
             source_uri=source_uri or f"upload://{filename}",
             metadata={
-                **metadata,
+                **classified_metadata,
                 "upload": {
                     "original_filename": filename,
                     "declared_media_type": declared_media_type,

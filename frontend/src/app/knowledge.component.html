@@ -1,0 +1,64 @@
+<section class="knowledge-page">
+  <div class="knowledge-hero panel">
+    <div><span class="eyebrow">KNOWLEDGE / RAG</span><h2>Conocimiento de referencia</h2><p>Sube, clasifica, ingesta y consulta documentos que los agentes pueden utilizar como contexto.</p></div>
+    <button class="primary" [disabled]="!selectedBase()" (click)="uploadOpen.set(true)">＋ Añadir documento</button>
+  </div>
+  <div class="knowledge-layout">
+    <aside class="panel kb-sidebar">
+      <div class="panel-head"><div><h2>Bases</h2><p>{{svc.bases().length}} disponibles</p></div></div>
+      <button class="kb-item" *ngFor="let base of svc.bases()" [class.active]="selectedBase()===base.key" (click)="chooseBase(base.key)">
+        <strong>{{base.name}}</strong><small>{{base.description}}</small><span class="mono">{{base.key}}</span>
+      </button>
+    </aside>
+    <div class="knowledge-main">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Documentos</h2><p>{{selectedBase() ? svc.documents().length + ' documentos en ' + selectedBase() : 'Selecciona una base de conocimiento.'}}</p></div></div>
+        <div class="knowledge-empty" *ngIf="selectedBase() && svc.documents().length===0">Todavía no hay documentos. Añade PDF, DOCX, TXT o Markdown.</div>
+        <div class="knowledge-doc-list">
+          <button class="knowledge-doc" *ngFor="let doc of svc.documents()" (click)="inspect(doc)">
+            <div><strong>{{doc.title}}</strong><span class="classification">{{classification(doc)}}</span><small>{{doc.media_type}} · {{doc.created_at | date:'dd/MM/yyyy HH:mm'}}</small><div class="keyword-row"><span *ngFor="let k of keywords(doc)">{{k}}</span></div></div>
+            <span class="doc-status" [ngClass]="doc.status.toLowerCase()">{{doc.status}}</span>
+          </button>
+        </div>
+      </section>
+      <section class="panel rag-query-panel">
+        <div class="panel-head"><div><h2>Consultar RAG</h2><p>Prueba el retrieval que utilizarán los agentes. Si seleccionas una base, la búsqueda se limita a ella.</p></div></div>
+        <div class="rag-query">
+          <input [(ngModel)]="query" (keyup.enter)="search()" placeholder="Ej. propuestas de arquitectura OpenShift para banca…" />
+          <select [(ngModel)]="queryMode"><option value="hybrid">Híbrida</option><option value="vector">Vectorial</option><option value="keyword">Keyword</option><option value="graph">Grafo</option></select>
+          <input class="top-k" type="number" min="1" max="20" [(ngModel)]="topK" />
+          <button class="primary" (click)="search()" [disabled]="!query.trim() || svc.loading()">Buscar</button>
+        </div>
+        <div class="rag-hit" *ngFor="let hit of svc.results()?.hits">
+          <div class="rag-hit-head"><div><strong>{{hit.title}}</strong><span>{{hit.knowledge_base_key}}</span></div><div><b>{{hit.score | number:'1.3-3'}}</b><small>{{hit.retrieval_method}}</small></div></div>
+          <p>{{hit.content}}</p><details><summary>Metadata</summary><pre>{{hit.metadata | json}}</pre></details>
+        </div>
+        <div class="knowledge-empty" *ngIf="svc.results() && svc.results()?.hits?.length===0">No se encontraron resultados para esta consulta.</div>
+      </section>
+      <section class="panel" *ngIf="selectedDocument() as doc">
+        <div class="panel-head"><div><span class="eyebrow">DOCUMENTO</span><h2>{{doc.title}}</h2><p>{{classification(doc)}} · {{doc.status}}</p></div><button class="ghost small" (click)="selectedDocument.set(null);svc.chunks.set([])">Cerrar</button></div>
+        <details open><summary>Clasificación y metadata</summary><pre class="knowledge-json">{{doc.metadata | json}}</pre></details>
+        <h3 class="knowledge-subtitle">Chunks almacenados ({{svc.chunks().length}})</h3>
+        <article class="chunk-card" *ngFor="let chunk of svc.chunks() | slice:0:20"><div><b>#{{chunk.ordinal}}</b><span>{{chunk.embedding_model || 'sin embedding'}}</span></div><p>{{chunk.content}}</p></article>
+      </section>
+    </div>
+  </div>
+  <div class="knowledge-toast" *ngIf="svc.message()">{{svc.message()}}</div>
+  <div class="modal-backdrop" *ngIf="uploadOpen()">
+    <section class="modal knowledge-upload-modal">
+      <header><div><span class="eyebrow">INGESTA RAG</span><h2>Añadir documento</h2><p>El documento se parseará, clasificará, enriquecerá, troceará y almacenará con embeddings.</p></div><button class="icon-btn" (click)="uploadOpen.set(false)">×</button></header>
+      <div class="modal-body">
+        <label><span>Archivo</span><input type="file" accept=".pdf,.docx,.txt,.md,text/plain,application/pdf" (change)="onFile($event)" /></label>
+        <div class="form-grid two"><label><span>Chunking</span><select [(ngModel)]="upload.chunkingStrategy"><option value="fixed">Fixed</option><option value="semantic">Semantic</option><option value="hierarchical">Hierarchical</option></select></label><label><span>Enriquecimiento</span><select [(ngModel)]="upload.metadataEnrichment"><option value="standard">Standard</option><option value="basic">Basic</option><option value="none">None</option></select></label></div>
+        <div class="form-grid two"><label><span>Cliente (opcional)</span><input [(ngModel)]="upload.customer" /></label><label><span>Sector (opcional)</span><input [(ngModel)]="upload.sector" placeholder="INSURANCE, BANKING…" /></label></div>
+        <div class="form-grid two"><label><span>Año</span><input type="number" [(ngModel)]="upload.year" /></label><label><span>Tipo de propuesta</span><input [(ngModel)]="upload.proposalType" placeholder="TECHNICAL, RFI, RFP…" /></label></div>
+        <label><span>Tags</span><input [(ngModel)]="upload.tags" placeholder="cloud, openshift, seguros" /></label>
+        <details class="advanced-ingestion"><summary>Opciones avanzadas de chunking</summary>
+          <div class="form-grid two"><label><span>Chunk size</span><input type="number" [(ngModel)]="upload.chunkSize" /></label><label><span>Overlap</span><input type="number" [(ngModel)]="upload.overlap" /></label></div>
+          <div class="form-grid two" *ngIf="upload.chunkingStrategy==='hierarchical'"><label><span>Parent size</span><input type="number" [(ngModel)]="upload.parentSize" /></label><label><span>Child size</span><input type="number" [(ngModel)]="upload.childSize" /></label></div>
+        </details>
+      </div>
+      <footer><button class="ghost" (click)="uploadOpen.set(false)">Cancelar</button><button class="primary" [disabled]="!file || svc.loading()" (click)="doUpload()">Ingestar documento</button></footer>
+    </section>
+  </div>
+</section>
