@@ -1,6 +1,6 @@
 ---
 name: define-solution
-description: Execute phase 3 with Solution Architect owning solution.md, Delivery Manager owning solution-plan.md, and Business Analyst coordinating/coherence-checking the offer.
+description: Execute phase 3 with Solution Architect owning solution.md, Delivery Manager owning delivery-plan.md, and Business Analyst coordinating/coherence-checking the offer.
 ---
 
 # Fase 3 — Definición de solución y enfoque de ejecución
@@ -38,7 +38,7 @@ solution.md
         ↓
 Delivery Manager                   # dedicated base-role context
         ↓ owns
-solution-plan.md
+delivery-plan.md
         ↓
 Business Analyst                   # coherence review in coordinator context
 ```
@@ -208,31 +208,40 @@ A `PROPOSAL` is not automatically a committed detailed-design decision.
 
 Do not fabricate internal reusable assets. Do not claim a custom development has no third-party dependencies: normal framework/library dependencies exist unless evidence says otherwise; SBOM/dependency management should reflect that.
 
-# B. `solution-plan.md` — owner: Delivery Manager
+# B. `delivery-plan.md` — owner: Delivery Manager
 
 Write exactly:
 
 ```text
-generated/solution/solution-plan.md
+generated/solution/delivery-plan.md
 ```
 
-This is an unestimated work breakdown answering:
+This is the delivery plan for materializing `solution.md`. It must explain how the solution should be delivered, not redefine the solution itself.
+
+It answers questions such as:
 
 ```text
-What high-level work must be performed to materialize solution.md?
+What delivery methodology or lifecycle is appropriate (waterfall, agile, hybrid or custom)?
+Is an inception/discovery/landing phase needed before commitment or re-estimation?
+What workstreams should exist and which can run in parallel?
+What milestones, decision gates and integrated validation points are needed?
+What dependencies, customer participation, governance and transition/cutover activities shape delivery?
 ```
 
-Choose the natural structure:
+Keep it unestimated: do not invent effort, staffing, duration, cost or price.
+
+Choose the natural delivery structure and methodology. This may be waterfall, agile, hybrid or a custom model justified by the context. Typical shapes include:
 
 ```text
 A. sequential phases/increments
 B. parallel workstreams with increments
 C. hybrid: common inception + parallel workstreams + integrated validation/cutover
+D. discovery/inception first, followed by validation/re-estimation and then execution
 ```
 
 Do not force sprints. If sprint-like units are used, they are planning units, not duration commitments.
 
-For each workstream/phase/increment include:
+Describe the selected delivery methodology and rationale first. Then, for each workstream/phase/increment include:
 
 - stable ID/name;
 - objective/outcome;
@@ -250,7 +259,7 @@ Each task contains at least:
 Task ID | Task name | Description
 ```
 
-Consider when applicable: inception, access/environments, architecture validation, platform/CI-CD, application foundation, frontend/UX, backend/domain, integrations, data/migration, security, observability/operations, testing/acceptance, deployment/cutover, documentation/training/handover.
+Consider when applicable: inception/discovery, validation and re-estimation gates, access/environments, architecture validation, platform/CI-CD, application foundation, frontend/UX, backend/domain, integrations, data/migration, security, observability/operations, testing/acceptance, deployment/cutover, documentation/training/handover, governance and transition to operations.
 
 ### Coverage check
 
@@ -271,7 +280,7 @@ Check:
 - alignment with approved `strategy.md` and strategic story;
 - scope/out-of-scope and human decisions preserved;
 - customer requirements not silently changed;
-- solution and plan mutually consistent;
+- solution and delivery plan mutually consistent;
 - all major capabilities covered by work;
 - assumptions/TBDs aligned;
 - optional specialist advice did not become unsupported promise;
@@ -288,7 +297,7 @@ Complete only when:
 2. Solution Architect inspected the full inventory and relevant original evidence;
 3. `solution.md` exists;
 4. Delivery Manager inspected the full inventory and relevant execution evidence after reading `solution.md`;
-5. `solution-plan.md` exists;
+5. `delivery-plan.md` exists;
 6. capability-to-work coverage is complete;
 7. no estimate appears;
 8. optional specialist consultations are bounded and recorded;
