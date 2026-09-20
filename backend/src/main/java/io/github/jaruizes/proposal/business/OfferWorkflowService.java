@@ -237,14 +237,14 @@ public class OfferWorkflowService {
         // Delivery is deliberately sequential and consumes the architect artifact in its own isolated role context.
         var deliveryContext=evidenceContext+"\n\n# solution.md\n"+solution;
         var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
-                "Definir enfoque de ejecución","Execute section B of define-solution. Produce ONLY the complete unestimated solution-plan.md as raw Markdown, without an outer code fence or filename heading. Include capability → workstream coverage."),
+                "Definir enfoque de ejecución","Execute section B of define-solution. Produce ONLY the complete unestimated delivery-plan.md as raw Markdown, without an outer code fence or filename heading. Include capability → workstream coverage."),
                 model(offer,"deliveryPlanning"),deliveryContext,selectedSources.visualAttachments());
-        var solutionPlan=delivery.content();
-        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION_PLAN,solutionPlan);
+        var deliveryPlan=delivery.content();
+        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.DELIVERY_PLAN,deliveryPlan);
 
         agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"business-analyst","define-solution",
-                "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and solution-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text"),
-                model(offer,"solutionArchitecture"),approved+"\n\n# solution.md\n"+solution+"\n\n# solution-plan.md\n"+solutionPlan);
+                "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and delivery-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text"),
+                model(offer,"solutionArchitecture"),approved+"\n\n# solution.md\n"+solution+"\n\n# delivery-plan.md\n"+deliveryPlan);
     }
 
     private String runRequestedSpecialists(Offer offer,String context,String triage,List<LlmRequest.Attachment> attachments){
@@ -270,7 +270,7 @@ public class OfferWorkflowService {
     }
 
     private void runProposal(Offer offer,String refinement){
-        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.SOLUTION_PLAN));
+        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst","compose-proposal",
                 "Redactar oferta detallada","Execute compose-proposal exactly. Produce ONLY the complete canonical proposal.md in Markdown. Follow PROPOSAL GUIDANCE as authoritative structure/depth guidance. Never invent prices, effort, staffing, dates, contractual commitments or customer facts."+refinement(refinement)),
                 model(offer,"proposal"),context+"\n\n# PROPOSAL GUIDANCE JSON\n"+proposalGuidanceJson(offer.proposalGuidance()));
@@ -282,7 +282,7 @@ public class OfferWorkflowService {
     }
 
     private void runSlidePlan(Offer offer,String refinement){
-        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.SOLUTION_PLAN,ArtifactType.PROPOSAL));
+        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN,ArtifactType.PROPOSAL));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.SLIDE_PLAN,"business-analyst","design-proposal",
                 "Planificar narrativa de presentación","Execute design-proposal exactly. Produce ONLY the canonical slides-plan.md. Human presentation guidance follows in context."+refinement(refinement)),
                 model(offer,"slidePlanning"),context+"\n\n# PRESENTATION GUIDANCE\n"+Objects.toString(offer.presentationGuidance(),"none"));
