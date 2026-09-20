@@ -54,10 +54,10 @@ class KnowledgeChunk(BaseModel):
 
 
 DEFAULT_KNOWLEDGE_BASES = (
-    ("reference-offers", "Reference Offers", "Approved historical proposals reusable as references."),
-    ("architecture-references", "Architecture References", "Architecture patterns, ADRs, standards and technical guidance."),
-    ("corporate-roles", "Corporate Roles", "Corporate roles and professional profiles."),
-    ("corporate-capabilities", "Corporate Capabilities", "Organizational capabilities and delivery areas."),
-    ("accelerators", "Accelerators", "Reusable assets, frameworks and accelerators."),
-    ("case-studies", "Case Studies", "Approved case studies and customer success references."),
+    ("reference-offers", "Ofertas de referencia", "Propuestas históricas aprobadas reutilizables como referencia."),
+    ("architecture-references", "Referencias de arquitectura", "Patrones de arquitectura, ADRs, estándares y guías técnicas."),
+    ("corporate-roles", "Roles corporativos", "Roles corporativos y perfiles profesionales."),
+    ("corporate-capabilities", "Capacidades corporativas", "Capacidades organizativas y áreas de entrega."),
+    ("accelerators", "Aceleradores", "Activos reutilizables, frameworks y aceleradores."),
+    ("case-studies", "Casos de éxito", "Casos de estudio aprobados y referencias de éxito de clientes."),
 )
