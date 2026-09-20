@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
 
 class ProposalDocumentMaterializationServiceTest {
 
@@ -22,8 +23,10 @@ class ProposalDocumentMaterializationServiceTest {
 
         var docs=new InMemoryDocuments();
         var renderer=new FakeRenderer();
+        var settings=mock(TemplateSettingsService.class);
+        when(settings.get()).thenReturn(new TemplateSettingsService.Settings("", "", null));
         var service=new ProposalDocumentMaterializationService(
-                new SingleOfferRepo(offer),new SingleArtifactRepo(proposal),docs,renderer);
+                new SingleOfferRepo(offer),new SingleArtifactRepo(proposal),docs,renderer,settings);
 
         var first=service.materializeApprovedProposal(offerId);
         var second=service.materializeApprovedProposal(offerId);
@@ -46,8 +49,10 @@ class ProposalDocumentMaterializationServiceTest {
 
         var docs=new InMemoryDocuments();
         var renderer=new FakeRenderer();renderer.failPdf=true;
+        var settings=mock(TemplateSettingsService.class);
+        when(settings.get()).thenReturn(new TemplateSettingsService.Settings("", "", null));
         var service=new ProposalDocumentMaterializationService(
-                new SingleOfferRepo(offer),new SingleArtifactRepo(proposal),docs,renderer);
+                new SingleOfferRepo(offer),new SingleArtifactRepo(proposal),docs,renderer,settings);
 
         var result=service.materializeApprovedProposal(offerId);
 

@@ -318,12 +318,14 @@ public class OfferWorkflowService {
     private static String blankOr(String value,String fallback){return value==null||value.isBlank()?fallback:value.trim();}
     private void validateConfiguration(String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,boolean generatePresentation,String aiProvider,Map<String,String> models,Object proposalGuidance,Object guidance){
         var missing=new ArrayList<String>();
-        if(presentationLanguage==null||presentationLanguage.isBlank())missing.add("idioma de presentación");
+        if(generatePresentation&&(presentationLanguage==null||presentationLanguage.isBlank()))missing.add("idioma de presentación");
         if(inputDriveFolder==null||inputDriveFolder.isBlank())missing.add("carpeta de entrada de Google Drive");
-        if(outputDriveFolder==null||outputDriveFolder.isBlank())missing.add("carpeta de salida de Google Drive");
+        if(generatePresentation&&(outputDriveFolder==null||outputDriveFolder.isBlank()))missing.add("carpeta de salida de Google Drive");
         if(generatePresentation&&(presentationName==null||presentationName.isBlank()))missing.add("nombre de la presentación");
         if(aiProvider==null||aiProvider.isBlank())missing.add("proveedor de IA");
-        var requiredModels=List.of("analysis","strategy","solutionArchitecture","deliveryPlanning","proposal","slidePlanning","presentation");
+        var requiredModels=generatePresentation
+                ?List.of("analysis","strategy","solutionArchitecture","deliveryPlanning","proposal","slidePlanning","presentation")
+                :List.of("analysis","strategy","solutionArchitecture","deliveryPlanning","proposal");
         for(var key:requiredModels)if(models==null||models.get(key)==null||models.get(key).isBlank())missing.add("modelo IA para "+key);
         if(proposalGuidance==null)missing.add("estructura de oferta detallada");
         if(generatePresentation&&guidance==null)missing.add("estructura de presentación");
