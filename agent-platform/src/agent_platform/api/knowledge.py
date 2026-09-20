@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
-from agent_platform.api.dependencies import KnowledgeFileServiceDep, KnowledgeIngestionServiceDep, KnowledgeServiceDep
+from agent_platform.api.dependencies import CacheServiceDep, KnowledgeFileServiceDep, KnowledgeIngestionServiceDep, KnowledgeServiceDep
 from agent_platform.application.chunking import ChunkingStrategyName
 from agent_platform.application.file_ingestion import KnowledgeFileUploadError
 from agent_platform.application.ingestion import (
@@ -231,19 +231,29 @@ async def list_document_versions(document_id: UUID, service: KnowledgeServiceDep
     except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.post("/knowledge-documents/{document_id}/archive", response_model=KnowledgeDocument)
-async def archive_document(document_id: UUID, service: KnowledgeServiceDep):
-    try: return await service.archive(document_id)
+async def archive_document(document_id: UUID, service: KnowledgeServiceDep, cache: CacheServiceDep):
+    try:
+        result = await service.archive(document_id)
+        await cache.invalidate_namespace("retrieval")
+        await cache.invalidate_namespace("cognitive-rag")
+        return result
     except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.post("/knowledge-documents/{document_id}/restore", response_model=KnowledgeDocument)
-async def restore_document(document_id: UUID, service: KnowledgeServiceDep):
-    try: return await service.restore(document_id)
+async def restore_document(document_id: UUID, service: KnowledgeServiceDep, cache: CacheServiceDep):
+    try:
+        result = await service.restore(document_id)
+        await cache.invalidate_namespace("retrieval")
+        await cache.invalidate_namespace("cognitive-rag")
+        return result
     except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.delete("/knowledge-documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(document_id: UUID, service: KnowledgeServiceDep):
+async def delete_document(document_id: UUID, service: KnowledgeServiceDep, cache: CacheServiceDep):
     try:
         await service.delete(document_id)
+        await cache.invalidate_namespace("retrieval")
+        await cache.invalidate_namespace("cognitive-rag")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -252,6 +262,7 @@ async def upload_new_version(
     document_id: UUID,
     knowledge: KnowledgeServiceDep,
     files: KnowledgeFileServiceDep,
+    cache: CacheServiceDep,
     file: UploadFile = File(...),
     metadata: str | None = Form(default=None),
     chunking_strategy: ChunkingStrategyName = Form(default=ChunkingStrategyName.FIXED),
@@ -296,6 +307,8 @@ async def upload_new_version(
             for old in versions:
                 if old.status is KnowledgeDocumentStatus.READY:
                     await knowledge.supersede(old.id)
+        await cache.invalidate_namespace("retrieval")
+        await cache.invalidate_namespace("cognitive-rag")
         return KnowledgeFileUploadResponse(document=result.document, ingestion=result.ingestion)
     except KnowledgeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -20,14 +20,7 @@
             <span class="doc-status" [ngClass]="doc.status.toLowerCase()">{{doc.status}}</span>
           </button>
         </div>
-        <div class="modal-backdrop" *ngIf="versionOpen() && selectedDocument() as versionDoc">
-    <section class="modal knowledge-upload-modal">
-      <header><div><span class="eyebrow">NUEVA VERSIÓN</span><h2>{{versionDoc.title}}</h2><p>La nueva versión se ingesta primero; sólo si termina correctamente sustituye a la versión activa.</p></div><button class="icon-btn" (click)="versionOpen.set(false)">×</button></header>
-      <div class="modal-body"><label><span>Archivo</span><input type="file" accept=".pdf,.docx,.txt,.md" (change)="onVersionFile($event)" /></label><div class="form-grid two"><label><span>Chunking</span><select [(ngModel)]="upload.chunkingStrategy"><option value="fixed">Fixed</option><option value="semantic">Semantic</option><option value="hierarchical">Hierarchical</option></select></label><label><span>Enriquecimiento</span><select [(ngModel)]="upload.metadataEnrichment"><option value="standard">Standard</option><option value="basic">Basic</option><option value="none">None</option></select></label></div></div>
-      <footer><button class="ghost" (click)="versionOpen.set(false)">Cancelar</button><button class="primary" [disabled]="!versionFile || svc.loading()" (click)="uploadNewVersion()">Subir nueva versión</button></footer>
-    </section>
-  </div>
-</section>
+      </section>
       <section class="panel rag-query-panel">
         <div class="panel-head"><div><h2>Consultar RAG</h2><p>Prueba el retrieval que utilizarán los agentes. Si seleccionas una base, la búsqueda se limita a ella.</p></div></div>
         <div class="rag-query">
@@ -67,6 +60,16 @@
         </details>
       </div>
       <footer><button class="ghost" (click)="uploadOpen.set(false)">Cancelar</button><button class="primary" [disabled]="!file || svc.loading()" (click)="doUpload()">Ingestar documento</button></footer>
+    </section>
+  </div>
+  <div class="modal-backdrop" *ngIf="versionOpen() && selectedDocument() as versionDoc">
+    <section class="modal knowledge-upload-modal">
+      <header><div><span class="eyebrow">NUEVA VERSIÓN</span><h2>{{versionDoc.title}}</h2><p>La nueva versión se ingesta primero; sólo si termina correctamente sustituye a la versión activa.</p></div><button class="icon-btn" (click)="versionOpen.set(false)">×</button></header>
+      <div class="modal-body">
+        <label><span>Archivo</span><input type="file" accept=".pdf,.docx,.txt,.md" (change)="onVersionFile($event)" /></label>
+        <div class="form-grid two"><label><span>Chunking</span><select [(ngModel)]="upload.chunkingStrategy"><option value="fixed">Fixed</option><option value="semantic">Semantic</option><option value="hierarchical">Hierarchical</option></select></label><label><span>Enriquecimiento</span><select [(ngModel)]="upload.metadataEnrichment"><option value="standard">Standard</option><option value="basic">Basic</option><option value="none">None</option></select></label></div>
+      </div>
+      <footer><button class="ghost" (click)="versionOpen.set(false)">Cancelar</button><button class="primary" [disabled]="!versionFile || svc.loading()" (click)="uploadNewVersion()">Subir nueva versión</button></footer>
     </section>
   </div>
 </section>
