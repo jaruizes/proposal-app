@@ -180,14 +180,14 @@ public class OfferWorkflowService {
                 """+refinement(refinement);
         var context=offerContext(offer)+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+"\n\n"+sourceBundle.textualContext();
         var briefResult=agents.execute(AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst","analyze-opportunity",
-                "Entender y cualificar la oportunidad",prompt),model(offer,"analysis"),context,sourceBundle.visualAttachments());
+                "Entender y cualificar la oportunidad",prompt).withCheckpoint("analysis.opportunity-brief"),model(offer,"analysis"),context,sourceBundle.visualAttachments());
         var brief=AnalysisMarkdown.required(briefResult.content(),"opportunity-brief.md");
         var followupContext=offerContext(offer)+"\n\n# SOURCE-BASED OPPORTUNITY BRIEF (DRAFT)\n"+brief;
         var followups=agents.executeParallel(List.of(
                 AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
-                        "Extraer preguntas de aclaración","From the supplied opportunity brief, return ONLY questions.md as raw Markdown. Start with a level-one heading and include a table with ID, Pregunta para el cliente, Motivo / impacto, Fuente, Respuesta cliente, Asunción / decisión tomada. Leave customer answers and decisions empty. Return exactly NONE when no real questions or gaps exist. Do not return JSON or fences.").withOutputFormat("optional_markdown"),
+                        "Extraer preguntas de aclaración","From the supplied opportunity brief, return ONLY questions.md as raw Markdown. Start with a level-one heading and include a table with ID, Pregunta para el cliente, Motivo / impacto, Fuente, Respuesta cliente, Asunción / decisión tomada. Leave customer answers and decisions empty. Return exactly NONE when no real questions or gaps exist. Do not return JSON or fences.").withOutputFormat("optional_markdown").withCheckpoint("analysis.questions"),
                 AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
-                        "Extraer condicionantes tecnológicos","From the supplied opportunity brief, return ONLY technology.md as raw Markdown. Start with a level-one heading and include a table with Categoría, Tecnología / producto / arquitectura, Condición o uso indicado por el cliente, Carácter, Fuente, Observaciones. Return exactly NONE when no material technology or architecture constraints exist. Do not return JSON, fences or a proposed solution.").withOutputFormat("optional_markdown")
+                        "Extraer condicionantes tecnológicos","From the supplied opportunity brief, return ONLY technology.md as raw Markdown. Start with a level-one heading and include a table with Categoría, Tecnología / producto / arquitectura, Condición o uso indicado por el cliente, Carácter, Fuente, Observaciones. Return exactly NONE when no material technology or architecture constraints exist. Do not return JSON, fences or a proposed solution.").withOutputFormat("optional_markdown").withCheckpoint("analysis.technology")
         ),model(offer,"analysis"),followupContext);
         var questions=AnalysisMarkdown.optional(followups.get(0).content(),"questions.md");
         var technology=AnalysisMarkdown.optional(followups.get(1).content(),"technology.md");
@@ -200,7 +200,7 @@ public class OfferWorkflowService {
     private void runStrategy(Offer offer,String refinement){
         var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.STRATEGY,"business-analyst","build-strategy",
-                "Construir estrategia de respuesta","Execute build-strategy exactly. Return only the complete strategy.md Markdown."+refinement(refinement)),
+                "Construir estrategia de respuesta","Execute build-strategy exactly. Return only the complete strategy.md Markdown."+refinement(refinement)).withCheckpoint("strategy.document"),
                 model(offer,"strategy"),context);
         saveArtifact(offer.id(),PhaseType.STRATEGY,ArtifactType.STRATEGY,result.content());
     }
@@ -390,7 +390,7 @@ public class OfferWorkflowService {
     private void runProposal(Offer offer,String refinement){
         var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst","compose-proposal",
-                "Redactar oferta detallada","Execute compose-proposal exactly. Produce ONLY the complete canonical proposal.md in Markdown. Follow PROPOSAL GUIDANCE as authoritative structure/depth guidance. Never invent prices, effort, staffing, dates, contractual commitments or customer facts."+refinement(refinement)),
+                "Redactar oferta detallada","Execute compose-proposal exactly. Produce ONLY the complete canonical proposal.md in Markdown. Follow PROPOSAL GUIDANCE as authoritative structure/depth guidance. Never invent prices, effort, staffing, dates, contractual commitments or customer facts."+refinement(refinement)).withCheckpoint("proposal.document"),
                 model(offer,"proposal"),context+"\n\n# PROPOSAL GUIDANCE JSON\n"+proposalGuidanceJson(offer.proposalGuidance()));
         saveArtifact(offer.id(),PhaseType.PROPOSAL,ArtifactType.PROPOSAL,result.content());
     }
@@ -402,7 +402,7 @@ public class OfferWorkflowService {
     private void runSlidePlan(Offer offer,String refinement){
         var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN,ArtifactType.PROPOSAL));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.SLIDE_PLAN,"business-analyst","design-proposal",
-                "Planificar narrativa de presentación","Execute design-proposal exactly. Produce ONLY the canonical slides-plan.md. Human presentation guidance follows in context."+refinement(refinement)),
+                "Planificar narrativa de presentación","Execute design-proposal exactly. Produce ONLY the canonical slides-plan.md. Human presentation guidance follows in context."+refinement(refinement)).withCheckpoint("slides.plan"),
                 model(offer,"slidePlanning"),context+"\n\n# PRESENTATION GUIDANCE\n"+Objects.toString(offer.presentationGuidance(),"none"));
         slidePlanValidator.validate(result.content());
         saveArtifact(offer.id(),PhaseType.SLIDE_PLAN,ArtifactType.SLIDES_PLAN,result.content());
