@@ -3,7 +3,7 @@ package io.github.jaruizes.proposal.domain.model;
 public enum PhaseType {
     ANALYSIS("Entendimiento y cualificación"),
     STRATEGY("Estrategia de respuesta"),
-    SOLUTION("Propuesta de solución y plan"),
+    SOLUTION("Propuesta de solución y plan de delivery"),
     PROPOSAL("Documento de oferta detallado"),
     SLIDE_PLAN("Propuesta de presentación"),
     PRESENTATION("Generación de presentación corporativa");
