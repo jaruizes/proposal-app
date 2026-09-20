@@ -11,7 +11,7 @@ def request(output_format: str) -> AgentExecutionRequest:
 
 def test_markdown_document_after_filename_heading_and_inner_code_fence():
     fence = chr(96) * 3
-    raw = f"# solution-plan.md\n\n{fence}markdown\n# Plan de ejecución\n\n{fence}json\n{{}}\n{fence}\n{fence}"
+    raw = f"# delivery-plan.md\n\n{fence}markdown\n# Plan de ejecución\n\n{fence}json\n{{}}\n{fence}\n{fence}"
     assert normalize_output(request("markdown"), raw) == f"# Plan de ejecución\n\n{fence}json\n{{}}\n{fence}"
 
 
