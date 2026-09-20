@@ -268,9 +268,11 @@ public class OfferWorkflowService {
     }
 
     private void saveArtifact(UUID offerId,PhaseType phase,ArtifactType type,String content){
-        artifacts.save(new Artifact(UUID.randomUUID(),offerId,phase,type,artifacts.nextVersion(offerId,type),content,Instant.now()));
+        var normalized=type==ArtifactType.PRESENTATION_METADATA||type==ArtifactType.PRESENTATION_BUILD_REPORT
+                ?content:MarkdownContent.unwrapDocument(content);
+        artifacts.save(new Artifact(UUID.randomUUID(),offerId,phase,type,artifacts.nextVersion(offerId,type),normalized,Instant.now()));
     }
-    private String approvedArtifactsContext(UUID offerId,List<ArtifactType> types){var b=new StringBuilder();for(var t:types)artifacts.findLatest(offerId,t).ifPresent(a->b.append("\n\n# ").append(t).append("\n").append(a.content()));return b.toString();}
+    private String approvedArtifactsContext(UUID offerId,List<ArtifactType> types){var b=new StringBuilder();for(var t:types)artifacts.findLatest(offerId,t).ifPresent(a->b.append("\n\n# ").append(t).append("\n").append(MarkdownContent.unwrapDocument(a.content())));return b.toString();}
     private String offerContext(Offer o){return "Offer name: %s\nOrganization: %s\nLanguage: %s\nPresentation language: %s\nGoogle Drive input folder: %s\nGoogle Drive output folder: %s\n".formatted(o.name(),o.customer(),o.language(),o.presentationLanguage(),o.inputDriveFolder(),o.outputDriveFolder());}
     private String model(Offer offer,String key){return offer.models().getOrDefault(key,"claude-sonnet-4-6");}
     private String refinement(String r){return r==null||r.isBlank()?"":"\n\n# HUMAN REFINEMENT (authoritative)\n"+r;}
