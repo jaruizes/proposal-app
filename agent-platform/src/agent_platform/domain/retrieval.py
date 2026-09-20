@@ -38,6 +38,10 @@ class RetrievalQuery(BaseModel):
     ontology_weight: float = Field(default=1.0, gt=0)
     ontology_max_hops: int = Field(default=1, ge=0, le=3)
     ontology_max_concepts: int = Field(default=12, ge=1, le=50)
+    vector_min_score: float = Field(default=0.20, ge=-1.0, le=1.0)
+    keyword_min_score: float = Field(default=0.0, ge=0.0)
+    graph_min_score: float = Field(default=0.0, ge=0.0)
+    min_score: float | None = Field(default=None, ge=0.0)
 
 
 class RetrievalHit(BaseModel):

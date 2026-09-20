@@ -52,17 +52,23 @@ class KnowledgeRetrievalService:
                     ontology_context=await self._ontology_service.resolve_query(query.text,max_hops=query.ontology_max_hops,max_concepts=query.ontology_max_concepts)
                     if ontology_context.concept_weights:
                         with timed_span("retrieval.graph"):graph_candidates=await self._backend.ontology_search(concept_weights=ontology_context.concept_weights,query=query,limit=candidate_k)
+            raw_vector_count=len(vector_candidates);raw_keyword_count=len(keyword_candidates);raw_graph_count=len(graph_candidates)
+            vector_candidates=[candidate for candidate in vector_candidates if candidate.score>=query.vector_min_score]
+            keyword_candidates=[candidate for candidate in keyword_candidates if candidate.score>query.keyword_min_score]
+            graph_candidates=[candidate for candidate in graph_candidates if candidate.score>query.graph_min_score]
             RETRIEVAL_CANDIDATES.labels("vector").observe(len(vector_candidates));RETRIEVAL_CANDIDATES.labels("keyword").observe(len(keyword_candidates));RETRIEVAL_CANDIDATES.labels("graph").observe(len(graph_candidates))
             if query.mode is RetrievalMode.VECTOR:ranked=[(c,c.score,RetrievalMode.VECTOR) for c in vector_candidates]
             elif query.mode is RetrievalMode.KEYWORD:ranked=[(c,c.score,RetrievalMode.KEYWORD) for c in keyword_candidates]
             elif query.mode is RetrievalMode.GRAPH:ranked=[(c,c.score,RetrievalMode.GRAPH) for c in graph_candidates]
             else:
                 with timed_span("retrieval.fusion"):ranked=self._rrf_multi([(vector_candidates,query.vector_weight),(keyword_candidates,query.keyword_weight),(graph_candidates,query.ontology_weight)])
+            if query.min_score is not None:
+                ranked=[item for item in ranked if item[1]>=query.min_score]
             hits=[]
             for candidate,score,method in ranked[:query.top_k]:
                 parent=await self._backend.parent_for(candidate) if query.expand_parents else None
                 hits.append(RetrievalHit(chunk_id=candidate.chunk_id,document_id=candidate.document_id,knowledge_base_key=candidate.knowledge_base_key,title=candidate.title,content=candidate.content,score=float(score),retrieval_method=method,metadata=candidate.metadata,source_uri=candidate.source_uri,parent_chunk_id=parent.chunk_id if parent else None,parent_content=parent.content if parent else None,parent_metadata=parent.metadata if parent else None))
-            metadata={"candidate_k":candidate_k,"vector_candidates":len(vector_candidates),"keyword_candidates":len(keyword_candidates),"graph_candidates":len(graph_candidates),"expand_parents":query.expand_parents,"fusion":"rrf-v2-graph-aware" if query.mode is RetrievalMode.HYBRID else None,"cache":"miss" if self._cache is not None else "disabled","ontology_enabled":query.ontology_enabled and self._ontology_service is not None,"ontology_seed_concepts":ontology_context.seed_concepts if ontology_context else [],"ontology_expanded_concepts":ontology_context.expanded_concepts if ontology_context else [],"ontology_max_hops":query.ontology_max_hops}
+            metadata={"candidate_k":candidate_k,"vector_candidates":len(vector_candidates),"keyword_candidates":len(keyword_candidates),"graph_candidates":len(graph_candidates),"raw_vector_candidates":raw_vector_count,"raw_keyword_candidates":raw_keyword_count,"raw_graph_candidates":raw_graph_count,"vector_min_score":query.vector_min_score,"keyword_min_score":query.keyword_min_score,"graph_min_score":query.graph_min_score,"min_score":query.min_score,"relevance_filtering":True,"expand_parents":query.expand_parents,"fusion":"rrf-v2-graph-aware" if query.mode is RetrievalMode.HYBRID else None,"cache":"miss" if self._cache is not None else "disabled","ontology_enabled":query.ontology_enabled and self._ontology_service is not None,"ontology_seed_concepts":ontology_context.seed_concepts if ontology_context else [],"ontology_expanded_concepts":ontology_context.expanded_concepts if ontology_context else [],"ontology_max_hops":query.ontology_max_hops}
             result=RetrievalResult(query=query.text,mode=query.mode,hits=hits,embedding_model=embedding_model,metadata=metadata)
             if self._cache is not None:await self._cache.set_json("retrieval",cache_key,result.model_dump(mode="json"),ttl_seconds=self._cache_ttl_seconds)
             RETRIEVALS.labels(query.mode.value,"miss" if self._cache is not None else "disabled").inc();RETRIEVAL_LATENCY.labels(query.mode.value).observe(time.perf_counter()-started)

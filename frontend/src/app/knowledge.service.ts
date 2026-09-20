@@ -42,7 +42,7 @@ export class KnowledgeService {
     });
   }
   retrieve(text:string,mode:string,topK:number,baseKey:string){
-    const payload={text,mode,top_k:topK,candidate_k:Math.max(topK*4,20),filters:{knowledge_base_keys:baseKey?[baseKey]:[]},expand_parents:true,ontology_enabled:true};
+    const payload={text,mode,top_k:topK,candidate_k:Math.max(topK*4,20),filters:{knowledge_base_keys:baseKey?[baseKey]:[]},expand_parents:true,ontology_enabled:true,vector_min_score:0.20,keyword_min_score:0.0,graph_min_score:0.0};
     this.loading.set(true);
     this.http.post<RetrievalResult>('/api/knowledge/retrieve',payload).subscribe({
       next:r=>{this.results.set(r);this.loading.set(false);},
