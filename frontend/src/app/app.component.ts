@@ -44,7 +44,7 @@ export class AppComponent {
   agentStatusClass(status:string){return status==='RUNNING'?'running':status==='COMPLETED'?'completed':status==='FAILED'?'failed':'pending';}
   agentStatusLabel(status:string){return status==='RUNNING'?'Trabajando':status==='COMPLETED'?'Completado':status==='FAILED'?'Error':status;}
   agentDuration(agent:AgentExecutionTelemetry){const start=agent.startedAt?new Date(agent.startedAt).getTime():0;if(!start)return '—';const end=agent.completedAt?new Date(agent.completedAt).getTime():Date.now();const seconds=Math.max(0,Math.round((end-start)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
-  agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Análisis',STRATEGY:'Estrategia',SOLUTION:'Solución',PROPOSAL:'Oferta detallada',SLIDE_PLAN:'Plan narrativo',PRESENTATION:'Presentación'};return labels[phase]||phase;}
+  agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Entendimiento y cualificación',STRATEGY:'Estrategia de respuesta',SOLUTION:'Propuesta de solución y plan',PROPOSAL:'Documento de oferta detallado',SLIDE_PLAN:'Propuesta de presentación',PRESENTATION:'Generación de presentación corporativa'};return labels[phase]||phase;}
   formatTokens(value:number){return new Intl.NumberFormat('es-ES').format(value||0);}
   friendlyErrorCause(raw:string|undefined):string {
     if(!raw?.trim())return 'Se produjo un error inesperado durante la ejecución del agente.';

@@ -206,36 +206,44 @@ public class OfferWorkflowService {
 
     private void runSolution(Offer offer,String refinement){
         var sourceBundle=sources.loadOrIngest(offer);
-        var base=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY))
-                +"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+"\n\n"+sourceBundle.textualContext();
+        var approved=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY));
 
-        // Dedicated architect context first performs source triage and may request at most two bounded optional consultations.
+        // First decide which original customer sources are actually needed. This call receives
+        // the source inventory plus approved compact artifacts, not every full source body.
+        var triageContext=approved+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest();
         var triage=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
                 "Triage de fuentes y especialistas opcionales","""
-                Before writing solution.md, triage every source as REVIEW_IN_DEPTH, TARGETED_REVIEW or SKIP and decide whether bounded specialist consultations are genuinely needed.
+                Before writing solution.md, use the approved current-offer artifacts plus the source manifest to decide which ORIGINAL customer sources require review.
+                Classify every source as REVIEW_IN_DEPTH, TARGETED_REVIEW or SKIP. Select originals whenever exact technical constraints, versions, integrations, security, data, volumes, SLAs, diagrams or other factual details may affect the solution.
                 Return ONLY JSON: {"sourceReview":[{"id":"DOC-001","disposition":"REVIEW_IN_DEPTH","reason":"..."}],"specialistConsultations":[{"agentKey":"security-specialist","question":"..."}]}.
                 Maximum two consultations. Do not request base roles as specialists.
-                """).withOutputFormat("json"),model(offer,"solutionArchitecture"),base,sourceBundle.visualAttachments());
+                """).withOutputFormat("json"),model(offer,"solutionArchitecture"),triageContext);
 
-        var specialistResults=runRequestedSpecialists(offer,base,triage.content(),sourceBundle.visualAttachments());
-        var architectContext=base+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
+        // Only the selected originals are injected into the expensive solution-generation calls.
+        // They remain the factual authority; technology.md and the other approved artifacts are indexes/summaries.
+        var selectedSources=sources.selectForSolution(sourceBundle,triage.content());
+        var evidenceContext=approved+"\n\n# SOURCE MANIFEST (SELECTED ORIGINALS)\n"+selectedSources.manifest()
+                +"\n\n"+selectedSources.textualContext();
+
+        var specialistResults=runRequestedSpecialists(offer,evidenceContext,triage.content(),selectedSources.visualAttachments());
+        var architectContext=evidenceContext+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
         var architect=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
                 "Definir solución propuesta","Execute section A of define-solution. Produce ONLY the complete solution.md as raw Markdown, without an outer code fence or filename heading, including source review and any specialist consultations. Do not estimate effort, duration, staffing, cost or price."+refinement(refinement)),
-                model(offer,"solutionArchitecture"),architectContext,sourceBundle.visualAttachments());
+                model(offer,"solutionArchitecture"),architectContext,selectedSources.visualAttachments());
         var solution=architect.content();
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION,solution);
 
         // Delivery is deliberately sequential and consumes the architect artifact in its own isolated role context.
-        var deliveryContext=base+"\n\n# solution.md\n"+solution;
+        var deliveryContext=evidenceContext+"\n\n# solution.md\n"+solution;
         var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
                 "Definir enfoque de ejecución","Execute section B of define-solution. Produce ONLY the complete unestimated solution-plan.md as raw Markdown, without an outer code fence or filename heading. Include capability → workstream coverage."),
-                model(offer,"deliveryPlanning"),deliveryContext,sourceBundle.visualAttachments());
+                model(offer,"deliveryPlanning"),deliveryContext,selectedSources.visualAttachments());
         var solutionPlan=delivery.content();
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION_PLAN,solutionPlan);
 
         agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"business-analyst","define-solution",
                 "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and solution-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text"),
-                model(offer,"solutionArchitecture"),base+"\n\n# solution.md\n"+solution+"\n\n# solution-plan.md\n"+solutionPlan);
+                model(offer,"solutionArchitecture"),approved+"\n\n# solution.md\n"+solution+"\n\n# solution-plan.md\n"+solutionPlan);
     }
 
     private String runRequestedSpecialists(Offer offer,String context,String triage,List<LlmRequest.Attachment> attachments){

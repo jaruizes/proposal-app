@@ -62,6 +62,56 @@ public class SourceIngestionService {
         return ingest(offer);
     }
 
+    /**
+     * Narrows an already ingested source corpus to the originals selected by the
+     * solution triage. If the triage cannot be parsed, returns the full corpus
+     * rather than risking loss of factual evidence.
+     */
+    public SourceBundle selectForSolution(SourceBundle bundle, String triageJson) {
+        try {
+            var root = json.readTree(triageJson);
+            var selected = new LinkedHashSet<String>();
+            root.path("sourceReview").forEach(node -> {
+                var disposition = node.path("disposition").asText("");
+                var id = node.path("id").asText("");
+                if (!id.isBlank() && ("REVIEW_IN_DEPTH".equals(disposition) || "TARGETED_REVIEW".equals(disposition))) {
+                    selected.add(id);
+                }
+            });
+            if (selected.isEmpty()) {
+                return new SourceBundle(bundle.manifest(), "# Selected original customer evidence\n\nNo original sources were selected by triage.", List.of(), bundle.ingestionReport());
+            }
+
+            var manifestRoot = json.readTree(bundle.manifest());
+            var filtered = manifestRoot.deepCopy();
+            var sourcesNode = filtered.withArray("sources");
+            sourcesNode.removeAll();
+            manifestRoot.path("sources").forEach(node -> {
+                if (selected.contains(node.path("id").asText())) sourcesNode.add(node.deepCopy());
+            });
+            ((com.fasterxml.jackson.databind.node.ObjectNode) filtered).put("selectedBySolutionTriage", true);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) filtered).put("selectedSourceCount", sourcesNode.size());
+            var filteredManifest = json.writerWithDefaultPrettyPrinter().writeValueAsString(filtered);
+
+            var context = new StringBuilder("# Selected original customer evidence\n\n")
+                    .append("Only sources selected by the solution triage are included below. Original/native customer sources remain authoritative.\n");
+            var pattern = java.util.regex.Pattern.compile("(?m)^## (DOC-\\d{3}) — ");
+            var matcher = pattern.matcher(bundle.textualContext());
+            var starts = new ArrayList<Integer>();
+            var ids = new ArrayList<String>();
+            while (matcher.find()) { starts.add(matcher.start()); ids.add(matcher.group(1)); }
+            for (int i = 0; i < starts.size(); i++) {
+                if (!selected.contains(ids.get(i))) continue;
+                var end = i + 1 < starts.size() ? starts.get(i + 1) : bundle.textualContext().length();
+                context.append("\n\n").append(bundle.textualContext(), starts.get(i), end);
+            }
+
+            return new SourceBundle(filteredManifest, context.toString(), attachmentsFromManifest(filteredManifest), bundle.ingestionReport());
+        } catch (Exception e) {
+            return bundle;
+        }
+    }
+
     public Map<String, Object> inspectDriveFolder(String folderIdOrUrl) {
         var folderId = extractDriveId(folderIdOrUrl);
         if (folderId.isBlank()) throw new IllegalArgumentException("Google Drive input folder ID/URL is required");
