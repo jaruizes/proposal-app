@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
-from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_BREAK
 from docx.shared import Cm, Pt
 from fastapi import FastAPI, HTTPException, Response
 from markdown_it import MarkdownIt
@@ -120,7 +118,6 @@ def _render_markdown(document: Document, markdown: str) -> None:
         if token.type == "heading_open":
             level = int(token.tag[1:])
             inline = tokens[i + 1] if i + 1 < len(tokens) else None
-            text = _inline_text(inline) if inline else ""
             if level == 1:
                 paragraph = document.add_paragraph(style="Title")
             else:

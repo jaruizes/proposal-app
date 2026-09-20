@@ -18,8 +18,8 @@ RUN apt-get update && \
     chown -R renderer:renderer /app /opt/document-renderer /tmp/renderer-home
 
 WORKDIR /app
-COPY document-renderer/pyproject.toml /app/pyproject.toml
-RUN pip install --no-cache-dir .
+COPY document-renderer/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY --chown=renderer:renderer document-renderer/app /app/app
 COPY --chown=renderer:renderer document-renderer/templates /opt/document-renderer/templates
