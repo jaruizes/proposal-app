@@ -9,7 +9,7 @@ type PhaseArtifact={type:string;version:number;title:string;content:string};
 
 @Component({selector:'app-root',standalone:true,imports:[CommonModule,FormsModule,KnowledgeComponent],templateUrl:'./app.component.html'})
 export class AppComponent {
-  svc=inject(ExecutionService); view=signal<'home'|'detail'|'knowledge'|'templates'>('home'); selectedId=signal<string|null>(null); selectedPhaseKey=signal<string|null>(null); selectedArtifactIndex=signal(0); createOpen=signal(false); configOpen=signal(false); showRawMarkdown=signal(false); chatMessage='';
+  svc=inject(ExecutionService); view=signal<'home'|'detail'|'knowledge'|'templates'>('home'); selectedId=signal<string|null>(null); selectedPhaseKey=signal<string|null>(null); selectedArtifactIndex=signal(0); createOpen=signal(false); configOpen=signal(false); showRawMarkdown=signal(false); agentActivityExpanded=signal(false); expandedAgentIds=signal<Set<string>>(new Set()); chatMessage='';
   providerModels:Record<string,string[]>={ANTHROPIC:['claude-sonnet-4-6','claude-opus-4-6'],'AWS Bedrock':['claude-sonnet-4-6'],OpenAI:['gpt-5.6']};
   draft:any=this.newDraft(); configDraft:any={}; templateDraft:TemplateSettings={proposalTemplateId:'',presentationTemplateId:''}; selected=computed(()=>this.selectedId()?this.svc.get(this.selectedId()!):undefined); selectedPhase=computed(()=>this.selected()?.phases.find(p=>p.key===this.selectedPhaseKey()));
   selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
@@ -24,12 +24,28 @@ export class AppComponent {
   closeConfig(){this.configOpen.set(false);}
   saveConfig(){const e=this.selected();if(!e)return;this.svc.updateConfiguration(e.id,this.configDraft).subscribe(updated=>{this.svc.executions.update(items=>items.map(x=>x.id===updated.id?updated:x));this.configOpen.set(false);});}
   retryFailedPhase(){const e=this.selected(),p=this.failedPhase();if(e&&p)this.svc.retry(e.id,p.key);}
-  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);this.svc.watchAgents(exec.id);this.svc.refreshDocuments(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
+  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.agentActivityExpanded.set(false);this.expandedAgentIds.set(new Set());this.svc.watch(exec.id);this.svc.watchAgents(exec.id);this.svc.refreshDocuments(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
   openTemplates(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.selectedId.set(null);this.selectedPhaseKey.set(null);this.templateDraft={...this.svc.templateSettings()};this.view.set('templates');}
   saveTemplates(){this.svc.saveTemplateSettings(this.templateDraft).subscribe(v=>{this.svc.templateSettings.set(v);this.templateDraft={...v};});}
   openKnowledge(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.selectedId.set(null);this.selectedPhaseKey.set(null);this.view.set('knowledge');}
   openHome(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.selectedId.set(null);this.selectedPhaseKey.set(null);this.view.set('home');}
-  back(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
+  back(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();}
+  phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';}
+  choosePhase(p:Phase){
+    if(!this.phaseClickable(p))return;
+    this.selectedPhaseKey.set(p.key);
+    this.resetArtifactView();
+    setTimeout(()=>document.getElementById('phase-documents')?.scrollIntoView({behavior:'smooth',block:'start'}),0);
+  }
+  toggleAgentActivity(){this.agentActivityExpanded.update(v=>!v);}
+  agentExpanded(agentId:string){return this.expandedAgentIds().has(agentId);}
+  toggleAgent(agentId:string){
+    this.expandedAgentIds.update(current=>{
+      const next=new Set(current);
+      next.has(agentId)?next.delete(agentId):next.add(agentId);
+      return next;
+    });
+  }
   chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
   canExportSelectedArtifactPdf(){
     const artifact=this.selectedArtifact();

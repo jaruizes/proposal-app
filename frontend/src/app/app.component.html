@@ -90,47 +90,7 @@
         <ng-template #materializingEmpty><div class="agent-empty">Los documentos aparecerán aquí cuando termine la materialización.</div></ng-template>
       </section>
 
-      <section class="panel agent-activity-panel">
-        <div class="panel-head agent-panel-head">
-          <div><span class="eyebrow">OBSERVABILIDAD</span><h2>Actividad de agentes</h2><p>Estado, consumo y errores de las ejecuciones de IA de esta oferta.</p></div>
-          <div class="agent-summary">
-            <span><strong>{{agentStats().running}}</strong><small>activos</small></span>
-            <span><strong>{{agentStats().failed}}</strong><small>errores</small></span>
-            <span><strong>{{formatTokens(agentStats().input + agentStats().output)}}</strong><small>tokens</small></span>
-          </div>
-        </div>
-        <div class="agent-empty" *ngIf="svc.agentExecutions().length === 0">Todavía no hay ejecuciones de agentes registradas para esta oferta.</div>
-        <div class="agent-list" *ngIf="svc.agentExecutions().length > 0">
-          <article class="agent-item" *ngFor="let agent of svc.agentExecutions()">
-            <div class="agent-main">
-              <div class="agent-title-row">
-                <span class="agent-dot" [ngClass]="agentStatusClass(agent.status)"></span>
-                <strong>{{agent.agentKey}}</strong>
-                <span class="agent-status" [ngClass]="agentStatusClass(agent.status)">{{agentStatusLabel(agent.status)}}</span>
-                <span class="agent-phase">{{agentPhaseLabel(agent.phase)}}</span>
-              </div>
-              <p *ngIf="agent.objective">{{agent.objective}}</p>
-              <div class="agent-meta">
-                <span><b>Modelo</b> {{agent.model || '—'}}</span>
-                <span><b>Duración</b> {{agentDuration(agent)}}</span>
-                <span><b>Inicio</b> {{agent.startedAt | date:'HH:mm:ss'}}</span>
-                <span *ngIf="agent.providerRequestId"><b>Request</b> <span class="mono">{{agent.providerRequestId}}</span></span>
-              </div>
-            </div>
-            <div class="agent-tokens">
-              <div><strong>{{formatTokens(agent.inputTokens)}}</strong><small>entrada</small></div>
-              <div><strong>{{formatTokens(agent.outputTokens)}}</strong><small>salida</small></div>
-              <div><strong>{{formatTokens(agent.inputTokens + agent.outputTokens)}}</strong><small>total</small></div>
-            </div>
-            <div class="agent-error friendly" *ngIf="agent.errorMessage">
-              <div><strong>Qué ha ocurrido</strong><span>{{friendlyAgentError(agent)}}</span></div>
-              <details><summary>Ver detalle técnico</summary><pre>{{agent.errorMessage}}</pre></details>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="workspace-grid" *ngIf="selectedPhase() as phase; else chooseHint">
+      <section id="phase-documents" class="workspace-grid phase-documents-section" *ngIf="selectedPhase() as phase; else chooseHint">
         <article class="panel artifact-panel">
           <div class="panel-head artifact-head">
             <div><span class="eyebrow">ARTEFACTO</span><h2>{{phase.label}}</h2></div>
@@ -165,6 +125,72 @@
         </aside>
       </section>
       <ng-template #chooseHint><div class="panel empty-state">Selecciona un paso validado o pendiente de aprobación para ver su salida.</div></ng-template>
+
+      <section class="panel agent-activity-panel" [class.expanded]="agentActivityExpanded()">
+        <button class="agent-activity-summary" type="button" (click)="toggleAgentActivity()" [attr.aria-expanded]="agentActivityExpanded()">
+          <div class="agent-summary-copy">
+            <span class="eyebrow">OBSERVABILIDAD</span>
+            <div class="agent-summary-title">
+              <h2>Actividad de agentes</h2>
+              <span class="agent-count">{{svc.agentExecutions().length}} ejecuciones</span>
+              <span class="agent-live" *ngIf="agentStats().running">● {{agentStats().running}} trabajando</span>
+            </div>
+            <p *ngIf="!agentActivityExpanded()">Resumen de ejecución. Despliega para consultar cada agente, consumo y detalle técnico.</p>
+          </div>
+          <div class="agent-summary-right">
+            <div class="agent-summary compact">
+              <span><strong>{{agentStats().running}}</strong><small>activos</small></span>
+              <span><strong>{{agentStats().failed}}</strong><small>errores</small></span>
+              <span><strong>{{formatTokens(agentStats().input + agentStats().output)}}</strong><small>tokens</small></span>
+            </div>
+            <span class="activity-chevron">{{agentActivityExpanded() ? '▴' : '▾'}}</span>
+          </div>
+        </button>
+
+        <div class="agent-activity-body" *ngIf="agentActivityExpanded()">
+          <div class="agent-empty" *ngIf="svc.agentExecutions().length === 0">Todavía no hay ejecuciones de agentes registradas para esta oferta.</div>
+          <div class="agent-list compact-list" *ngIf="svc.agentExecutions().length > 0">
+            <article class="agent-item compact-agent" *ngFor="let agent of svc.agentExecutions()" [class.open]="agentExpanded(agent.id)">
+              <button class="agent-row" type="button" (click)="toggleAgent(agent.id)" [attr.aria-expanded]="agentExpanded(agent.id)">
+                <div class="agent-row-primary">
+                  <span class="agent-dot" [ngClass]="agentStatusClass(agent.status)"></span>
+                  <strong>{{agent.agentKey}}</strong>
+                  <span class="agent-status" [ngClass]="agentStatusClass(agent.status)">{{agentStatusLabel(agent.status)}}</span>
+                  <span class="agent-phase">{{agentPhaseLabel(agent.phase)}}</span>
+                </div>
+                <div class="agent-row-objective">{{agent.objective || 'Ejecución de agente'}}</div>
+                <div class="agent-row-metrics">
+                  <span>{{agentDuration(agent)}}</span>
+                  <strong>{{formatTokens(agent.inputTokens + agent.outputTokens)}} tokens</strong>
+                  <span class="row-chevron">{{agentExpanded(agent.id) ? '▴' : '▾'}}</span>
+                </div>
+              </button>
+
+              <div class="agent-detail" *ngIf="agentExpanded(agent.id)">
+                <div class="agent-meta">
+                  <span><b>Modelo</b> {{agent.model || '—'}}</span>
+                  <span><b>Inicio</b> {{agent.startedAt | date:'HH:mm:ss'}}</span>
+                  <span><b>Duración</b> {{agentDuration(agent)}}</span>
+                  <span *ngIf="agent.providerRequestId"><b>Request</b> <span class="mono">{{agent.providerRequestId}}</span></span>
+                </div>
+                <div class="agent-tokens inline">
+                  <div><strong>{{formatTokens(agent.inputTokens)}}</strong><small>entrada</small></div>
+                  <div><strong>{{formatTokens(agent.outputTokens)}}</strong><small>salida</small></div>
+                  <div><strong>{{formatTokens(agent.inputTokens + agent.outputTokens)}}</strong><small>total</small></div>
+                </div>
+                <div class="agent-error friendly" *ngIf="agent.errorMessage">
+                  <div><strong>Qué ha ocurrido</strong><span>{{friendlyAgentError(agent)}}</span></div>
+                  <details><summary>Ver detalle técnico</summary><pre>{{agent.errorMessage}}</pre></details>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+
+
+
     </ng-container>
   </main>
 </div>
