@@ -19,11 +19,14 @@ import io.github.jaruizes.proposal.business.ArtifactExportService; import io.git
     return ResponseEntity.ok().headers(headers).body(rendered.content());
 }
 @GetMapping("/{id}/documents") public Object documents(@PathVariable UUID id){
-    return proposalDocuments.list(id).stream().map(d->Map.of(
-            "id",d.id().toString(),"type",d.type().name(),"contentVersion",d.contentVersion(),"renderVersion",d.renderVersion(),
-            "mediaType",d.mediaType(),"fileName",d.fileName(),"templateId",d.templateId(),"rendererVersion",d.rendererVersion(),
-            "sourceHash",d.sourceHash(),"status",d.status().name(),"errorMessage",Objects.toString(d.errorMessage(),""),
-            "createdAt",d.createdAt().toString(),"updatedAt",d.updatedAt().toString())).toList();
+    return proposalDocuments.list(id).stream().map(d->{
+        var item=new LinkedHashMap<String,Object>();
+        item.put("id",d.id().toString());item.put("type",d.type().name());item.put("contentVersion",d.contentVersion());item.put("renderVersion",d.renderVersion());
+        item.put("mediaType",d.mediaType());item.put("fileName",d.fileName());item.put("templateId",d.templateId());item.put("rendererVersion",d.rendererVersion());
+        item.put("sourceHash",d.sourceHash());item.put("status",d.status().name());item.put("errorMessage",Objects.toString(d.errorMessage(),""));
+        item.put("createdAt",d.createdAt().toString());item.put("updatedAt",d.updatedAt().toString());
+        return item;
+    }).toList();
 }
 @PostMapping("/{id}/documents/materialize") public Object materializeDocuments(@PathVariable UUID id){return proposalDocuments.materializeApprovedProposal(id).stream().map(d->Map.of("id",d.id(),"type",d.type(),"status",d.status(),"renderVersion",d.renderVersion())).toList();}
 @GetMapping("/{id}/documents/{documentId}/download") public ResponseEntity<byte[]> downloadDocument(@PathVariable UUID id,@PathVariable UUID documentId){

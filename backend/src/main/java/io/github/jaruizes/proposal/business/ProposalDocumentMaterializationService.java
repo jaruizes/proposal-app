@@ -33,7 +33,9 @@ public class ProposalDocumentMaterializationService {
         var proposal=artifacts.findLatest(offerId,ArtifactType.PROPOSAL)
                 .orElseThrow(()->new DomainException("Missing canonical proposal.md"));
         var sourceHash=sha256(proposal.content());
-        var rendererVersion=renderer.rendererVersion();
+        String rendererVersion;
+        try { rendererVersion=renderer.rendererVersion(); }
+        catch(Exception e) { rendererVersion="unavailable"; }
         var template=offer.proposalTemplateId()==null||offer.proposalTemplateId().isBlank()?"builtin-neutral":offer.proposalTemplateId();
 
         var request=new DocumentRenderRequest(

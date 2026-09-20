@@ -21,7 +21,7 @@ public class MaterializedDocumentJpaEntity {
     @Column(name="render_key",nullable=false,unique=true,length=64) private String renderKey;
     @Column(nullable=false) private String status;
     @Column(name="error_message",columnDefinition="text") private String errorMessage;
-    @Lob @Column(columnDefinition="bytea") private byte[] content;
+    @Column(columnDefinition="bytea") private byte[] content;
     @Column(name="created_at",nullable=false) private Instant createdAt;
     @Column(name="updated_at",nullable=false) private Instant updatedAt;
 

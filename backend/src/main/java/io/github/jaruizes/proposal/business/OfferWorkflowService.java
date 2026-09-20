@@ -136,7 +136,10 @@ public class OfferWorkflowService {
     }
 
     private void submitProposalMaterialization(UUID offerId){
-        Runnable task=()->documentTaskExecutor.execute(()->proposalDocuments.materializeApprovedProposal(offerId));
+        Runnable task=()->documentTaskExecutor.execute(()->{
+            try{proposalDocuments.materializeApprovedProposal(offerId);}
+            catch(Exception ignored){/* Proposal approval remains authoritative even if rendering infrastructure is unavailable. */}
+        });
         if(TransactionSynchronizationManager.isSynchronizationActive())
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization(){@Override public void afterCommit(){task.run();}});
         else task.run();
