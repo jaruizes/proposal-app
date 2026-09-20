@@ -20,6 +20,14 @@ public class HttpDocumentRendererAdapter implements DocumentPort {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
+    public String rendererVersion() {
+        var response = client.get().uri("/health/ready").retrieve().bodyToMono(java.util.Map.class).block();
+        var value = response == null ? null : response.get("renderer");
+        return value == null ? "unknown" : value.toString();
+    }
+
+    @Override
     public RenderedDocument renderProposalDocx(DocumentRenderRequest request) {
         var body = new LinkedHashMap<String,Object>();
         body.put("markdown", request.markdown());

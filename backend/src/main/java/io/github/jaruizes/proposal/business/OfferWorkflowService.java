@@ -27,6 +27,8 @@ public class OfferWorkflowService {
     private final PresentationPort presentations;
     private final SlidePlanValidator slidePlanValidator;
     private final TaskExecutor phaseTaskExecutor;
+    private final TaskExecutor documentTaskExecutor;
+    private final ProposalDocumentMaterializationService proposalDocuments;
     private final ObjectMapper json = new ObjectMapper();
     private final String defaultPresentationTemplateId;
     private final String defaultProposalTemplateId;
@@ -36,12 +38,15 @@ public class OfferWorkflowService {
                                 AgentRuntimeService agents, AgentRegistryService agentRegistry,
                                 SourceIngestionService sources, PresentationPort presentations,
                                 SlidePlanValidator slidePlanValidator,
+                                ProposalDocumentMaterializationService proposalDocuments,
                                 @Qualifier("agentTaskExecutor") TaskExecutor phaseTaskExecutor,
+                                @Qualifier("documentTaskExecutor") TaskExecutor documentTaskExecutor,
                                 @org.springframework.beans.factory.annotation.Value("${presentation.template-id:}") String defaultPresentationTemplateId,
                                 @org.springframework.beans.factory.annotation.Value("${proposal-document.template-id:builtin-neutral}") String defaultProposalTemplateId) {
         this.offers=offers; this.phases=phases; this.artifacts=artifacts; this.agentExecutions=agentExecutions;
         this.agents=agents; this.agentRegistry=agentRegistry; this.sources=sources; this.presentations=presentations;
-        this.slidePlanValidator=slidePlanValidator; this.phaseTaskExecutor=phaseTaskExecutor; this.defaultPresentationTemplateId=defaultPresentationTemplateId;
+        this.slidePlanValidator=slidePlanValidator; this.phaseTaskExecutor=phaseTaskExecutor; this.documentTaskExecutor=documentTaskExecutor;
+        this.proposalDocuments=proposalDocuments; this.defaultPresentationTemplateId=defaultPresentationTemplateId;
         this.defaultProposalTemplateId=defaultProposalTemplateId;
     }
 
@@ -72,6 +77,7 @@ public class OfferWorkflowService {
         var phase=phases.find(offerId,phaseType).orElseThrow(()->new DomainException("Phase not found"));
         if(phase.status()!=ExecutionStatus.WAITING_FOR_HUMAN) throw new DomainException("Phase is not waiting for approval");
         phases.save(new PhaseExecution(phase.id(),offerId,phaseType,ExecutionStatus.APPROVED,phase.version(),null,phase.startedAt(),Instant.now()));
+        if(phaseType==PhaseType.PROPOSAL) submitProposalMaterialization(offerId);
         var offer=find(offerId); var next=phaseType.next();
         if(next==null){offers.save(copyOffer(offer,phaseType,ExecutionStatus.APPROVED));return;}
         var n=phases.find(offerId,next).orElseThrow();
@@ -127,6 +133,13 @@ public class OfferWorkflowService {
                     p.version(),null,p.startedAt(),p.completedAt()));
             current=current.next();
         }
+    }
+
+    private void submitProposalMaterialization(UUID offerId){
+        Runnable task=()->documentTaskExecutor.execute(()->proposalDocuments.materializeApprovedProposal(offerId));
+        if(TransactionSynchronizationManager.isSynchronizationActive())
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization(){@Override public void afterCommit(){task.run();}});
+        else task.run();
     }
 
     private void submitPhase(UUID offerId,PhaseType phaseType,String refinement){

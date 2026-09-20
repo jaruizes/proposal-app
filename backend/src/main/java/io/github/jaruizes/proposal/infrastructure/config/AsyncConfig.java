@@ -1,3 +1,23 @@
 package io.github.jaruizes.proposal.infrastructure.config;
-import org.springframework.context.annotation.*; import org.springframework.core.task.TaskExecutor; import org.springframework.core.task.support.ContextPropagatingTaskDecorator; import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-@Configuration public class AsyncConfig { @Bean("agentTaskExecutor") TaskExecutor agentTaskExecutor(){var e=new ThreadPoolTaskExecutor();e.setCorePoolSize(4);e.setMaxPoolSize(8);e.setQueueCapacity(100);e.setThreadNamePrefix("agent-task-");e.setTaskDecorator(new ContextPropagatingTaskDecorator());e.initialize();return e;} }
+
+import org.springframework.context.annotation.*;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.core.task.support.ContextPropagatingTaskDecorator;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+@Configuration
+public class AsyncConfig {
+    @Bean("agentTaskExecutor")
+    TaskExecutor agentTaskExecutor(){
+        var e=new ThreadPoolTaskExecutor();
+        e.setCorePoolSize(4);e.setMaxPoolSize(8);e.setQueueCapacity(100);e.setThreadNamePrefix("agent-task-");
+        e.setTaskDecorator(new ContextPropagatingTaskDecorator());e.initialize();return e;
+    }
+
+    @Bean("documentTaskExecutor")
+    TaskExecutor documentTaskExecutor(){
+        var e=new ThreadPoolTaskExecutor();
+        e.setCorePoolSize(1);e.setMaxPoolSize(3);e.setQueueCapacity(50);e.setThreadNamePrefix("document-task-");
+        e.setTaskDecorator(new ContextPropagatingTaskDecorator());e.initialize();return e;
+    }
+}
