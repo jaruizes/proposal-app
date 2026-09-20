@@ -2,6 +2,17 @@
 
 Independent Python/FastAPI agent platform used by Proposal Copilot and future applications.
 
+## Execution output contract
+
+Callers declare `constraints.output_format` for each execution: `markdown`,
+`optional_markdown`, `json` or `text`. The platform normalizes the result and
+sets its artifact `media_type` before publishing the completed execution.
+Markdown documents start with a level-one heading and contain no outer code
+fence or filename heading. Optional Markdown returns `NONE` when absent.
+JSON returns a complete object. Invalid output fails the execution rather than
+publishing an artifact. Both native and LangGraph runtimes enforce the same
+contract; callers without an explicit format default to text.
+
 ## LangGraph spike branch
 
 Branch `feat/langraph` keeps the public Agent Platform contracts unchanged but replaces the background cognitive runtime with LangGraph by default.

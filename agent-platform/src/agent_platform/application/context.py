@@ -60,6 +60,12 @@ class AgentPromptAssembler:
                 + json.dumps(request.constraints, ensure_ascii=False, indent=2, sort_keys=True, default=str)
                 + "\n```"
             )
+            output_format = request.constraints.get("output_format")
+            if output_format in {"markdown", "optional_markdown"}:
+                user_sections.append("# Output contract\nReturn a complete Markdown document starting with a level-one heading. Do not wrap it in a code fence or add a filename heading."
+                                     + (" Return exactly NONE if there is no document." if output_format == "optional_markdown" else ""))
+            elif output_format == "json":
+                user_sections.append("# Output contract\nReturn only a complete JSON object, without a code fence.")
 
         return ModelRequest(
             system_prompt="\n\n".join(system_sections),

@@ -55,6 +55,12 @@ class FailingProvider:
         raise ModelProviderError("MODEL_TIMEOUT", "timeout", retryable=True)
 
 
+class WrappedDocumentProvider:
+    async def generate(self, request: ModelRequest) -> ModelResult:
+        fence = chr(96) * 3
+        return ModelResult(content=f"# solution-plan.md\n\n{fence}markdown\n# Plan\nContent\n{fence}", model="test-model")
+
+
 def runtime(provider):
     skill = SkillDefinition(key="define-solution", name="Define solution", objective="Define it", instructions="Produce a solution")
     agent = AgentDefinition(key="solution-architect", name="Solution Architect", role="Act as a Solution Architect", skills=[skill.key])
@@ -81,6 +87,17 @@ async def test_runtime_completes_and_persists_lifecycle() -> None:
         "execution.completed",
         "execution.result",
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_publishes_normalized_document() -> None:
+    service, _ = runtime(WrappedDocumentProvider())
+    result = await service.execute(AgentExecutionRequest(
+        agent_key="solution-architect", skill_key="define-solution", objective="Draft",
+        constraints={"output_format": "markdown"},
+    ))
+    assert result.status is ExecutionStatus.COMPLETED
+    assert result.artifacts[0].content == "# Plan\nContent"
 
 
 @pytest.mark.asyncio

@@ -48,7 +48,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                         "Plan presentation materialization","""
                         Produce ONLY JSON with this shape: {"operations":[{"tool":"slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|slides_replace_element_text|slides_batch_update","arguments":{...}}]}.
                         Use $PRESENTATION_ID as the presentationId placeholder. Work only with IDs/patterns present in the supplied template structure. Materialize the approved slides-plan exactly: hierarchy, order and exact titles are frozen. Do not rewrite content to fit; choose/adapt corporate patterns instead. The original template will be copied before these operations run.
-                        """),
+                        """).withOutputFormat("json"),
                 model(offer),
                 "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# CORPORATE TEMPLATE STRUCTURE\n"+templateStructure).content();
 
@@ -94,12 +94,12 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                             "Visual QA iteration "+iteration,"""
                             Inspect the real slide thumbnails against the frozen slides-plan and current deck structure. Check clipping, overlap, awkward word/syllable wrapping, unreadably dense text, template leftovers, incorrect language and unapproved cliente/customer wording. Do NOT rewrite approved narrative copy.
                             Return ONLY JSON: {"status":"OK|FIX","operations":[...]}. If status is FIX, operations may only use the allowed Slides tools and $PRESENTATION_ID placeholder. Prefer: natural line breaks → textbox geometry → bounded font reduction → alternate corporate pattern. If no safe visual correction remains, return status OK with no operations and describe the unresolved issue in an optional "note" field.
-                            """),
+                            """).withOutputFormat("json"),
                     model(offer),
                     "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# CURRENT DECK STRUCTURE\n"+inspection.structure(),
                     inspection.thumbnails()).content();
             try {
-                var root=json.readTree(stripFences(qa));
+                var root=json.readTree(qa);
                 if("OK".equalsIgnoreCase(root.path("status").asText())) break;
                 var count=applyOperations(presentationId,qa);
                 corrections+=count;
@@ -129,7 +129,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
 
     private int applyOperations(String presentationId,String operationPlan) {
         JsonNode root;
-        try { root=json.readTree(stripFences(operationPlan)); }
+        try { root=json.readTree(operationPlan); }
         catch(Exception e){ throw new IllegalArgumentException("Presentation Builder did not return valid JSON operation plan",e); }
         var operations=root.path("operations");
         if(!operations.isArray()) throw new IllegalArgumentException("Presentation operation plan must contain an operations array");
@@ -150,7 +150,6 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     private String resolvedTemplateId(Offer offer){return offer.presentationTemplateId()!=null&&!offer.presentationTemplateId().isBlank()?offer.presentationTemplateId().trim():Objects.toString(defaultTemplateId,"").trim();}
     private void requireTemplate(String templateId){if(templateId==null||templateId.isBlank())throw new IllegalStateException("A Google Slides template is required for phase 5");}
     private static String text(Map<String,Object> r){return Objects.toString(r.get("text"),"");}
-    private static String stripFences(String raw){var s=raw.trim();if(s.startsWith("```")){var first=s.indexOf('\n');var last=s.lastIndexOf("```");if(first>=0&&last>first)s=s.substring(first+1,last).trim();}return s;}
     private static String driveId(String value){if(value==null)return "";var v=value.trim();var marker="/folders/";var i=v.indexOf(marker);if(i>=0){var x=v.substring(i+marker.length());var q=x.indexOf('?');return q>=0?x.substring(0,q):x;}return v;}
     private record Inspection(String structure,List<LlmRequest.Attachment> thumbnails){}
 }

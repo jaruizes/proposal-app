@@ -50,6 +50,22 @@ async def test_langgraph_runtime_preserves_platform_contract():
     assert "langgraph.execution.completed" in event_types
 
 
+@pytest.mark.asyncio
+async def test_langgraph_publishes_normalized_document():
+    class WrappedProvider:
+        async def generate(self, request):
+            fence = chr(96) * 3
+            return ModelResult(content=f"# solution-plan.md\n\n{fence}markdown\n# Plan\nContent\n{fence}", model="test-model")
+
+    skill=SkillDefinition(key="define-solution",name="Solution",objective="Solution",instructions="Draft")
+    agent=AgentDefinition(key="delivery-manager",name="Delivery",role="Plan",skills=[skill.key])
+    ar=AgentRepo(agent);sr=SkillRepo(skill);er=ExecutionRepo()
+    runtime=LangGraphAgentRuntime(AgentRegistry(ar,sr),SkillRegistry(sr),er,WrappedProvider(),checkpointer=MemorySaver())
+    result=await runtime.execute(AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Draft",constraints={"output_format":"markdown"}))
+    assert result.status is ExecutionStatus.COMPLETED
+    assert result.artifacts[0].content == "# Plan\nContent"
+
+
 class ProposalProvider:
     def __init__(self, issues=False, revise_once=False):
         self.calls=[]

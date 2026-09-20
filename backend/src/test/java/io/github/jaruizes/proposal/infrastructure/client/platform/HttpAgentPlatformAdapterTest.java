@@ -26,9 +26,13 @@ class HttpAgentPlatformAdapterTest {
     @Test
     void submitsPollsAndReturnsPlatformArtifact() throws Exception {
         var polls = new AtomicInteger();
+        var submittedBody = new java.util.concurrent.atomic.AtomicReference<String>();
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/v1/executions", exchange -> {
-            if ("POST".equals(exchange.getRequestMethod())) respond(exchange, 202, "{\"id\":\"11111111-1111-1111-1111-111111111111\",\"status\":\"QUEUED\",\"agent_key\":\"business-analyst\",\"objective\":\"x\"}");
+            if ("POST".equals(exchange.getRequestMethod())) {
+                submittedBody.set(new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                respond(exchange, 202, "{\"id\":\"11111111-1111-1111-1111-111111111111\",\"status\":\"QUEUED\",\"agent_key\":\"business-analyst\",\"objective\":\"x\"}");
+            }
             else respond(exchange, 404, "{}");
         });
         server.createContext("/v1/executions/11111111-1111-1111-1111-111111111111", exchange -> {
@@ -46,6 +50,7 @@ class HttpAgentPlatformAdapterTest {
         var result = adapter.execute(task, "claude-test", "Customer context", List.of());
 
         assertThat(result.content()).contains("# Analysis");
+        assertThat(submittedBody.get()).contains("\"output_format\":\"markdown\"");
         assertThat(result.model()).isEqualTo("claude-test");
         assertThat(result.inputTokens()).isEqualTo(12);
         assertThat(result.outputTokens()).isEqualTo(4);

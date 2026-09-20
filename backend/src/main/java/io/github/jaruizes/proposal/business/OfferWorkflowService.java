@@ -164,9 +164,9 @@ public class OfferWorkflowService {
         var followupContext=offerContext(offer)+"\n\n# SOURCE-BASED OPPORTUNITY BRIEF (DRAFT)\n"+brief;
         var followups=agents.executeParallel(List.of(
                 AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
-                        "Extraer preguntas de aclaración","From the supplied opportunity brief, return ONLY questions.md as raw Markdown. Start with a level-one heading and include a table with ID, Pregunta para el cliente, Motivo / impacto, Fuente, Respuesta cliente, Asunción / decisión tomada. Leave customer answers and decisions empty. Return exactly NONE when no real questions or gaps exist. Do not return JSON or fences."),
+                        "Extraer preguntas de aclaración","From the supplied opportunity brief, return ONLY questions.md as raw Markdown. Start with a level-one heading and include a table with ID, Pregunta para el cliente, Motivo / impacto, Fuente, Respuesta cliente, Asunción / decisión tomada. Leave customer answers and decisions empty. Return exactly NONE when no real questions or gaps exist. Do not return JSON or fences.").withOutputFormat("optional_markdown"),
                 AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
-                        "Extraer condicionantes tecnológicos","From the supplied opportunity brief, return ONLY technology.md as raw Markdown. Start with a level-one heading and include a table with Categoría, Tecnología / producto / arquitectura, Condición o uso indicado por el cliente, Carácter, Fuente, Observaciones. Return exactly NONE when no material technology or architecture constraints exist. Do not return JSON, fences or a proposed solution.")
+                        "Extraer condicionantes tecnológicos","From the supplied opportunity brief, return ONLY technology.md as raw Markdown. Start with a level-one heading and include a table with Categoría, Tecnología / producto / arquitectura, Condición o uso indicado por el cliente, Carácter, Fuente, Observaciones. Return exactly NONE when no material technology or architecture constraints exist. Do not return JSON, fences or a proposed solution.").withOutputFormat("optional_markdown")
         ),model(offer,"analysis"),followupContext);
         var questions=AnalysisMarkdown.optional(followups.get(0).content(),"questions.md");
         var technology=AnalysisMarkdown.optional(followups.get(1).content(),"technology.md");
@@ -195,14 +195,14 @@ public class OfferWorkflowService {
                 Before writing solution.md, triage every source as REVIEW_IN_DEPTH, TARGETED_REVIEW or SKIP and decide whether bounded specialist consultations are genuinely needed.
                 Return ONLY JSON: {"sourceReview":[{"id":"DOC-001","disposition":"REVIEW_IN_DEPTH","reason":"..."}],"specialistConsultations":[{"agentKey":"security-specialist","question":"..."}]}.
                 Maximum two consultations. Do not request base roles as specialists.
-                """),model(offer,"solutionArchitecture"),base,sourceBundle.visualAttachments());
+                """).withOutputFormat("json"),model(offer,"solutionArchitecture"),base,sourceBundle.visualAttachments());
 
         var specialistResults=runRequestedSpecialists(offer,base,triage.content(),sourceBundle.visualAttachments());
         var architectContext=base+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
         var architect=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
                 "Definir solución propuesta","Execute section A of define-solution. Produce ONLY the complete solution.md as raw Markdown, without an outer code fence or filename heading, including source review and any specialist consultations. Do not estimate effort, duration, staffing, cost or price."+refinement(refinement)),
                 model(offer,"solutionArchitecture"),architectContext,sourceBundle.visualAttachments());
-        var solution=MarkdownContent.unwrapDocument(architect.content());
+        var solution=architect.content();
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION,solution);
 
         // Delivery is deliberately sequential and consumes the architect artifact in its own isolated role context.
@@ -210,22 +210,22 @@ public class OfferWorkflowService {
         var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
                 "Definir enfoque de ejecución","Execute section B of define-solution. Produce ONLY the complete unestimated solution-plan.md as raw Markdown, without an outer code fence or filename heading. Include capability → workstream coverage."),
                 model(offer,"deliveryPlanning"),deliveryContext,sourceBundle.visualAttachments());
-        var solutionPlan=MarkdownContent.unwrapDocument(delivery.content());
+        var solutionPlan=delivery.content();
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION_PLAN,solutionPlan);
 
         agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"business-analyst","define-solution",
-                "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and solution-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required."),
+                "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and solution-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text"),
                 model(offer,"solutionArchitecture"),base+"\n\n# solution.md\n"+solution+"\n\n# solution-plan.md\n"+solutionPlan);
     }
 
     private String runRequestedSpecialists(Offer offer,String context,String triage,List<LlmRequest.Attachment> attachments){
         try{
-            JsonNode root=json.readTree(stripFences(triage));
+            JsonNode root=json.readTree(triage);
             var requested=new ArrayList<AgentTask>();
             root.path("specialistConsultations").forEach(node->{
                 if(requested.size()>=2)return;
                 var key=node.path("agentKey").asText(); var question=node.path("question").asText();
-                try{var definition=agentRegistry.get(key);if("Specialist".equals(definition.role())) requested.add(AgentTask.of(offer.id(),PhaseType.SOLUTION,key,"define-solution","Consulta especializada",question));}catch(Exception ignored){}
+                try{var definition=agentRegistry.get(key);if("Specialist".equals(definition.role())) requested.add(AgentTask.of(offer.id(),PhaseType.SOLUTION,key,"define-solution","Consulta especializada",question).withOutputFormat("text"));}catch(Exception ignored){}
             });
             if(requested.isEmpty())return "\n\n# OPTIONAL SPECIALIST CONSULTATIONS\nNone requested.";
             // Keep bounded fan-out. Specialist consultations do not own canonical artifacts.
@@ -270,11 +270,9 @@ public class OfferWorkflowService {
     }
 
     private void saveArtifact(UUID offerId,PhaseType phase,ArtifactType type,String content){
-        var normalized=type==ArtifactType.PRESENTATION_METADATA||type==ArtifactType.PRESENTATION_BUILD_REPORT
-                ?content:MarkdownContent.unwrapDocument(content);
-        artifacts.save(new Artifact(UUID.randomUUID(),offerId,phase,type,artifacts.nextVersion(offerId,type),normalized,Instant.now()));
+        artifacts.save(new Artifact(UUID.randomUUID(),offerId,phase,type,artifacts.nextVersion(offerId,type),content,Instant.now()));
     }
-    private String approvedArtifactsContext(UUID offerId,List<ArtifactType> types){var b=new StringBuilder();for(var t:types)artifacts.findLatest(offerId,t).ifPresent(a->b.append("\n\n# ").append(t).append("\n").append(MarkdownContent.unwrapDocument(a.content())));return b.toString();}
+    private String approvedArtifactsContext(UUID offerId,List<ArtifactType> types){var b=new StringBuilder();for(var t:types)artifacts.findLatest(offerId,t).ifPresent(a->b.append("\n\n# ").append(t).append("\n").append(a.content()));return b.toString();}
     private String offerContext(Offer o){return "Offer name: %s\nOrganization: %s\nLanguage: %s\nPresentation language: %s\nGoogle Drive input folder: %s\nGoogle Drive output folder: %s\n".formatted(o.name(),o.customer(),o.language(),o.presentationLanguage(),o.inputDriveFolder(),o.outputDriveFolder());}
     private String model(Offer offer,String key){return offer.models().getOrDefault(key,"claude-sonnet-4-6");}
     private String refinement(String r){return r==null||r.isBlank()?"":"\n\n# HUMAN REFINEMENT (authoritative)\n"+r;}
@@ -312,7 +310,6 @@ public class OfferWorkflowService {
                 Map.of("name","Valor añadido y próximos pasos","enabled",true,"depth","STANDARD","guidance","Resumir diferenciadores sustentados y siguientes pasos.")
         ));
     }
-    private static String stripFences(String raw){var s=raw.trim();if(s.startsWith("```")){var first=s.indexOf('\n');var last=s.lastIndexOf("```");if(first>=0&&last>first)s=s.substring(first+1,last).trim();}return s;}
 
     public record CreateOfferCommand(String name,String customer,String language,String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object proposalGuidance,Object presentationGuidance) {}
     public record UpdateOfferConfigurationCommand(String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object proposalGuidance,Object presentationGuidance) {}

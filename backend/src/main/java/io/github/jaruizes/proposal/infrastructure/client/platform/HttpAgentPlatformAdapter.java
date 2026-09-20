@@ -47,7 +47,8 @@ public class HttpAgentPlatformAdapter implements AgentPlatformPort {
         body.put("constraints", Map.of(
                 "workflow_owner", "spring",
                 "business_phase", task.phase().name(),
-                "commercial_estimation_allowed", false
+                "commercial_estimation_allowed", false,
+                "output_format", task.metadata().getOrDefault("output_format", "text")
         ));
         body.put("attachments", attachments.stream().map(a -> Map.of(
                 "name", a.name(),

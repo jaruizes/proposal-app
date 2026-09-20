@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agent_platform.application.models import ModelProviderError, ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.observability import EXECUTIONS, EXECUTION_LATENCY, TOKENS, timed_span
+from agent_platform.application.output_contract import normalize_output, output_media_type
 from agent_platform.application.runtime import AgentRuntime
 from agent_platform.domain import AgentArtifact, AgentExecutionRequest, AgentExecutionResult, AgentUsage, CognitiveContext, ExecutionStatus
 
@@ -62,6 +63,7 @@ class LangGraphAgentRuntime(AgentRuntime):
                     final_state = await self._invoke_graph(running, request, checkpointer)
 
             model_result = ModelResult.model_validate(final_state["model_result"])
+            model_result = model_result.model_copy(update={"content": normalize_output(request, model_result.content)})
             cache_hit = bool(final_state.get("cache_hit", False))
             cognitive_context = CognitiveContext.model_validate(final_state["cognitive_context"])
             agent = await self._agents.get(request.agent_key)
@@ -85,6 +87,7 @@ class LangGraphAgentRuntime(AgentRuntime):
             artifact = AgentArtifact(
                 type="AGENT_OUTPUT",
                 content=model_result.content,
+                media_type=output_media_type(request, model_result.content),
                 metadata={
                     "agent_key": agent.key,
                     "agent_version": agent.version,
@@ -199,6 +202,7 @@ class LangGraphAgentRuntime(AgentRuntime):
             if model_result is None:
                 with timed_span("langgraph.model", model=model_request.model or "default"):
                     model_result = await self._model_provider.generate(model_request)
+                model_result = model_result.model_copy(update={"content": normalize_output(request, model_result.content)})
                 if self._cache is not None and cache_config["enabled"] and cache_key:
                     await self._cache.set_json(
                         "execution",

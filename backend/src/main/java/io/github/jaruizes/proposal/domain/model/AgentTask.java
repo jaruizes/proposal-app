@@ -14,7 +14,11 @@ public record AgentTask(
         Map<String,Object> metadata) {
 
     public static AgentTask of(UUID offerId, PhaseType phase, String agentKey, String skillKey, String objective, String prompt) {
-        return new AgentTask(UUID.randomUUID(), offerId, phase, agentKey, skillKey, objective, prompt, Map.of());
+        return new AgentTask(UUID.randomUUID(), offerId, phase, agentKey, skillKey, objective, prompt, Map.of("output_format", "markdown"));
+    }
+
+    public AgentTask withOutputFormat(String format) {
+        return new AgentTask(id, offerId, phase, agentKey, skillKey, objective, prompt, Map.of("output_format", format));
     }
 
     public static AgentTask of(UUID offerId, PhaseType phase, String agentKey, String objective, String prompt) {

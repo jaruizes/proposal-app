@@ -69,7 +69,8 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
             request.put("constraints", Map.of(
                     "workflow_owner", "spring",
                     "business_phase", task.phase().name(),
-                    "commercial_estimation_allowed", false
+                    "commercial_estimation_allowed", false,
+                    "output_format", task.metadata().getOrDefault("output_format", "text")
             ));
             request.put("attachments", attachments.stream().map(a -> Map.of(
                     "name", a.name(), "media_type", a.mediaType(), "content", "",

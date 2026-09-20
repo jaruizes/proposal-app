@@ -18,7 +18,7 @@ public final class OfferRestMapper {
             if(INTERNAL_ARTIFACTS.contains(a.type())) continue;
             byPhase.computeIfAbsent(a.phase(),ignored->new StringBuilder())
                     .append("\n\n# ").append(a.type()).append(" · v").append(a.version()).append("\n\n")
-                    .append(MarkdownContent.unwrapDocument(a.content()));
+                    .append(a.content());
         }
         var prs=phases.stream().sorted(Comparator.comparingInt(p->p.phase().ordinal()))
                 .map(p->new OfferResponse.PhaseResponse(key(p.phase()),p.phase().label(),phaseStatus(p.status()),
