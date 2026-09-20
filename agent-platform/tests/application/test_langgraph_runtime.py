@@ -55,7 +55,7 @@ async def test_langgraph_publishes_normalized_document():
     class WrappedProvider:
         async def generate(self, request):
             fence = chr(96) * 3
-            return ModelResult(content=f"# solution-plan.md\n\n{fence}markdown\n# Plan\nContent\n{fence}", model="test-model")
+            return ModelResult(content=f"# delivery-plan.md\n\n{fence}markdown\n# Plan\nContent\n{fence}", model="test-model")
 
     skill=SkillDefinition(key="define-solution",name="Solution",objective="Solution",instructions="Draft")
     agent=AgentDefinition(key="delivery-manager",name="Delivery",role="Plan",skills=[skill.key])
