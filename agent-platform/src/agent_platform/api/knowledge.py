@@ -1,7 +1,7 @@
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 
 from agent_platform.api.dependencies import KnowledgeFileServiceDep, KnowledgeIngestionServiceDep, KnowledgeServiceDep
@@ -212,6 +212,14 @@ async def enrich_document(document_id: UUID, payload: KnowledgeEnrichRequest, se
 
 
 @router.get("/knowledge-documents/{document_id}/chunks", response_model=list[KnowledgeChunk])
-async def list_chunks(document_id: UUID, service: KnowledgeServiceDep):
-    try: return await service.list_chunks(document_id)
-    except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+async def list_chunks(
+    document_id: UUID,
+    service: KnowledgeServiceDep,
+    offset: int = Query(default=0, ge=0),
+    limit: int | None = Query(default=None, ge=1, le=500),
+):
+    try:
+        chunks = await service.list_chunks(document_id)
+        return chunks[offset:] if limit is None else chunks[offset:offset + limit]
+    except KnowledgeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

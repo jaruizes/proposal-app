@@ -5,6 +5,8 @@ spring:
     multipart:
       max-file-size: 25MB
       max-request-size: 27MB
+  codec:
+    max-in-memory-size: 8MB
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/proposal}
     username: ${DB_USER:proposal}

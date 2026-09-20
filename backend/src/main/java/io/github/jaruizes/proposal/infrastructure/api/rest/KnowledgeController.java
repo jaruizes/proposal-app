@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 
 import java.util.Map;
 
@@ -22,7 +23,10 @@ public class KnowledgeController {
 
     public KnowledgeController(AgentPlatformProperties properties, WebClient.Builder builder, ObjectMapper mapper) {
         this.mapper = mapper;
-        var configured = builder.baseUrl(properties.baseUrl());
+        var strategies = ExchangeStrategies.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(8 * 1024 * 1024))
+                .build();
+        var configured = builder.baseUrl(properties.baseUrl()).exchangeStrategies(strategies);
         if (properties.apiKey() != null && !properties.apiKey().isBlank()) {
             configured.defaultHeader("X-API-Key", properties.apiKey());
         }
@@ -44,7 +48,14 @@ public class KnowledgeController {
     public JsonNode document(@PathVariable String id) { return get("/v1/knowledge-documents/" + id); }
 
     @GetMapping("/documents/{id}/chunks")
-    public JsonNode chunks(@PathVariable String id) { return get("/v1/knowledge-documents/" + id + "/chunks"); }
+    public JsonNode chunks(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "100") int limit) {
+        var safeLimit = Math.max(1, Math.min(limit, 500));
+        var safeOffset = Math.max(0, offset);
+        return get("/v1/knowledge-documents/" + id + "/chunks?offset=" + safeOffset + "&limit=" + safeLimit);
+    }
 
     @PostMapping(value = "/bases/{key}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public JsonNode upload(
