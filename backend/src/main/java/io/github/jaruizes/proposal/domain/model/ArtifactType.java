@@ -9,7 +9,7 @@ public enum ArtifactType {
     TECHNOLOGY,
     STRATEGY,
     SOLUTION,
-    SOLUTION_PLAN,
+    DELIVERY_PLAN,
     PROPOSAL,
     PROPOSAL_DOCX,
     PROPOSAL_PDF,
