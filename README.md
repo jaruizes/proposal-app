@@ -43,7 +43,7 @@ questions.md
 technology.md
 strategy.md
 solution.md
-solution-plan.md
+delivery-plan.md
 proposal.md
 slides-plan.md
 ```
@@ -205,7 +205,7 @@ specialists (max 2, only if needed)
         ↓
 solution.md
         ↓
-solution-plan.md
+delivery-plan.md
         ↓
 coherence review
 ```
