@@ -52,4 +52,38 @@ public class HttpDocumentRendererAdapter implements DocumentPort {
                 templateId == null ? request.templateId() : templateId,
                 rendererVersion == null ? "unknown" : rendererVersion);
     }
+
+    @Override
+    public RenderedDocument renderMarkdownPdf(DocumentRenderRequest request) {
+        var body = new LinkedHashMap<String,Object>();
+        body.put("markdown", request.markdown());
+        body.put("title", request.title());
+        body.put("language", request.language());
+        body.put("template_id", request.templateId());
+        body.put("metadata", request.metadata());
+
+        var response = client.post()
+                .uri("/v1/render/pdf")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_PDF)
+                .bodyValue(body)
+                .retrieve()
+                .toEntity(byte[].class)
+                .block();
+
+        if (response == null || response.getBody() == null || response.getBody().length == 0) {
+            throw new IllegalStateException("Document renderer returned an empty PDF");
+        }
+        var headers = response.getHeaders();
+        var rendererVersion = headers.getFirst("X-Renderer-Version");
+        var templateId = headers.getFirst("X-Template-Id");
+        var fileName = headers.getContentDisposition().getFilename();
+        if (fileName == null || fileName.isBlank()) fileName = "artifact.pdf";
+        return new RenderedDocument(
+                response.getBody(),
+                MediaType.APPLICATION_PDF_VALUE,
+                fileName,
+                templateId == null ? request.templateId() : templateId,
+                rendererVersion == null ? "unknown" : rendererVersion);
+    }
 }

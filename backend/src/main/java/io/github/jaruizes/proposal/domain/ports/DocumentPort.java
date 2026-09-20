@@ -5,4 +5,5 @@ import io.github.jaruizes.proposal.domain.model.RenderedDocument;
 
 public interface DocumentPort {
     RenderedDocument renderProposalDocx(DocumentRenderRequest request);
+    RenderedDocument renderMarkdownPdf(DocumentRenderRequest request);
 }

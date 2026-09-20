@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -13,8 +15,11 @@ from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
 
 
-RENDERER_VERSION = "docx-renderer-v1"
+RENDERER_VERSION = "document-renderer-v2"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PDF_MEDIA_TYPE = "application/pdf"
+SOFFICE_BINARY = os.getenv("SOFFICE_BINARY", "soffice")
+PDF_TIMEOUT_SECONDS = int(os.getenv("PDF_RENDER_TIMEOUT_SECONDS", "120"))
 TEMPLATE_DIR = Path(os.getenv("DOCUMENT_RENDERER_TEMPLATE_DIR", "/opt/document-renderer/templates"))
 SAFE_TEMPLATE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -39,25 +44,80 @@ def health() -> dict[str, str]:
 @app.post("/v1/render/docx")
 def render_docx(request: RenderDocxRequest) -> Response:
     try:
-        document = _load_template(request.template_id)
-        _prepare_document(document, request)
-        _render_markdown(document, request.markdown)
-        output = BytesIO()
-        document.save(output)
+        payload = _render_docx_bytes(request)
         file_name = _safe_filename(request.title) + ".docx"
-        return Response(
-            content=output.getvalue(),
-            media_type=DOCX_MEDIA_TYPE,
-            headers={
-                "Content-Disposition": f'attachment; filename="{file_name}"',
-                "X-Renderer-Version": RENDERER_VERSION,
-                "X-Template-Id": request.template_id or "builtin-neutral",
-            },
-        )
+        return Response(content=payload, media_type=DOCX_MEDIA_TYPE, headers=_headers(file_name, request.template_id))
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"DOCX rendering failed: {exc}") from exc
+
+
+@app.post("/v1/render/pdf")
+def render_pdf(request: RenderDocxRequest) -> Response:
+    try:
+        docx = _render_docx_bytes(request)
+        pdf = _convert_docx_to_pdf(docx)
+        file_name = _safe_filename(request.title) + ".pdf"
+        return Response(content=pdf, media_type=PDF_MEDIA_TYPE, headers=_headers(file_name, request.template_id))
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail=f"PDF rendering timed out after {PDF_TIMEOUT_SECONDS}s") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF rendering failed: {exc}") from exc
+
+
+def _headers(file_name: str, template_id: str) -> dict[str, str]:
+    return {
+        "Content-Disposition": f'attachment; filename="{file_name}"',
+        "X-Renderer-Version": RENDERER_VERSION,
+        "X-Template-Id": template_id or "builtin-neutral",
+    }
+
+
+def _render_docx_bytes(request: RenderDocxRequest) -> bytes:
+    document = _load_template(request.template_id)
+    _prepare_document(document, request)
+    _render_markdown(document, request.markdown)
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue()
+
+
+def _convert_docx_to_pdf(payload: bytes) -> bytes:
+    with tempfile.TemporaryDirectory(prefix="proposal-render-") as job_dir_raw:
+        job_dir = Path(job_dir_raw)
+        input_docx = job_dir / "document.docx"
+        output_dir = job_dir / "output"
+        profile_dir = job_dir / "lo-profile"
+        output_dir.mkdir()
+        profile_dir.mkdir()
+        input_docx.write_bytes(payload)
+
+        completed = subprocess.run(
+            [
+                SOFFICE_BINARY,
+                f"-env:UserInstallation={profile_dir.as_uri()}",
+                "--headless",
+                "--nologo",
+                "--nodefault",
+                "--nofirststartwizard",
+                "--convert-to", "pdf",
+                "--outdir", str(output_dir),
+                str(input_docx),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=PDF_TIMEOUT_SECONDS,
+            check=False,
+            text=True,
+        )
+        pdf_path = output_dir / "document.pdf"
+        if completed.returncode != 0 or not pdf_path.exists():
+            detail = completed.stdout.strip()[-1500:] if completed.stdout else "no LibreOffice output"
+            raise RuntimeError(f"LibreOffice conversion failed ({completed.returncode}): {detail}")
+        return pdf_path.read_bytes()
 
 
 def _load_template(template_id: str) -> Document:
