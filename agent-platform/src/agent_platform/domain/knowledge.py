@@ -15,6 +15,8 @@ class KnowledgeDocumentStatus(StrEnum):
     PROCESSING = "PROCESSING"
     READY = "READY"
     FAILED = "FAILED"
+    ARCHIVED = "ARCHIVED"
+    SUPERSEDED = "SUPERSEDED"
 
 
 class KnowledgeBase(BaseModel):
@@ -38,6 +40,9 @@ class KnowledgeDocument(BaseModel):
     source_uri: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     status: KnowledgeDocumentStatus = KnowledgeDocumentStatus.STORED
+    family_id: UUID = Field(default_factory=uuid4)
+    version: int = Field(default=1, ge=1)
+    previous_version_id: UUID | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 

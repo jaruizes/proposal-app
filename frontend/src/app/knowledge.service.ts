@@ -27,6 +27,19 @@ export class KnowledgeService {
       error:()=>this.message.set('No se pudieron cargar los documentos.')
     });
   }
+  loadVersions(id:string,callback:(items:KnowledgeDocument[])=>void){
+    this.http.get<KnowledgeDocument[]>(`/api/knowledge/documents/${id}/versions`).subscribe({next:callback,error:()=>this.message.set('No se pudieron cargar las versiones.')});
+  }
+  archive(id:string,baseKey:string){this.http.post(`/api/knowledge/documents/${id}/archive`,{}).subscribe(()=>{this.message.set('Documento archivado.');this.loadDocuments(baseKey);});}
+  restore(id:string,baseKey:string){this.http.post(`/api/knowledge/documents/${id}/restore`,{}).subscribe(()=>{this.message.set('Versión restaurada como activa.');this.loadDocuments(baseKey);});}
+  deleteDocument(id:string,baseKey:string){this.http.delete(`/api/knowledge/documents/${id}`).subscribe(()=>{this.message.set('Documento eliminado.');this.loadDocuments(baseKey);this.chunks.set([]);});}
+  uploadVersion(id:string,baseKey:string,file:File,chunkingStrategy:string,metadataEnrichment:string){
+    const form=new FormData();form.append('file',file);form.append('chunkingStrategy',chunkingStrategy);form.append('metadataEnrichment',metadataEnrichment);
+    this.loading.set(true);this.http.post<any>(`/api/knowledge/documents/${id}/versions`,form).subscribe({
+      next:r=>{this.loading.set(false);this.message.set(`Nueva versión v${r.document?.version} ingerida y activada.`);this.loadDocuments(baseKey);},
+      error:e=>{this.loading.set(false);this.message.set(e?.error?.detail||'No se pudo subir la nueva versión.');}
+    });
+  }
   loadChunks(id:string){
     this.http.get<KnowledgeChunk[]>(`/api/knowledge/documents/${id}/chunks`).subscribe({
       next:items=>this.chunks.set(items),error:()=>this.message.set('No se pudieron cargar los chunks.')

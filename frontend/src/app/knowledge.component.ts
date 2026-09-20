@@ -10,6 +10,8 @@ export class KnowledgeComponent implements OnInit {
   selectedBase=signal('');
   uploadOpen=signal(false);
   selectedDocument=signal<KnowledgeDocument|null>(null);
+  versions=signal<KnowledgeDocument[]>([]);
+  versionOpen=signal(false); versionFile:File|null=null;
   query=''; queryMode='hybrid'; topK=5; file:File|null=null;
   upload:any={chunkingStrategy:'fixed',metadataEnrichment:'standard',chunkSize:1200,overlap:200,parentSize:6000,childSize:1200,childOverlap:200,maxKeywords:8,customer:'',sector:'',year:new Date().getFullYear(),proposalType:'',tags:''};
 
@@ -18,7 +20,13 @@ export class KnowledgeComponent implements OnInit {
   onFile(event:Event){const input=event.target as HTMLInputElement;this.file=input.files?.[0]||null;}
   doUpload(){if(this.file&&this.selectedBase()){this.svc.upload(this.selectedBase(),this.file,this.upload);this.uploadOpen.set(false);this.file=null;}}
   search(){if(this.query.trim())this.svc.retrieve(this.query.trim(),this.queryMode,this.topK,this.selectedBase());}
-  inspect(doc:KnowledgeDocument){this.selectedDocument.set(doc);this.svc.loadChunks(doc.id);}
+  inspect(doc:KnowledgeDocument){this.selectedDocument.set(doc);this.svc.loadChunks(doc.id);this.svc.loadVersions(doc.id,items=>this.versions.set(items));}
+  onVersionFile(event:Event){const input=event.target as HTMLInputElement;this.versionFile=input.files?.[0]||null;}
+  uploadNewVersion(){const doc=this.selectedDocument();if(doc&&this.versionFile){this.svc.uploadVersion(doc.id,doc.knowledge_base_key,this.versionFile,this.upload.chunkingStrategy,this.upload.metadataEnrichment);this.versionOpen.set(false);this.versionFile=null;}}
+  archive(doc:KnowledgeDocument){this.svc.archive(doc.id,doc.knowledge_base_key);this.selectedDocument.set(null);}
+  restore(doc:KnowledgeDocument){this.svc.restore(doc.id,doc.knowledge_base_key);this.selectedDocument.set(null);}
+  remove(doc:KnowledgeDocument){if(confirm(`¿Eliminar definitivamente ${doc.title} v${doc.version}?`)){this.svc.deleteDocument(doc.id,doc.knowledge_base_key);this.selectedDocument.set(null);}}
+  versionLabel(doc:KnowledgeDocument){return `v${doc.version} · ${doc.status}`;}
   classification(doc:KnowledgeDocument){return doc.metadata?.['classification']?.['document_type']||'GENERAL_REFERENCE';}
   keywords(doc:KnowledgeDocument){return (doc.metadata?.['enrichment']?.['keywords']||[]).slice(0,6);}
 }

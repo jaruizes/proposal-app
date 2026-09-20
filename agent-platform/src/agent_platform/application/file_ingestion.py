@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from agent_platform.application.chunking import ChunkingStrategyName
 from agent_platform.application.document_parsers import DocumentParseError, DocumentParserRegistry
@@ -56,6 +57,9 @@ class KnowledgeFileService:
         embed: bool = True,
         metadata_enrichment: MetadataEnrichmentProfile | str = MetadataEnrichmentProfile.STANDARD,
         max_keywords: int = 8,
+        family_id: UUID | None = None,
+        version: int = 1,
+        previous_version_id: UUID | None = None,
     ) -> KnowledgeFileUploadResult:
         await self._knowledge_service.get_base(knowledge_base_key)
         if not filename:
@@ -72,7 +76,12 @@ class KnowledgeFileService:
         classified_metadata = dict(metadata)
         classified_metadata["classification"] = self._classifier.classify(knowledge_base_key, classified_metadata)
 
+        document_id = __import__("uuid").uuid4()
         document = KnowledgeDocument(
+            id=document_id,
+            family_id=family_id or document_id,
+            version=version,
+            previous_version_id=previous_version_id,
             knowledge_base_key=knowledge_base_key,
             title=filename,
             content=parsed.content,

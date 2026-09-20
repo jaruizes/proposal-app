@@ -16,11 +16,18 @@
         <div class="knowledge-empty" *ngIf="selectedBase() && svc.documents().length===0">Todavía no hay documentos. Añade PDF, DOCX, TXT o Markdown.</div>
         <div class="knowledge-doc-list">
           <button class="knowledge-doc" *ngFor="let doc of svc.documents()" (click)="inspect(doc)">
-            <div><strong>{{doc.title}}</strong><span class="classification">{{classification(doc)}}</span><small>{{doc.media_type}} · {{doc.created_at | date:'dd/MM/yyyy HH:mm'}}</small><div class="keyword-row"><span *ngFor="let k of keywords(doc)">{{k}}</span></div></div>
+            <div><strong>{{doc.title}}</strong><span class="classification">{{classification(doc)}}</span><span class="version-badge">v{{doc.version}}</span><small>{{doc.media_type}} · {{doc.created_at | date:'dd/MM/yyyy HH:mm'}}</small><div class="keyword-row"><span *ngFor="let k of keywords(doc)">{{k}}</span></div></div>
             <span class="doc-status" [ngClass]="doc.status.toLowerCase()">{{doc.status}}</span>
           </button>
         </div>
-      </section>
+        <div class="modal-backdrop" *ngIf="versionOpen() && selectedDocument() as versionDoc">
+    <section class="modal knowledge-upload-modal">
+      <header><div><span class="eyebrow">NUEVA VERSIÓN</span><h2>{{versionDoc.title}}</h2><p>La nueva versión se ingesta primero; sólo si termina correctamente sustituye a la versión activa.</p></div><button class="icon-btn" (click)="versionOpen.set(false)">×</button></header>
+      <div class="modal-body"><label><span>Archivo</span><input type="file" accept=".pdf,.docx,.txt,.md" (change)="onVersionFile($event)" /></label><div class="form-grid two"><label><span>Chunking</span><select [(ngModel)]="upload.chunkingStrategy"><option value="fixed">Fixed</option><option value="semantic">Semantic</option><option value="hierarchical">Hierarchical</option></select></label><label><span>Enriquecimiento</span><select [(ngModel)]="upload.metadataEnrichment"><option value="standard">Standard</option><option value="basic">Basic</option><option value="none">None</option></select></label></div></div>
+      <footer><button class="ghost" (click)="versionOpen.set(false)">Cancelar</button><button class="primary" [disabled]="!versionFile || svc.loading()" (click)="uploadNewVersion()">Subir nueva versión</button></footer>
+    </section>
+  </div>
+</section>
       <section class="panel rag-query-panel">
         <div class="panel-head"><div><h2>Consultar RAG</h2><p>Prueba el retrieval que utilizarán los agentes. Si seleccionas una base, la búsqueda se limita a ella.</p></div></div>
         <div class="rag-query">
@@ -36,7 +43,8 @@
         <div class="knowledge-empty" *ngIf="svc.results() && svc.results()?.hits?.length===0">No se encontraron resultados suficientemente relevantes para esta consulta.</div>
       </section>
       <section class="panel" *ngIf="selectedDocument() as doc">
-        <div class="panel-head"><div><span class="eyebrow">DOCUMENTO</span><h2>{{doc.title}}</h2><p>{{classification(doc)}} · {{doc.status}}</p></div><button class="ghost small" (click)="selectedDocument.set(null);svc.chunks.set([])">Cerrar</button></div>
+        <div class="panel-head"><div><span class="eyebrow">DOCUMENTO</span><h2>{{doc.title}}</h2><p>{{classification(doc)}} · v{{doc.version}} · {{doc.status}}</p></div><div class="document-actions"><button class="ghost small" (click)="versionOpen.set(true)">＋ Nueva versión</button><button class="ghost small" *ngIf="doc.status==='READY'" (click)="archive(doc)">Archivar</button><button class="ghost small" *ngIf="doc.status==='ARCHIVED' || doc.status==='SUPERSEDED'" (click)="restore(doc)">Restaurar</button><button class="ghost small danger" (click)="remove(doc)">Eliminar</button><button class="ghost small" (click)="selectedDocument.set(null);svc.chunks.set([])">Cerrar</button></div></div>
+        <div class="version-history"><strong>Historial</strong><span *ngFor="let version of versions()" [class.active]="version.status==='READY'">{{versionLabel(version)}}</span></div>
         <details open><summary>Clasificación y metadata</summary><pre class="knowledge-json">{{doc.metadata | json}}</pre></details>
         <h3 class="knowledge-subtitle">Chunks almacenados ({{svc.chunks().length}})</h3>
         <article class="chunk-card" *ngFor="let chunk of svc.chunks() | slice:0:20"><div><b>#{{chunk.ordinal}}</b><span>{{chunk.embedding_model || 'sin embedding'}}</span></div><p>{{chunk.content}}</p></article>

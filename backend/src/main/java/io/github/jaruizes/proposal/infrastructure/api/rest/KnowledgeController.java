@@ -47,6 +47,30 @@ public class KnowledgeController {
     @GetMapping("/documents/{id}")
     public JsonNode document(@PathVariable String id) { return get("/v1/knowledge-documents/" + id); }
 
+    @GetMapping("/documents/{id}/versions")
+    public JsonNode versions(@PathVariable String id) { return get("/v1/knowledge-documents/" + id + "/versions"); }
+
+    @PostMapping("/documents/{id}/archive")
+    public JsonNode archive(@PathVariable String id) { return client.post().uri("/v1/knowledge-documents/{id}/archive",id).retrieve().bodyToMono(JsonNode.class).block(); }
+
+    @PostMapping("/documents/{id}/restore")
+    public JsonNode restore(@PathVariable String id) { return client.post().uri("/v1/knowledge-documents/{id}/restore",id).retrieve().bodyToMono(JsonNode.class).block(); }
+
+    @DeleteMapping("/documents/{id}")
+    public void deleteDocument(@PathVariable String id) { client.delete().uri("/v1/knowledge-documents/{id}",id).retrieve().toBodilessEntity().block(); }
+
+    @PostMapping(value="/documents/{id}/versions", consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+    public JsonNode uploadVersion(@PathVariable String id,@RequestPart("file") MultipartFile file,
+            @RequestParam(defaultValue="fixed") String chunkingStrategy,
+            @RequestParam(defaultValue="standard") String metadataEnrichment) throws Exception {
+        var multipart=new MultipartBodyBuilder();
+        var resource=new ByteArrayResource(file.getBytes()){ @Override public String getFilename(){return file.getOriginalFilename()==null?"document":file.getOriginalFilename();}};
+        multipart.part("file",resource).contentType(file.getContentType()==null?MediaType.APPLICATION_OCTET_STREAM:MediaType.parseMediaType(file.getContentType()));
+        multipart.part("chunking_strategy",chunkingStrategy); multipart.part("metadata_enrichment",metadataEnrichment);
+        return client.post().uri("/v1/knowledge-documents/{id}/versions",id).contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(BodyInserters.fromMultipartData(multipart.build())).retrieve().bodyToMono(JsonNode.class).block();
+    }
+
     @GetMapping("/documents/{id}/chunks")
     public JsonNode chunks(
             @PathVariable String id,

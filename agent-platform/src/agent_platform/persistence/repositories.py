@@ -3,13 +3,13 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from agent_platform.domain import AgentConstraints, AgentDefinition, AgentError, AgentExecution, AgentUsage, ExecutionStatus, KnowledgeBase, KnowledgeChunk, KnowledgeDocument, KnowledgeDocumentStatus, ModelPolicy, SkillDefinition
-from agent_platform.persistence.models import AgentCapabilityRecord, AgentKnowledgeScopeRecord, AgentRecord, AgentSkillRecord, AgentToolRecord, ExecutionEventRecord, ExecutionRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeDocumentRecord, SkillRecord
+from agent_platform.persistence.models import AgentCapabilityRecord, AgentKnowledgeScopeRecord, AgentRecord, AgentSkillRecord, AgentToolRecord, ExecutionEventRecord, ExecutionRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeDocumentRecord, OntologyMappingRecord, SkillRecord
 
 def _agent_to_domain(r): return AgentDefinition(id=r.id,key=r.key,name=r.name,description=r.description,role=r.role,capabilities=[i.value for i in r.capabilities],skills=[i.skill_key for i in r.skills],knowledge_scopes=[i.scope_key for i in r.knowledge_scopes],allowed_tools=[i.tool_key for i in r.tools],model_policy=ModelPolicy.model_validate(r.model_policy or {}),constraints=AgentConstraints.model_validate(r.constraints or {}),version=r.version,enabled=r.enabled)
 def _skill_to_domain(r): return SkillDefinition(id=r.id,key=r.key,name=r.name,description=r.description,objective=r.objective,instructions=r.instructions,inputs=r.inputs or [],output_schema=r.output_schema or {},knowledge_sources=r.knowledge_sources or [],allowed_tools=r.allowed_tools or [],constraints=r.constraints or {},version=r.version,enabled=r.enabled)
 def _execution_to_domain(r): return AgentExecution(id=r.id,correlation_id=r.correlation_id,agent_key=r.agent_key,skill_key=r.skill_key,status=ExecutionStatus(r.status),objective=r.objective,runtime=r.runtime,model=r.model,started_at=r.started_at,completed_at=r.completed_at,created_at=r.created_at,usage=AgentUsage.model_validate(r.usage or {}),provider_request_id=r.provider_request_id,trace_id=r.trace_id,error=AgentError.model_validate(r.error) if r.error else None)
 def _base_to_domain(r): return KnowledgeBase(id=r.id,key=r.key,name=r.name,description=r.description,metadata=r.metadata_json or {},enabled=r.enabled,created_at=r.created_at)
-def _document_to_domain(r): return KnowledgeDocument(id=r.id,knowledge_base_key=r.knowledge_base_key,title=r.title,content=r.content,media_type=r.media_type,source_uri=r.source_uri,metadata=r.metadata_json or {},status=KnowledgeDocumentStatus(r.status),created_at=r.created_at)
+def _document_to_domain(r): return KnowledgeDocument(id=r.id,knowledge_base_key=r.knowledge_base_key,title=r.title,content=r.content,media_type=r.media_type,source_uri=r.source_uri,metadata=r.metadata_json or {},status=KnowledgeDocumentStatus(r.status),family_id=r.family_id or r.id,version=r.version or 1,previous_version_id=r.previous_version_id,created_at=r.created_at)
 def _chunk_to_domain(r): return KnowledgeChunk(id=r.id,document_id=r.document_id,ordinal=r.ordinal,content=r.content,metadata=r.metadata_json or {},embedding=list(r.embedding) if r.embedding is not None else None,embedding_model=r.embedding_model,created_at=r.created_at)
 
 
@@ -53,13 +53,23 @@ class PostgresKnowledgeRepository:
     async def list_bases(self): result=await self.session.execute(select(KnowledgeBaseRecord).order_by(KnowledgeBaseRecord.key)); return [_base_to_domain(r) for r in result.scalars().all()]
     async def get_base(self,key): result=await self.session.execute(select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.key==key)); r=result.scalar_one_or_none(); return _base_to_domain(r) if r else None
     async def create_base(self,item): self.session.add(KnowledgeBaseRecord(id=item.id,key=item.key,name=item.name,description=item.description,metadata_json=item.metadata,enabled=item.enabled,created_at=item.created_at)); await self.session.commit(); return item
-    async def create_document(self,item): self.session.add(KnowledgeDocumentRecord(id=item.id,knowledge_base_key=item.knowledge_base_key,title=item.title,content=item.content,media_type=item.media_type,source_uri=item.source_uri,metadata_json=item.metadata,status=item.status.value,created_at=item.created_at)); await self.session.commit(); return item
+    async def create_document(self,item): self.session.add(KnowledgeDocumentRecord(id=item.id,knowledge_base_key=item.knowledge_base_key,title=item.title,content=item.content,media_type=item.media_type,source_uri=item.source_uri,metadata_json=item.metadata,status=item.status.value,family_id=item.family_id,version=item.version,previous_version_id=item.previous_version_id,created_at=item.created_at)); await self.session.commit(); return item
     async def update_document(self,item):
         r=await self.session.get(KnowledgeDocumentRecord,item.id)
         if r is None: raise LookupError(f"Knowledge document '{item.id}' not found")
-        r.title=item.title; r.content=item.content; r.media_type=item.media_type; r.source_uri=item.source_uri; r.metadata_json=item.metadata; r.status=item.status.value; await self.session.commit(); return item
+        r.title=item.title; r.content=item.content; r.media_type=item.media_type; r.source_uri=item.source_uri; r.metadata_json=item.metadata; r.status=item.status.value; r.family_id=item.family_id; r.version=item.version; r.previous_version_id=item.previous_version_id; await self.session.commit(); return item
     async def list_documents(self,key): result=await self.session.execute(select(KnowledgeDocumentRecord).where(KnowledgeDocumentRecord.knowledge_base_key==key).order_by(KnowledgeDocumentRecord.created_at)); return [_document_to_domain(r) for r in result.scalars().all()]
     async def get_document(self,document_id): r=await self.session.get(KnowledgeDocumentRecord,document_id); return _document_to_domain(r) if r else None
+    async def list_versions(self,family_id):
+        result=await self.session.execute(select(KnowledgeDocumentRecord).where(KnowledgeDocumentRecord.family_id==family_id).order_by(KnowledgeDocumentRecord.version.desc()))
+        return [_document_to_domain(r) for r in result.scalars().all()]
+    async def delete_document(self,document_id):
+        chunk_ids=(await self.session.execute(select(KnowledgeChunkRecord.id).where(KnowledgeChunkRecord.document_id==document_id))).scalars().all()
+        target_ids=[document_id,*chunk_ids]
+        if target_ids:
+            await self.session.execute(delete(OntologyMappingRecord).where(OntologyMappingRecord.target_id.in_(target_ids)))
+        await self.session.execute(delete(KnowledgeDocumentRecord).where(KnowledgeDocumentRecord.id==document_id))
+        await self.session.commit()
     async def replace_chunks(self,document_id,chunks):
         await self.session.execute(delete(KnowledgeChunkRecord).where(KnowledgeChunkRecord.document_id==document_id))
         self.session.add_all([KnowledgeChunkRecord(id=c.id,document_id=c.document_id,ordinal=c.ordinal,content=c.content,metadata_json=c.metadata,embedding=c.embedding,embedding_model=c.embedding_model,created_at=c.created_at) for c in chunks]); await self.session.commit(); return chunks

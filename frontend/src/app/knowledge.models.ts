@@ -4,7 +4,7 @@ export interface KnowledgeBase {
 }
 export interface KnowledgeDocument {
   id:string; knowledge_base_key:string; title:string; media_type:string; source_uri?:string;
-  metadata:Record<string,any>; status:'STORED'|'PROCESSING'|'READY'|'FAILED'; created_at:string;
+  metadata:Record<string,any>; status:'STORED'|'PROCESSING'|'READY'|'FAILED'|'ARCHIVED'|'SUPERSEDED'; family_id:string; version:number; previous_version_id?:string; created_at:string;
 }
 export interface KnowledgeChunk {
   id:string; document_id:string; ordinal:number; content:string; metadata:Record<string,any>;

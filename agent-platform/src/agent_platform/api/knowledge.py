@@ -1,7 +1,7 @@
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from agent_platform.api.dependencies import KnowledgeFileServiceDep, KnowledgeIngestionServiceDep, KnowledgeServiceDep
@@ -14,7 +14,7 @@ from agent_platform.application.ingestion import (
 )
 from agent_platform.application.knowledge import KnowledgeConflictError, KnowledgeNotFoundError
 from agent_platform.application.metadata_enrichment import MetadataEnrichmentProfile
-from agent_platform.domain import KnowledgeBase, KnowledgeChunk, KnowledgeDocument
+from agent_platform.domain import KnowledgeBase, KnowledgeChunk, KnowledgeDocument, KnowledgeDocumentStatus
 
 
 router = APIRouter(prefix="/v1", tags=["knowledge"])
@@ -223,3 +223,81 @@ async def list_chunks(
         return chunks[offset:] if limit is None else chunks[offset:offset + limit]
     except KnowledgeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/knowledge-documents/{document_id}/versions", response_model=list[KnowledgeDocument])
+async def list_document_versions(document_id: UUID, service: KnowledgeServiceDep):
+    try: return await service.list_versions(document_id)
+    except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@router.post("/knowledge-documents/{document_id}/archive", response_model=KnowledgeDocument)
+async def archive_document(document_id: UUID, service: KnowledgeServiceDep):
+    try: return await service.archive(document_id)
+    except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@router.post("/knowledge-documents/{document_id}/restore", response_model=KnowledgeDocument)
+async def restore_document(document_id: UUID, service: KnowledgeServiceDep):
+    try: return await service.restore(document_id)
+    except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@router.delete("/knowledge-documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(document_id: UUID, service: KnowledgeServiceDep):
+    try:
+        await service.delete(document_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except KnowledgeNotFoundError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@router.post("/knowledge-documents/{document_id}/versions", response_model=KnowledgeFileUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_new_version(
+    document_id: UUID,
+    knowledge: KnowledgeServiceDep,
+    files: KnowledgeFileServiceDep,
+    file: UploadFile = File(...),
+    metadata: str | None = Form(default=None),
+    chunking_strategy: ChunkingStrategyName = Form(default=ChunkingStrategyName.FIXED),
+    chunk_size: int = Form(default=1200),
+    overlap: int = Form(default=200),
+    parent_size: int = Form(default=6000),
+    child_size: int = Form(default=1200),
+    child_overlap: int = Form(default=200),
+    metadata_enrichment: MetadataEnrichmentProfile = Form(default=MetadataEnrichmentProfile.STANDARD),
+    max_keywords: int = Form(default=8),
+):
+    try:
+        previous = await knowledge.get_document(document_id)
+        versions = await knowledge.list_versions(document_id)
+        next_version = max((item.version for item in versions), default=0) + 1
+        supplied = json.loads(metadata) if metadata else {}
+        if not isinstance(supplied, dict): raise HTTPException(status_code=422, detail="metadata must be a JSON object")
+        merged_metadata = {**previous.metadata, **supplied}
+        payload = await file.read()
+        result = await files.upload(
+            knowledge_base_key=previous.knowledge_base_key,
+            filename=file.filename or previous.title,
+            payload=payload,
+            declared_media_type=file.content_type,
+            metadata=merged_metadata,
+            source_uri=previous.source_uri,
+            ingest=True,
+            chunking_strategy=chunking_strategy,
+            chunk_size=chunk_size,
+            overlap=overlap,
+            parent_size=parent_size,
+            child_size=child_size,
+            child_overlap=child_overlap,
+            embed=True,
+            metadata_enrichment=metadata_enrichment,
+            max_keywords=max_keywords,
+            family_id=previous.family_id,
+            version=next_version,
+            previous_version_id=previous.id,
+        )
+        if result.ingestion and result.ingestion.status is KnowledgeDocumentStatus.READY:
+            for old in versions:
+                if old.status is KnowledgeDocumentStatus.READY:
+                    await knowledge.supersede(old.id)
+        return KnowledgeFileUploadResponse(document=result.document, ingestion=result.ingestion)
+    except KnowledgeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (KnowledgeFileUploadError, KnowledgeIngestionError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
