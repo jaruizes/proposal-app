@@ -208,6 +208,29 @@ A `PROPOSAL` is not automatically a committed detailed-design decision.
 
 Do not fabricate internal reusable assets. Do not claim a custom development has no third-party dependencies: normal framework/library dependencies exist unless evidence says otherwise; SBOM/dependency management should reflect that.
 
+### Bounded generation contract
+
+For non-trivial opportunities, do **not** require one model invocation to write the whole `solution.md`.
+Use a bounded internal generation pattern:
+
+```text
+original evidence + approved artifacts
+        ↓
+architect-owned compact solution blueprint
+        ↓
+bounded section drafts (may run in parallel)
+        ↓
+deterministic assembly + heading validation
+        ↓
+solution.md
+```
+
+The blueprint is internal working state, not a canonical offer artifact. It is the point at which the Solution Architect must inspect the selected original evidence and preserve material source locators. Section-drafting calls may then consume the blueprint instead of rereading the full corpus.
+
+Each section draft must have an explicit scope and size budget and must not repeat other sections. The assembled `solution.md` remains the only canonical technical-solution artifact.
+
+Apply the same principle to delivery for large contexts: Delivery Manager first performs a compact evidence-grounding review, then writes `delivery-plan.md` from `solution.md` plus that grounded review.
+
 # B. `delivery-plan.md` — owner: Delivery Manager
 
 Write exactly:
