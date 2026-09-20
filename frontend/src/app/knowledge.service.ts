@@ -22,13 +22,13 @@ export class KnowledgeService {
   bootstrap(){ this.http.post<KnowledgeBase[]>('/api/knowledge/bases/bootstrap',{}).subscribe(()=>this.loadBases()); }
   loadDocuments(key:string){
     if(!key){this.documents.set([]);return;}
-    this.http.get<KnowledgeDocument[]>(\`/api/knowledge/bases/\${key}/documents\`).subscribe({
+    this.http.get<KnowledgeDocument[]>(`/api/knowledge/bases/${key}/documents`).subscribe({
       next:items=>this.documents.set([...items].sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())),
       error:()=>this.message.set('No se pudieron cargar los documentos.')
     });
   }
   loadChunks(id:string){
-    this.http.get<KnowledgeChunk[]>(\`/api/knowledge/documents/\${id}/chunks\`).subscribe({
+    this.http.get<KnowledgeChunk[]>(`/api/knowledge/documents/${id}/chunks`).subscribe({
       next:items=>this.chunks.set(items),error:()=>this.message.set('No se pudieron cargar los chunks.')
     });
   }
@@ -36,8 +36,8 @@ export class KnowledgeService {
     const form=new FormData(); form.append('file',file);
     Object.entries(options).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')form.append(k,String(v));});
     this.loading.set(true);this.message.set('Ingestando y clasificando documento…');
-    this.http.post<any>(\`/api/knowledge/bases/\${key}/files\`,form).subscribe({
-      next:r=>{this.loading.set(false);this.message.set(\`Documento ingerido: \${r.ingestion?.chunks ?? 0} chunks, estado \${r.ingestion?.status ?? r.document?.status}.\`);this.loadDocuments(key);},
+    this.http.post<any>(`/api/knowledge/bases/${key}/files`,form).subscribe({
+      next:r=>{this.loading.set(false);this.message.set(`Documento ingerido: ${r.ingestion?.chunks ?? 0} chunks, estado ${r.ingestion?.status ?? r.document?.status}.`);this.loadDocuments(key);},
       error:e=>{this.loading.set(false);this.message.set(e?.error?.detail||e?.error?.message||'Error durante la ingesta del documento.');}
     });
   }

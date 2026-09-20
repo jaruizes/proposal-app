@@ -19,6 +19,6 @@ export class KnowledgeComponent implements OnInit {
   doUpload(){if(this.file&&this.selectedBase()){this.svc.upload(this.selectedBase(),this.file,this.upload);this.uploadOpen.set(false);this.file=null;}}
   search(){if(this.query.trim())this.svc.retrieve(this.query.trim(),this.queryMode,this.topK,this.selectedBase());}
   inspect(doc:KnowledgeDocument){this.selectedDocument.set(doc);this.svc.loadChunks(doc.id);}
-  classification(doc:KnowledgeDocument){return doc.metadata?.classification?.document_type||'GENERAL_REFERENCE';}
-  keywords(doc:KnowledgeDocument){return (doc.metadata?.enrichment?.keywords||[]).slice(0,6);}
+  classification(doc:KnowledgeDocument){return doc.metadata?.['classification']?.['document_type']||'GENERAL_REFERENCE';}
+  keywords(doc:KnowledgeDocument){return (doc.metadata?.['enrichment']?.['keywords']||[]).slice(0,6);}
 }
