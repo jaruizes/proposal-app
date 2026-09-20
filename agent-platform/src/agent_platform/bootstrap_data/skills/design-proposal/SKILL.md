@@ -40,7 +40,7 @@ Require:
 generated/analysis/opportunity-brief.md
 generated/strategy/strategy.md
 generated/solution/solution.md
-generated/solution/solution-plan.md
+generated/solution/delivery-plan.md
 generated/proposal/proposal.md
 ```
 
