@@ -17,6 +17,7 @@ Drive:
 
 Slides:
 
+- `slides_create_presentation`
 - `slides_get_presentation`
 - `slides_get_thumbnail`
 - `slides_duplicate_slide`

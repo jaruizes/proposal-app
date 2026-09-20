@@ -15,7 +15,8 @@ import java.util.*;
 
 /**
  * Google Slides adapter backed by the same Google Workspace MCP server used by proposal-copilot.
- * The original corporate template is never edited: this adapter always copies it first.
+ * A configured corporate template is never edited: it is copied first. Without a template,
+ * the adapter creates a new blank Google Slides presentation and materializes the approved plan.
  */
 @Component
 public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
@@ -39,7 +40,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     @Override
     public PresentationResult materialize(UUID offerId,String slidesPlan,String outputFolder,String documentName) {
         var offer=offers.findById(offerId).orElseThrow(() -> new IllegalStateException("Offer not found"));
-        var templateId=templateSettings.get().presentationTemplateId();
+        var templateId=presentationId(templateSettings.get().presentationTemplateId());
         var hasTemplate=templateId!=null&&!templateId.isBlank();
         var templateStructure=hasTemplate?text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId))):"{\"slides\":[],\"layouts\":[],\"masters\":[]}";
 
@@ -157,6 +158,18 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     private String model(Offer offer){return offer.models().getOrDefault("presentation",offer.models().getOrDefault("presentationGeneration","claude-sonnet-4-6"));}
     private Map<String,Object> replacePresentationId(Map<String,Object> source,String id){var result=new LinkedHashMap<String,Object>();source.forEach((k,v)->result.put(k,replace(v,id)));return result;}
     private Object replace(Object value,String id){if(value instanceof String s)return s.replace("$PRESENTATION_ID",id);if(value instanceof Map<?,?> m){var out=new LinkedHashMap<String,Object>();m.forEach((k,v)->out.put(String.valueOf(k),replace(v,id)));return out;}if(value instanceof List<?> l)return l.stream().map(v->replace(v,id)).toList();return value;}
+    private static String presentationId(String value){
+        var v=Objects.toString(value,"").trim();
+        var marker="/presentation/d/";
+        var i=v.indexOf(marker);
+        if(i>=0){
+            var rest=v.substring(i+marker.length());
+            var end=rest.indexOf('/');
+            if(end<0)end=rest.indexOf('?');
+            return end>=0?rest.substring(0,end):rest;
+        }
+        return v;
+    }
     private static String text(Map<String,Object> r){return Objects.toString(r.get("text"),"");}
     private static String driveId(String value){if(value==null)return "";var v=value.trim();var marker="/folders/";var i=v.indexOf(marker);if(i>=0){var x=v.substring(i+marker.length());var q=x.indexOf('?');return q>=0?x.substring(0,q):x;}return v;}
     private record Inspection(String structure,List<LlmRequest.Attachment> thumbnails){}
