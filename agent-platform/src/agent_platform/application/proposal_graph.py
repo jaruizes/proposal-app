@@ -14,6 +14,7 @@ from langgraph.graph import END, StateGraph
 
 from agent_platform.application.models import ModelMessage, ModelRequest, ModelResult, ModelRole, ModelUsage
 from agent_platform.application.observability import timed_span
+from agent_platform.application.proposal_retrieval import ProposalReferenceRetriever
 from agent_platform.domain import AgentExecutionRequest, CognitiveContext
 
 
@@ -130,18 +131,101 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         await runtime._executions.add_event(execution.id, "proposal.plan.completed", {"sections": [s["name"] for s in sections]})
         return {"proposal_sections": sections}
 
+    async def retrieve_references(state: dict) -> dict:
+        request = AgentExecutionRequest.model_validate(state["request"])
+        sections = state["proposal_sections"]
+        if runtime._proposal_retrieval_service is None:
+            await runtime._executions.add_event(execution.id, "proposal.retrieval.summary", {"enabled": False, "sections": len(sections), "hits": 0})
+            return {"proposal_references": {section["name"]: [] for section in sections}}
+
+        retriever = ProposalReferenceRetriever(runtime._proposal_retrieval_service)
+
+        async def one(section: dict):
+            section_type, references, metadata = await retriever.retrieve(
+                section_name=section["name"],
+                guidance=section.get("guidance", ""),
+                objective=request.objective,
+                top_k=3,
+            )
+            safe_hits = [
+                {
+                    "title": ref.title,
+                    "document_id": ref.document_id,
+                    "chunk_id": ref.chunk_id,
+                    "score": ref.score,
+                    "source_uri": ref.source_uri,
+                    "section_type": ref.section_type,
+                }
+                for ref in references
+            ]
+            await runtime._executions.add_event(execution.id, "proposal.section.retrieval", {
+                "section": section["name"],
+                "section_type": section_type,
+                "query": f"{section['name']}. {section.get('guidance','')}".strip(),
+                "hits": safe_hits,
+                "retrieval_metadata": {
+                    "vector_candidates": metadata.get("vector_candidates"),
+                    "keyword_candidates": metadata.get("keyword_candidates"),
+                    "graph_candidates": metadata.get("graph_candidates"),
+                    "relevance_filtering": metadata.get("relevance_filtering"),
+                },
+            })
+            return section["name"], [
+                {
+                    "title": ref.title,
+                    "document_id": ref.document_id,
+                    "chunk_id": ref.chunk_id,
+                    "score": ref.score,
+                    "content": ref.content,
+                    "source_uri": ref.source_uri,
+                    "section_type": ref.section_type,
+                }
+                for ref in references
+            ]
+
+        results = dict(await asyncio.gather(*(one(section) for section in sections)))
+        await runtime._executions.add_event(execution.id, "proposal.retrieval.summary", {
+            "enabled": True,
+            "sections": len(sections),
+            "hits": sum(len(items) for items in results.values()),
+            "sections_with_hits": sum(1 for items in results.values() if items),
+        })
+        return {"proposal_references": results}
+
+    def reference_prompt(references: list[dict]) -> str:
+        if not references:
+            return "\n\n# Reference patterns\nNo sufficiently relevant reference proposal was found. Continue using only current-offer evidence and human guidance."
+        rendered = []
+        for index, ref in enumerate(references, start=1):
+            rendered.append(
+                f"## Reference pattern {index}\n"
+                f"Source: {ref['title']} ({ref['source_uri'] or ref['document_id']})\n"
+                f"Retrieval score: {ref['score']:.4f}\n"
+                f"{ref['content']}"
+            )
+        return (
+            "\n\n# Reference patterns — NON-FACTUAL\n"
+            "The following excerpts are historical reference material. Use them ONLY for structure, depth, terminology patterns and presentation style. "
+            "NEVER transfer customer facts, technologies, commitments, prices, dates, staffing or claims into the current offer unless independently supported by approved current-offer evidence.\n\n"
+            + "\n\n".join(rendered)
+        )
+
     async def draft(state: dict) -> dict:
         base = await base_request(state)
         sections = state["proposal_sections"]
 
         async def one(section: dict) -> tuple[str, str]:
             name = section["name"]
+            references = state.get("proposal_references", {}).get(name, [])
             result = await generate(base, (
                 f"Write ONLY the body of section {name!r} in Markdown, without its heading. "
                 f"Depth: {section['depth']}. Human instructions: {section['guidance']}\n"
-                "Use only approved current-offer evidence. Label open gaps. Do not invent prices, effort, staffing, "
-                "dates, commitments or customer facts. Do not introduce level-one or level-two headings."
-            ), "proposal.section.drafted", {"section": name})
+                "Use approved current-offer evidence as the ONLY factual and decision authority. Label open gaps. "
+                "Do not invent prices, effort, staffing, dates, commitments or customer facts. "
+                "Reference proposal excerpts, when present, are NON-FACTUAL style/depth patterns only. "
+                "Do not introduce level-one or level-two headings."
+                + reference_prompt(references)
+            ), "proposal.section.drafted", {"section": name, "reference_hits": len(references)})
             return name, _section_body(result.content, name)
 
         results = await asyncio.gather(*(one(section) for section in sections))
@@ -153,13 +237,16 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         async def one(section: dict) -> tuple[str, str]:
             name = section["name"]
             current = state["proposal_drafts"][name]
+            references = state.get("proposal_references", {}).get(name, [])
             result = await generate(base, (
                 f"Review and correct ONLY section {name!r}. Return its complete revised body, with no heading. "
                 f"Required depth: {section['depth']}. Human instructions: {section['guidance']}\n"
                 "Check factual support, omissions, terminology and prohibited invented commitments. "
+                "Current-offer evidence remains authoritative. Historical references are NON-FACTUAL patterns only. "
                 "Keep unsupported items explicit as gaps. No level-one or level-two headings.\n\n"
                 f"# Candidate section\n{current}"
-            ), "proposal.section.reviewed", {"section": name})
+                + reference_prompt(references)
+            ), "proposal.section.reviewed", {"section": name, "reference_hits": len(references)})
             return name, _section_body(result.content, name)
 
         results = await asyncio.gather(*(one(section) for section in state["proposal_sections"]))
@@ -197,9 +284,15 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     cache_read_tokens=sum(c.usage.cache_read_tokens for c in calls),
                     cache_write_tokens=sum(c.usage.cache_write_tokens for c in calls),
                 )
+                reference_map = state.get("proposal_references", {})
                 final = ModelResult(content=proposal, model=result.model, usage=usage,
                                     provider_request_id=result.provider_request_id,
-                                    metadata={"proposal_sections": len(sections), "model_calls": len(calls)})
+                                    metadata={
+                                        "proposal_sections": len(sections),
+                                        "model_calls": len(calls),
+                                        "reference_hits": sum(len(items) for items in reference_map.values()),
+                                        "reference_sections": {name: len(items) for name, items in reference_map.items()},
+                                    })
                 return {"model_result": final.model_dump(mode="json")}
             if pass_number == 1:
                 raise ProposalPlanError("Global proposal review found unresolved issues")
@@ -221,12 +314,14 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         raise AssertionError("Unreachable")
 
     builder.add_node("plan_proposal", plan)
+    builder.add_node("retrieve_references", retrieve_references)
     builder.add_node("draft_sections", draft)
     builder.add_node("review_sections", review_sections)
     builder.add_node("assemble_proposal", assemble)
     builder.add_node("review_proposal", global_review)
     builder.add_edge("build_context", "plan_proposal")
-    builder.add_edge("plan_proposal", "draft_sections")
+    builder.add_edge("plan_proposal", "retrieve_references")
+    builder.add_edge("retrieve_references", "draft_sections")
     builder.add_edge("draft_sections", "review_sections")
     builder.add_edge("review_sections", "assemble_proposal")
     builder.add_edge("assemble_proposal", "review_proposal")

@@ -32,6 +32,9 @@ class FakeBackend:
     async def keyword_search(self, **kwargs):
         return self.keyword[: kwargs["limit"]]
 
+    async def ontology_search(self, **kwargs):
+        return []
+
     async def parent_for(self, candidate):
         return self.parents.get(candidate.chunk_id)
 
@@ -92,7 +95,7 @@ async def test_hybrid_uses_weighted_rrf_and_deduplicates_chunks():
     assert len(result.hits) == 2
     assert result.hits[0].chunk_id == a.chunk_id
     assert result.hits[0].retrieval_method is RetrievalMode.HYBRID
-    assert result.metadata["fusion"] == "rrf-v1"
+    assert result.metadata["fusion"] == "rrf-v2-graph-aware"
 
 
 @pytest.mark.asyncio

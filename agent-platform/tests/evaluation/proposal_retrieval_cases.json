@@ -1,0 +1,32 @@
+[
+  {
+    "query": "Arquitectura e integraciones",
+    "section_type": "ARCHITECTURE",
+    "should_match": true
+  },
+  {
+    "query": "Seguridad, identidad y cifrado",
+    "section_type": "SECURITY",
+    "should_match": true
+  },
+  {
+    "query": "Planificación, fases y entregables",
+    "section_type": "DELIVERY_PLAN",
+    "should_match": true
+  },
+  {
+    "query": "Equipo y modelo de gobierno",
+    "section_type": "TEAM_GOVERNANCE",
+    "should_match": true
+  },
+  {
+    "query": "Resumen ejecutivo",
+    "section_type": "EXECUTIVE_SUMMARY",
+    "should_match": true
+  },
+  {
+    "query": "caca",
+    "section_type": "GENERAL",
+    "should_match": false
+  }
+]

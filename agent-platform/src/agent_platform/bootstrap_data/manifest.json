@@ -59,7 +59,20 @@
         "approved-solution",
         "proposal-guidance"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "knowledge_sources": [
+        "reference-offers"
+      ],
+      "constraints": {
+        "retrieval": {
+          "mode": "hybrid",
+          "top_k": 5,
+          "candidate_k": 25,
+          "expand_parents": true,
+          "vector_min_score": 0.2,
+          "ontology_enabled": true
+        }
+      }
     },
     {
       "key": "design-proposal",

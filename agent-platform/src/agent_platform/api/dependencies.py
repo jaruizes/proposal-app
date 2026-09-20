@@ -11,6 +11,7 @@ from agent_platform.application.file_ingestion import KnowledgeFileService
 from agent_platform.application.ingestion import KnowledgeIngestionService
 from agent_platform.application.knowledge import KnowledgeService
 from agent_platform.application.memory import MemoryRepository, MemoryService
+from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
 from agent_platform.application.models import ModelProvider
 from agent_platform.application.ontology import OntologyRepository, OntologyService
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
@@ -71,7 +72,12 @@ async def get_cognitive_context_builder(retrieval_service:KnowledgeRetrievalServ
     settings=get_settings();return CognitiveContextBuilder(contributors=[ApplicationContextContributor(),AttachmentContextContributor(),MemoryContextContributor(memory_service),KnowledgeRetrievalContributor(retrieval_service,cache,cache_ttl_seconds=settings.cognitive_cache_ttl_seconds)])
 CognitiveContextBuilderDep=Annotated[CognitiveContextBuilder,Depends(get_cognitive_context_builder)]
 
-def get_agent_runtime(agents:AgentRegistryDep,skills:SkillRegistryDep,executions:ExecutionRepositoryDep,model_provider:ModelProviderDep,cognitive_context_builder:CognitiveContextBuilderDep,memory_service:MemoryServiceDep,cache:CacheServiceDep)->AgentRuntime:return AgentRuntime(agents,skills,executions,model_provider,cognitive_context_builder=cognitive_context_builder,memory_service=memory_service,cache=cache)
+def get_agent_runtime(agents:AgentRegistryDep,skills:SkillRegistryDep,executions:ExecutionRepositoryDep,model_provider:ModelProviderDep,cognitive_context_builder:CognitiveContextBuilderDep,memory_service:MemoryServiceDep,cache:CacheServiceDep,retrieval_service:KnowledgeRetrievalServiceDep)->AgentRuntime:
+    settings=get_settings()
+    common=dict(agents=agents,skills=skills,executions=executions,model_provider=model_provider,cognitive_context_builder=cognitive_context_builder,memory_service=memory_service,cache=cache)
+    if settings.agent_runtime.lower()=="langgraph":
+        return LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url,proposal_retrieval_service=retrieval_service)
+    return AgentRuntime(**common)
 AgentRuntimeDep=Annotated[AgentRuntime,Depends(get_agent_runtime)]
 
 @lru_cache

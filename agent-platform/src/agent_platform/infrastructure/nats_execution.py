@@ -131,7 +131,7 @@ class NatsExecutionTransport:
             context=CognitiveContextBuilder(contributors=[ApplicationContextContributor(),AttachmentContextContributor(),MemoryContextContributor(memory),KnowledgeRetrievalContributor(retrieval,cache,cache_ttl_seconds=settings.cognitive_cache_ttl_seconds)])
             common=dict(agents=AgentRegistry(agent_repo,skill_repo),skills=SkillRegistry(skill_repo),executions=execution_repo,model_provider=AnthropicModelProvider(),cognitive_context_builder=context,memory_service=memory,cache=cache)
             if settings.agent_runtime.lower()=="langgraph":
-                runtime=LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url)
+                runtime=LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url,proposal_retrieval_service=retrieval)
             else:
                 runtime=AgentRuntime(**common)
             if existing is None:await runtime.execute(request)

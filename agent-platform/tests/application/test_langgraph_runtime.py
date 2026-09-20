@@ -137,3 +137,99 @@ def test_proposal_rejects_missing_or_invalid_guidance():
         configured_sections(AgentExecutionRequest(agent_key="ba",objective="Compose"))
     with pytest.raises(ProposalPlanError):
         configured_sections(AgentExecutionRequest(agent_key="ba",objective="Compose",context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+'{"sections":[{"name":"Same"},{"name":"Same"}]}' }))
+
+
+class ProposalRetrievalService:
+    def __init__(self):
+        self.queries=[]
+
+    async def retrieve(self, query):
+        from agent_platform.domain import RetrievalHit, RetrievalResult
+        from uuid import uuid4
+        self.queries.append(query)
+        section=(query.filters.metadata.get("enrichment") or {}).get("section_type")
+        if section=="ARCHITECTURE":
+            return RetrievalResult(
+                query=query.text,
+                mode=query.mode,
+                hits=[RetrievalHit(
+                    chunk_id=uuid4(),
+                    document_id=uuid4(),
+                    knowledge_base_key="reference-offers",
+                    title="Reference RFP",
+                    content="Reference architecture uses layered explanation.",
+                    score=0.8,
+                    retrieval_method=query.mode,
+                    metadata={"enrichment":{"section_type":"ARCHITECTURE"}},
+                    source_uri="upload://reference.pdf",
+                )],
+                metadata={"relevance_filtering":True,"vector_candidates":1,"keyword_candidates":1,"graph_candidates":0},
+            )
+        return RetrievalResult(
+            query=query.text,
+            mode=query.mode,
+            hits=[],
+            metadata={"relevance_filtering":True,"vector_candidates":0,"keyword_candidates":0,"graph_candidates":0},
+        )
+
+
+@pytest.mark.asyncio
+async def test_proposal_graph_retrieves_section_reference_as_non_factual_context():
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider();retrieval=ProposalRetrievalService()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+        proposal_retrieval_service=retrieval,
+    )
+    guidance='{"sections":[{"name":"Arquitectura","depth":"DETAILED","guidance":"Explica componentes e integraciones"}]}'
+    request=AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+    )
+    result=await runtime.execute(request)
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert retrieval.queries
+    assert retrieval.queries[0].filters.knowledge_base_keys==["reference-offers"]
+    assert retrieval.queries[0].filters.metadata["enrichment"]["section_type"]=="ARCHITECTURE"
+    assert any("NON-FACTUAL" in call and "Reference RFP" in call for call in provider.calls)
+    events=await er.list_events(result.execution_id)
+    retrieval_events=[e for e in events if e["event_type"]=="proposal.section.retrieval"]
+    assert retrieval_events
+    assert retrieval_events[0]["payload"]["hits"][0]["title"]=="Reference RFP"
+    assert any(e["event_type"]=="proposal.retrieval.summary" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_proposal_graph_falls_back_cleanly_when_no_reference_is_relevant():
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider();retrieval=ProposalRetrievalService()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+        proposal_retrieval_service=retrieval,
+    )
+    guidance='{"sections":[{"name":"Próximos pasos","depth":"SUMMARY"}]}'
+    request=AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+guidance},
+    )
+    result=await runtime.execute(request)
+
+    assert result.status is ExecutionStatus.COMPLETED
+    events=await er.list_events(result.execution_id)
+    section_event=next(e for e in events if e["event_type"]=="proposal.section.retrieval")
+    assert section_event["payload"]["hits"]==[]

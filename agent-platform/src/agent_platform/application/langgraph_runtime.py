@@ -23,6 +23,7 @@ class LangGraphState(TypedDict, total=False):
     proposal_sections: list[dict]
     proposal_drafts: dict[str, str]
     proposal_content: str
+    proposal_references: dict[str, list[dict]]
 
 
 class LangGraphAgentRuntime(AgentRuntime):
@@ -33,10 +34,11 @@ class LangGraphAgentRuntime(AgentRuntime):
     internal cognitive execution graph and checkpointing.
     """
 
-    def __init__(self, *args, checkpointer=None, checkpoint_database_url: str | None = None, **kwargs) -> None:
+    def __init__(self, *args, checkpointer=None, checkpoint_database_url: str | None = None, proposal_retrieval_service=None, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._external_checkpointer = checkpointer
         self._checkpoint_database_url = checkpoint_database_url
+        self._proposal_retrieval_service = proposal_retrieval_service
 
     async def run(self, execution, request):
         started = time.perf_counter()
@@ -99,6 +101,7 @@ class LangGraphAgentRuntime(AgentRuntime):
                     "trace_id": running.trace_id,
                     "runtime": "langgraph-v1",
                     "langgraph_thread_id": str(running.id),
+                    "model_metadata": model_result.metadata,
                 },
             )
             completed = running.model_copy(

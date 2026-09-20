@@ -51,7 +51,7 @@ Depth semantics:
 - Make requirements-to-response and need-to-solution relationships explicit where useful.
 - The proposal must stand on its own without the later slide deck.
 
-Reference proposals, when retrieval is enabled in a later milestone, are examples of structure, depth and style only. They never override or inject facts into the current offer.
+Reference proposals retrieved from `reference-offers` are examples of structure, depth, terminology patterns and style only. They are explicitly NON-FACTUAL context: they never override current-offer artifacts and must never inject another customer's facts, technologies, commitments, dates, prices, staffing or claims into the current offer.
 
 ## Document qualities
 

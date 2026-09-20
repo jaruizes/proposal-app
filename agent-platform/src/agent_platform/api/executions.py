@@ -62,4 +62,16 @@ async def execution_diagnostics(execution_id:UUID,executions:ExecutionRepository
         elif event_type in {"execution.queued","execution.running","execution.completed","execution.failed"}:payload={key:payload.get(key) for key in ("status","agent_key","skill_key","model","usage","provider_request_id","trace_id","error") if key in payload}
         safe_events.append({"event_type":event_type,"created_at":event.get("created_at"),"payload":payload})
     duration_ms=(execution.completed_at-execution.started_at).total_seconds()*1000 if execution.started_at and execution.completed_at else None
-    return{"execution_id":str(execution.id),"trace_id":execution.trace_id,"status":execution.status.value,"agent_key":execution.agent_key,"skill_key":execution.skill_key,"model":execution.model,"usage":execution.usage.model_dump(mode="json"),"provider_request_id":execution.provider_request_id,"duration_ms":duration_ms,"events":safe_events}
+    retrieval_events=[event for event in safe_events if event["event_type"]=="proposal.section.retrieval"]
+    retrieval_debug={
+        "sections":len(retrieval_events),
+        "hits":sum(len((event.get("payload") or {}).get("hits") or []) for event in retrieval_events),
+        "by_section":[{
+            "section":(event.get("payload") or {}).get("section"),
+            "section_type":(event.get("payload") or {}).get("section_type"),
+            "query":(event.get("payload") or {}).get("query"),
+            "hits":(event.get("payload") or {}).get("hits") or [],
+            "retrieval_metadata":(event.get("payload") or {}).get("retrieval_metadata") or {},
+        } for event in retrieval_events],
+    }
+    return{"execution_id":str(execution.id),"trace_id":execution.trace_id,"status":execution.status.value,"agent_key":execution.agent_key,"skill_key":execution.skill_key,"model":execution.model,"usage":execution.usage.model_dump(mode="json"),"provider_request_id":execution.provider_request_id,"duration_ms":duration_ms,"retrieval_debug":retrieval_debug,"events":safe_events}
