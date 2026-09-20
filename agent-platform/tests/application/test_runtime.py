@@ -58,7 +58,7 @@ class FailingProvider:
 class WrappedDocumentProvider:
     async def generate(self, request: ModelRequest) -> ModelResult:
         fence = chr(96) * 3
-        return ModelResult(content=f"# solution-plan.md\n\n{fence}markdown\n# Plan\nContent\n{fence}", model="test-model")
+        return ModelResult(content=f"# delivery-plan.md\n\n{fence}markdown\n# Plan\nContent\n{fence}", model="test-model")
 
 
 def runtime(provider):
