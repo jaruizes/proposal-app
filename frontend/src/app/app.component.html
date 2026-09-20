@@ -155,7 +155,7 @@
                 <div class="agent-row-primary">
                   <span class="agent-dot" [ngClass]="agentStatusClass(agent.status)"></span>
                   <strong>{{agent.agentKey}}</strong>
-                  <span class="agent-status" [ngClass]="agentStatusClass(agent.status)">{{agentStatusLabel(agent.status)}}</span>
+                  <span class="agent-status" [ngClass]="agentStatusClass(agent.status)">{{agent.reusedFromExecutionId ? 'Reutilizado' : agentStatusLabel(agent.status)}}</span>
                   <span class="agent-phase">{{agentPhaseLabel(agent.phase)}}</span>
                 </div>
                 <div class="agent-row-objective">{{agent.objective || 'Ejecución de agente'}}</div>
