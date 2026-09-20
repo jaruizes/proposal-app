@@ -83,14 +83,14 @@ public class SourceIngestionService {
             }
 
             var manifestRoot = json.readTree(bundle.manifest());
-            var filtered = manifestRoot.deepCopy();
+            var filtered = (com.fasterxml.jackson.databind.node.ObjectNode) manifestRoot.deepCopy();
             var sourcesNode = filtered.withArray("sources");
             sourcesNode.removeAll();
             manifestRoot.path("sources").forEach(node -> {
                 if (selected.contains(node.path("id").asText())) sourcesNode.add(node.deepCopy());
             });
-            ((com.fasterxml.jackson.databind.node.ObjectNode) filtered).put("selectedBySolutionTriage", true);
-            ((com.fasterxml.jackson.databind.node.ObjectNode) filtered).put("selectedSourceCount", sourcesNode.size());
+            filtered.put("selectedBySolutionTriage", true);
+            filtered.put("selectedSourceCount", sourcesNode.size());
             var filteredManifest = json.writerWithDefaultPrettyPrinter().writeValueAsString(filtered);
 
             var context = new StringBuilder("# Selected original customer evidence\n\n")
