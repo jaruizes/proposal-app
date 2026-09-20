@@ -17,6 +17,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 
@@ -117,7 +118,7 @@ public class AgentRuntimeService {
         try{
             var digest=MessageDigest.getInstance("SHA-256");
             update(digest,task.agentKey());update(digest,task.skillKey());update(digest,task.objective());update(digest,task.prompt());
-            update(digest,model);update(digest,context);update(digest,task.metadata().toString());
+            update(digest,model);update(digest,context);update(digest,new TreeMap<>(task.metadata()).toString());
             for(var attachment:attachments){
                 update(digest,attachment.name());update(digest,attachment.mediaType());update(digest,attachment.base64Data());
             }
