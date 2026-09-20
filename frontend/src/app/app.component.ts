@@ -49,7 +49,7 @@ export class AppComponent {
   chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
   canExportSelectedArtifactPdf(){
     const artifact=this.selectedArtifact();
-    return !!artifact&&artifact.type!=='DOCUMENT'&&['OPPORTUNITY_BRIEF','QUESTIONS','TECHNOLOGY','STRATEGY','SOLUTION','SOLUTION_PLAN','PROPOSAL','SLIDES_PLAN'].includes(artifact.type);
+    return !!artifact&&artifact.type!=='DOCUMENT'&&['OPPORTUNITY_BRIEF','QUESTIONS','TECHNOLOGY','STRATEGY','SOLUTION','DELIVERY_PLAN','PROPOSAL','SLIDES_PLAN'].includes(artifact.type);
   }
   exportSelectedArtifactPdf(){
     const offer=this.selected(),artifact=this.selectedArtifact();
@@ -144,7 +144,7 @@ export class AppComponent {
       TECHNOLOGY:'technology.md',
       STRATEGY:'strategy.md',
       SOLUTION:'solution.md',
-      SOLUTION_PLAN:'solution-plan.md',
+      DELIVERY_PLAN:'delivery-plan.md',
       PROPOSAL:'proposal.md',
       SLIDES_PLAN:'slides-plan.md'
     };
