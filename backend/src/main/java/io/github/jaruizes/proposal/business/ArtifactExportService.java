@@ -21,7 +21,7 @@ public class ArtifactExportService {
             ArtifactType.TECHNOLOGY,
             ArtifactType.STRATEGY,
             ArtifactType.SOLUTION,
-            ArtifactType.SOLUTION_PLAN,
+            ArtifactType.DELIVERY_PLAN,
             ArtifactType.PROPOSAL,
             ArtifactType.SLIDES_PLAN);
 
@@ -72,7 +72,7 @@ public class ArtifactExportService {
             case TECHNOLOGY -> "Technology analysis · " + offerName;
             case STRATEGY -> "Response strategy · " + offerName;
             case SOLUTION -> "Solution · " + offerName;
-            case SOLUTION_PLAN -> "Solution plan · " + offerName;
+            case DELIVERY_PLAN -> "Delivery plan · " + offerName;
             case PROPOSAL -> "Proposal · " + offerName;
             case SLIDES_PLAN -> "Slides plan · " + offerName;
             default -> type.name();
@@ -86,7 +86,7 @@ public class ArtifactExportService {
             case TECHNOLOGY -> "technology";
             case STRATEGY -> "strategy";
             case SOLUTION -> "solution";
-            case SOLUTION_PLAN -> "solution-plan";
+            case DELIVERY_PLAN -> "delivery-plan";
             case PROPOSAL -> "proposal";
             case SLIDES_PLAN -> "slides-plan";
             default -> type.name().toLowerCase().replace('_', '-');
