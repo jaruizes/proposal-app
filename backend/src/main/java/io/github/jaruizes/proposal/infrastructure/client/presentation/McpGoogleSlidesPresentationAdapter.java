@@ -3,6 +3,7 @@ package io.github.jaruizes.proposal.infrastructure.client.presentation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jaruizes.proposal.business.AgentRuntimeService;
+import io.github.jaruizes.proposal.business.TemplateSettingsService;
 import io.github.jaruizes.proposal.domain.model.*;
 import io.github.jaruizes.proposal.domain.ports.OfferRepositoryPort;
 import io.github.jaruizes.proposal.domain.ports.PresentationPort;
@@ -26,39 +27,47 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     private final AgentRuntimeService agents;
     private final OfferRepositoryPort offers;
     private final ObjectMapper json = new ObjectMapper();
-    private final String defaultTemplateId;
+    private final TemplateSettingsService templateSettings;
     private final int maxQaIterations;
 
     public McpGoogleSlidesPresentationAdapter(ToolGatewayPort tools, AgentRuntimeService agents, OfferRepositoryPort offers,
-            @Value("${presentation.template-id:}") String templateId,
+            TemplateSettingsService templateSettings,
             @Value("${presentation.visual-qa.max-fix-iterations:3}") int maxQaIterations) {
-        this.tools=tools; this.agents=agents; this.offers=offers; this.defaultTemplateId=templateId; this.maxQaIterations=maxQaIterations;
+        this.tools=tools; this.agents=agents; this.offers=offers; this.templateSettings=templateSettings; this.maxQaIterations=maxQaIterations;
     }
 
     @Override
     public PresentationResult materialize(UUID offerId,String slidesPlan,String outputFolder,String documentName) {
         var offer=offers.findById(offerId).orElseThrow(() -> new IllegalStateException("Offer not found"));
-        var templateId=resolvedTemplateId(offer);
-        requireTemplate(templateId);
-        var templateStructure=text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId)));
+        var templateId=templateSettings.get().presentationTemplateId();
+        var hasTemplate=templateId!=null&&!templateId.isBlank();
+        var templateStructure=hasTemplate?text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId))):"{\"slides\":[],\"layouts\":[],\"masters\":[]}";
 
         // Presentation Builder maps the frozen slide-plan onto the live corporate template.
         var operationPlan=agents.execute(
                 AgentTask.of(offerId,PhaseType.PRESENTATION,"presentation-builder","generate-presentation",
                         "Plan presentation materialization","""
                         Produce ONLY JSON with this shape: {"operations":[{"tool":"slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|slides_replace_element_text|slides_batch_update","arguments":{...}}]}.
-                        Use $PRESENTATION_ID as the presentationId placeholder. Work only with IDs/patterns present in the supplied template structure. Materialize the approved slides-plan exactly: hierarchy, order and exact titles are frozen. Do not rewrite content to fit; choose/adapt corporate patterns instead. The original template will be copied before these operations run.
+                        Use $PRESENTATION_ID as the presentationId placeholder. Materialize the approved slides-plan exactly: hierarchy, order and exact titles are frozen. Do not rewrite approved narrative copy.
+                        If a corporate template structure is present, reuse/adapt its patterns. If the structure is empty, build a clean presentation from scratch using slides_batch_update createSlide/createShape/insertText requests.
                         """).withOutputFormat("json"),
                 model(offer),
                 "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# CORPORATE TEMPLATE STRUCTURE\n"+templateStructure).content();
 
-        var copyArgs=new LinkedHashMap<String,Object>();
-        copyArgs.put("fileId",templateId); copyArgs.put("newName",documentName);
-        var folder=driveId(outputFolder); if(!folder.isBlank()) copyArgs.put("destinationFolderId",folder);
-        var copy=text(tools.execute("drive_copy_file",copyArgs));
+        var folder=driveId(outputFolder);
+        String created;
+        if(hasTemplate){
+            var copyArgs=new LinkedHashMap<String,Object>();
+            copyArgs.put("fileId",templateId); copyArgs.put("newName",documentName);
+            if(!folder.isBlank()) copyArgs.put("destinationFolderId",folder);
+            created=text(tools.execute("drive_copy_file",copyArgs));
+        } else {
+            created=text(tools.execute("slides_create_presentation",Map.of("title",documentName)));
+        }
         try {
-            var node=json.readTree(copy); var presentationId=node.path("id").asText();
-            if(presentationId.isBlank()) throw new IllegalStateException("Google Drive copy returned no id: "+copy);
+            var node=json.readTree(created); var presentationId=node.path("id").asText(node.path("presentationId").asText());
+            if(!hasTemplate&&!folder.isBlank()) tools.execute("drive_move_file",Map.of("fileId",presentationId,"destinationFolderId",folder));
+            if(presentationId.isBlank()) throw new IllegalStateException("Presentation creation returned no id: "+created);
             int initialOperations=applyOperations(presentationId,operationPlan);
             int qaOperations=runVisualQa(offer,slidesPlan,presentationId);
             var structure=text(tools.execute("slides_get_presentation",Map.of("presentationId",presentationId)));
@@ -66,6 +75,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
             var report="""
                     # Presentation build report
                     - Template ID: %s
+                    - Rendering mode: %s
                     - Generated presentation ID: %s
                     - Template immutability: original copied before edits
                     - Initial materialization MCP operations: %d
@@ -79,7 +89,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                     ```json
                     %s
                     ```
-                    """.formatted(templateId,presentationId,initialOperations,qaOperations,maxQaIterations,structure);
+                    """.formatted(hasTemplate?templateId:"none",hasTemplate?"corporate-template":"blank",presentationId,initialOperations,qaOperations,maxQaIterations,structure);
             return new PresentationResult(presentationId,url,report);
         } catch(Exception e){ throw new IllegalStateException("Could not materialize Google Slides presentation",e); }
     }
@@ -147,8 +157,6 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     private String model(Offer offer){return offer.models().getOrDefault("presentation",offer.models().getOrDefault("presentationGeneration","claude-sonnet-4-6"));}
     private Map<String,Object> replacePresentationId(Map<String,Object> source,String id){var result=new LinkedHashMap<String,Object>();source.forEach((k,v)->result.put(k,replace(v,id)));return result;}
     private Object replace(Object value,String id){if(value instanceof String s)return s.replace("$PRESENTATION_ID",id);if(value instanceof Map<?,?> m){var out=new LinkedHashMap<String,Object>();m.forEach((k,v)->out.put(String.valueOf(k),replace(v,id)));return out;}if(value instanceof List<?> l)return l.stream().map(v->replace(v,id)).toList();return value;}
-    private String resolvedTemplateId(Offer offer){return offer.presentationTemplateId()!=null&&!offer.presentationTemplateId().isBlank()?offer.presentationTemplateId().trim():Objects.toString(defaultTemplateId,"").trim();}
-    private void requireTemplate(String templateId){if(templateId==null||templateId.isBlank())throw new IllegalStateException("A Google Slides template is required for phase 5");}
     private static String text(Map<String,Object> r){return Objects.toString(r.get("text"),"");}
     private static String driveId(String value){if(value==null)return "";var v=value.trim();var marker="/folders/";var i=v.indexOf(marker);if(i>=0){var x=v.substring(i+marker.length());var q=x.indexOf('?');return q>=0?x.substring(0,q):x;}return v;}
     private record Inspection(String structure,List<LlmRequest.Attachment> thumbnails){}

@@ -72,7 +72,7 @@ def _headers(file_name: str, template_id: str) -> dict[str, str]:
     return {
         "Content-Disposition": f'attachment; filename="{file_name}"',
         "X-Renderer-Version": RENDERER_VERSION,
-        "X-Template-Id": template_id or "builtin-neutral",
+        "X-Template-Id": template_id or "none",
     }
 
 
@@ -121,8 +121,8 @@ def _convert_docx_to_pdf(payload: bytes) -> bytes:
 
 
 def _load_template(template_id: str) -> Document:
-    value = (template_id or "builtin-neutral").strip()
-    if value == "builtin-neutral":
+    value = (template_id or "").strip()
+    if value in {"", "builtin-neutral"}:
         return Document()
     if not SAFE_TEMPLATE.fullmatch(value):
         raise HTTPException(status_code=422, detail="Invalid proposal template identifier")

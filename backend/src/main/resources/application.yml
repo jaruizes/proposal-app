@@ -48,7 +48,7 @@ presentation:
   template-id: ${GOOGLE_SLIDES_TEMPLATE_ID:}
 
 proposal-document:
-  template-id: ${PROPOSAL_TEMPLATE_ID:builtin-neutral}
+  template-id: ${PROPOSAL_TEMPLATE_ID:}
   renderer-url: ${DOCUMENT_RENDERER_URL:http://localhost:8090}
 
 management:

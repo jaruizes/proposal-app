@@ -20,12 +20,14 @@ public class ProposalDocumentMaterializationService {
     private final ArtifactRepositoryPort artifacts;
     private final MaterializedDocumentRepositoryPort documents;
     private final DocumentPort renderer;
+    private final TemplateSettingsService templateSettings;
 
     public ProposalDocumentMaterializationService(OfferRepositoryPort offers,
                                                   ArtifactRepositoryPort artifacts,
                                                   MaterializedDocumentRepositoryPort documents,
-                                                  DocumentPort renderer) {
-        this.offers=offers;this.artifacts=artifacts;this.documents=documents;this.renderer=renderer;
+                                                  DocumentPort renderer,
+                                                  TemplateSettingsService templateSettings) {
+        this.offers=offers;this.artifacts=artifacts;this.documents=documents;this.renderer=renderer;this.templateSettings=templateSettings;
     }
 
     public List<MaterializedDocument> materializeApprovedProposal(UUID offerId) {
@@ -36,7 +38,7 @@ public class ProposalDocumentMaterializationService {
         String rendererVersion;
         try { rendererVersion=renderer.rendererVersion(); }
         catch(Exception e) { rendererVersion="unavailable"; }
-        var template=offer.proposalTemplateId()==null||offer.proposalTemplateId().isBlank()?"builtin-neutral":offer.proposalTemplateId();
+        var template=templateSettings.get().proposalTemplateId();
 
         var request=new DocumentRenderRequest(
                 offerId,proposal.content(),offer.name(),offer.language(),template,
