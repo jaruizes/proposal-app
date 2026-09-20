@@ -1,5 +1,6 @@
 package io.github.jaruizes.proposal.domain.model;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -18,7 +19,19 @@ public record AgentTask(
     }
 
     public AgentTask withOutputFormat(String format) {
-        return new AgentTask(id, offerId, phase, agentKey, skillKey, objective, prompt, Map.of("output_format", format));
+        var next=new LinkedHashMap<String,Object>(metadata);
+        next.put("output_format",format);
+        return new AgentTask(id, offerId, phase, agentKey, skillKey, objective, prompt, Map.copyOf(next));
+    }
+
+    public AgentTask withCheckpoint(String checkpointKey) {
+        var next=new LinkedHashMap<String,Object>(metadata);
+        next.put("checkpoint_key",checkpointKey);
+        return new AgentTask(id, offerId, phase, agentKey, skillKey, objective, prompt, Map.copyOf(next));
+    }
+
+    public String checkpointKey() {
+        return String.valueOf(metadata.getOrDefault("checkpoint_key",""));
     }
 
     public static AgentTask of(UUID offerId, PhaseType phase, String agentKey, String objective, String prompt) {
