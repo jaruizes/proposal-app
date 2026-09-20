@@ -13,6 +13,13 @@ class MarkdownContentTest {
     }
 
     @Test
+    void unwrapsDocumentAfterFilenameHeadingAsInSolutionPlan() {
+        var wrapped = "# solution-plan.md\n\n```markdown\n# Plan de ejecución\n\n**Proyecto:** Redeia\n\n```json\n{}\n```\n```";
+        assertThat(MarkdownContent.unwrapDocument(wrapped))
+                .isEqualTo("# Plan de ejecución\n\n**Proyecto:** Redeia\n\n```json\n{}\n```");
+    }
+
+    @Test
     void leavesRawMarkdownAndIncompleteOrOrdinaryCodeBlocksUntouched() {
         var raw = "# Estrategia\n\n```java\nclass Example {}\n```";
         assertThat(MarkdownContent.unwrapDocument(raw)).isEqualTo(raw);
@@ -20,5 +27,7 @@ class MarkdownContentTest {
                 .isEqualTo("```markdown\n# Estrategia\nTexto");
         assertThat(MarkdownContent.unwrapDocument("```markdown\nplain example\n```"))
                 .isEqualTo("```markdown\nplain example\n```");
+        assertThat(MarkdownContent.unwrapDocument("# solution-plan.md\n\n```markdown\n# Incompleto"))
+                .isEqualTo("# solution-plan.md\n\n```markdown\n# Incompleto");
     }
 }

@@ -200,20 +200,22 @@ public class OfferWorkflowService {
         var specialistResults=runRequestedSpecialists(offer,base,triage.content(),sourceBundle.visualAttachments());
         var architectContext=base+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
         var architect=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
-                "Definir solución propuesta","Execute section A of define-solution. Produce ONLY the complete solution.md, including source review and any specialist consultations. Do not estimate effort, duration, staffing, cost or price."+refinement(refinement)),
+                "Definir solución propuesta","Execute section A of define-solution. Produce ONLY the complete solution.md as raw Markdown, without an outer code fence or filename heading, including source review and any specialist consultations. Do not estimate effort, duration, staffing, cost or price."+refinement(refinement)),
                 model(offer,"solutionArchitecture"),architectContext,sourceBundle.visualAttachments());
-        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION,architect.content());
+        var solution=MarkdownContent.unwrapDocument(architect.content());
+        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION,solution);
 
         // Delivery is deliberately sequential and consumes the architect artifact in its own isolated role context.
-        var deliveryContext=base+"\n\n# solution.md\n"+architect.content();
+        var deliveryContext=base+"\n\n# solution.md\n"+solution;
         var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
-                "Definir enfoque de ejecución","Execute section B of define-solution. Produce ONLY the complete unestimated solution-plan.md. Include capability → workstream coverage."),
+                "Definir enfoque de ejecución","Execute section B of define-solution. Produce ONLY the complete unestimated solution-plan.md as raw Markdown, without an outer code fence or filename heading. Include capability → workstream coverage."),
                 model(offer,"deliveryPlanning"),deliveryContext,sourceBundle.visualAttachments());
-        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION_PLAN,delivery.content());
+        var solutionPlan=MarkdownContent.unwrapDocument(delivery.content());
+        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION_PLAN,solutionPlan);
 
         agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"business-analyst","define-solution",
                 "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and solution-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required."),
-                model(offer,"solutionArchitecture"),base+"\n\n# solution.md\n"+architect.content()+"\n\n# solution-plan.md\n"+delivery.content());
+                model(offer,"solutionArchitecture"),base+"\n\n# solution.md\n"+solution+"\n\n# solution-plan.md\n"+solutionPlan);
     }
 
     private String runRequestedSpecialists(Offer offer,String context,String triage,List<LlmRequest.Attachment> attachments){
