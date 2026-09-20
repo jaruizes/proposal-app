@@ -26,7 +26,7 @@ Ownership:
 analysis artifacts   → Business Analyst
 strategy.md          → Business Analyst
 solution.md          → Solution Architect
-solution-plan.md     → Delivery Manager
+delivery-plan.md     → Delivery Manager
 slides-plan.md       → Business Analyst
 final presentation   → Presentation Builder
 overall offer coherence → Business Analyst
@@ -87,7 +87,7 @@ Sequential base-role execution:
 
 ```text
 Solution Architect → solution.md
-Delivery Manager   → solution-plan.md
+Delivery Manager   → delivery-plan.md
 Business Analyst   → coherence review
 ```
 
