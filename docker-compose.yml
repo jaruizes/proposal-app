@@ -111,6 +111,7 @@ services:
       dockerfile: document-renderer/Dockerfile
     environment:
       DOCUMENT_RENDERER_TEMPLATE_DIR: /opt/document-renderer/templates
+      PDF_RENDER_TIMEOUT_SECONDS: ${PDF_RENDER_TIMEOUT_SECONDS:-120}
     ports:
       - "8090:8090"
     read_only: true

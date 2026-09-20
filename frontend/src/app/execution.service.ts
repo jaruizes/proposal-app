@@ -45,6 +45,17 @@ export class ExecutionService {
   retry(id:string,phaseKey:string){this.http.post<void>(`/api/offers/${id}/phases/${phaseKey}/retry`,{}).subscribe(()=>{this.refreshOne(id);this.refreshAgents(id);});}
   refine(id:string,phaseKey:string,message:string){this.http.post<void>(`/api/offers/${id}/phases/${phaseKey}/refine`,{instruction:message}).subscribe(()=>{this.refreshOne(id);this.refreshAgents(id);});}
 
+  exportArtifactPdf(offerId:string,type:string,version:number,fileName:string){
+    this.http.get(`/api/offers/${offerId}/artifacts/${type}/${version}/pdf`,{responseType:'blob'}).subscribe(blob=>{
+      const url=URL.createObjectURL(blob);
+      const anchor=document.createElement('a');
+      anchor.href=url;
+      anchor.download=fileName.replace(/\.md$/i,'')+'.pdf';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
   watch(id:string){
     if(this.events.has(id))return;
     const source=new EventSource(`/api/offers/${id}/events`);

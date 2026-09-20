@@ -114,6 +114,9 @@
           <div class="panel-head artifact-head">
             <div><span class="eyebrow">ARTEFACTO</span><h2>{{phase.label}}</h2></div>
             <div class="artifact-actions">
+              <button class="ghost small pdf-export-btn" *ngIf="canExportSelectedArtifactPdf()" (click)="exportSelectedArtifactPdf()" title="Exportar artefacto a PDF">
+                <span class="pdf-icon">PDF</span><span>Exportar</span>
+              </button>
               <div class="view-toggle">
                 <button class="ghost small" [class.active]="!showRawMarkdown()" (click)="showRawMarkdown.set(false)">Vista</button>
                 <button class="ghost small" [class.active]="showRawMarkdown()" (click)="showRawMarkdown.set(true)">Markdown</button>

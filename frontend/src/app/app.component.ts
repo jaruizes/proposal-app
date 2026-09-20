@@ -29,6 +29,15 @@ export class AppComponent {
   openHome(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.selectedId.set(null);this.selectedPhaseKey.set(null);this.view.set('home');}
   back(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
   chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
+  canExportSelectedArtifactPdf(){
+    const artifact=this.selectedArtifact();
+    return !!artifact&&artifact.type!=='DOCUMENT'&&['OPPORTUNITY_BRIEF','QUESTIONS','TECHNOLOGY','STRATEGY','SOLUTION','SOLUTION_PLAN','PROPOSAL','SLIDES_PLAN'].includes(artifact.type);
+  }
+  exportSelectedArtifactPdf(){
+    const offer=this.selected(),artifact=this.selectedArtifact();
+    if(!offer||!artifact||!this.canExportSelectedArtifactPdf())return;
+    this.svc.exportArtifactPdf(offer.id,artifact.type,artifact.version,artifact.title);
+  }
   approve(){const e=this.selected(),p=this.selectedPhase();if(e&&p){this.svc.approve(e.id,p.key);this.selectedPhaseKey.set(null);this.resetArtifactView();}}
   sendRefine(){const e=this.selected(),p=this.selectedPhase();if(e&&p&&this.chatMessage.trim()){this.svc.refine(e.id,p.key,this.chatMessage.trim());this.chatMessage='';}}
   statusClass(status:string){return status==='Trabajando'?'working':status==='Esperando aprobación'?'waiting':status==='Completado'?'approved':'cancelled';} phaseClass(status:string){return status.replace('_','-');} currentModels(){return this.providerModels[this.draft.provider]||[];} addSection(){this.draft.sections.push({name:'Nueva sección',maxSlides:3,enabled:true});} removeSection(i:number){this.draft.sections.splice(i,1);} addProposalSection(target:'draft'|'config'='draft'){const section:ProposalSectionConfig={name:'Nueva sección',enabled:true,depth:'STANDARD',guidance:''};if(target==='draft')this.draft.proposalSections.push(section);else{this.configDraft.proposalGuidance=this.configDraft.proposalGuidance||{sections:[]};this.configDraft.proposalGuidance.sections.push(section);}} removeProposalSection(i:number,target:'draft'|'config'='draft'){if(target==='draft')this.draft.proposalSections.splice(i,1);else this.configDraft.proposalGuidance.sections.splice(i,1);}
@@ -106,7 +115,19 @@ export class AppComponent {
     return html.join('');
   }
   private resetArtifactView(){this.selectedArtifactIndex.set(0);this.showRawMarkdown.set(false);}
-  private artifactLabel(type:string){return type.toLowerCase().split('_').map(word=>word.charAt(0).toUpperCase()+word.slice(1)).join(' ');}
+  private artifactLabel(type:string){
+    const files:Record<string,string>={
+      OPPORTUNITY_BRIEF:'opportunity-brief.md',
+      QUESTIONS:'questions.md',
+      TECHNOLOGY:'technology.md',
+      STRATEGY:'strategy.md',
+      SOLUTION:'solution.md',
+      SOLUTION_PLAN:'solution-plan.md',
+      PROPOSAL:'proposal.md',
+      SLIDES_PLAN:'slides-plan.md'
+    };
+    return files[type]||type.toLowerCase().split('_').map(word=>word.charAt(0).toUpperCase()+word.slice(1)).join(' ');
+  }
   private isTableHeader(lines:string[],i:number){return i+1<lines.length&&this.isTableRow(lines[i])&&/^\s*\|?\s*:?-{3,}/.test(lines[i+1])&&lines[i+1].includes('|');}
   private isTableRow(line:string){return line.includes('|')&&line.trim().length>0;}
   private tableCells(line:string){return line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());}
