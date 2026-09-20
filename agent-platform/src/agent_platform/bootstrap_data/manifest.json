@@ -60,17 +60,13 @@
         "proposal-guidance"
       ],
       "output_schema": {},
-      "knowledge_sources": [
-        "reference-offers"
-      ],
+      "knowledge_sources": [],
       "constraints": {
-        "retrieval": {
+        "proposal_reference_retrieval": {
+          "knowledge_base": "reference-offers",
+          "top_k_per_section": 3,
           "mode": "hybrid",
-          "top_k": 5,
-          "candidate_k": 25,
-          "expand_parents": true,
-          "vector_min_score": 0.2,
-          "ontology_enabled": true
+          "vector_min_score": 0.2
         }
       }
     },

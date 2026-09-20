@@ -41,7 +41,7 @@ class ExecutionDispatcher:
                 cache=cache,
             )
             if settings.agent_runtime.lower()=="langgraph":
-                runtime=LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url)
+                runtime=LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url,proposal_retrieval_service=retrieval)
             else:
                 runtime=AgentRuntime(**common)
             execution=await execution_repo.get(execution_id)
