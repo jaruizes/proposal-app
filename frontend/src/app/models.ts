@@ -8,4 +8,11 @@ export interface AgentExecutionTelemetry{
   objective?:string;output?:string;model?:string;inputTokens:number;outputTokens:number;
   providerRequestId?:string;startedAt?:Date|string;completedAt?:Date|string;errorMessage?:string;
 }
-export interface OfferExecution{id:string;name:string;customer?:string;presentationLanguage:string;inputDriveFolder:string;outputDriveFolder:string;presentationName:string;presentationTemplateId?:string;proposalTemplateId?:string;provider:string;models:Record<string,string>;proposalGuidance?:{sections:ProposalSectionConfig[]};sections:any;currentStep:string;overallStatus:'Trabajando'|'Esperando aprobación'|'Cancelado'|'Completado'|'Error'|'Pendiente';createdAt:Date|string;phases:Phase[];}
+export interface OfferExecution{id:string;name:string;customer?:string;presentationLanguage:string;inputDriveFolder:string;outputDriveFolder:string;presentationName:string;generatePresentation:boolean;provider:string;models:Record<string,string>;proposalGuidance?:{sections:ProposalSectionConfig[]};sections:any;currentStep:string;overallStatus:'Trabajando'|'Esperando aprobación'|'Cancelado'|'Completado'|'Error'|'Pendiente';createdAt:Date|string;phases:Phase[];}
+
+export interface MaterializedDocument {
+  id:string;type:'PROPOSAL_DOCX'|'PROPOSAL_PDF'|string;contentVersion:number;renderVersion:number;
+  mediaType:string;fileName:string;templateId:string;rendererVersion:string;sourceHash:string;
+  status:'PROCESSING'|'READY'|'FAILED';errorMessage?:string;createdAt:string;updatedAt:string;
+}
+export interface TemplateSettings {proposalTemplateId:string;presentationTemplateId:string;updatedAt?:string;}

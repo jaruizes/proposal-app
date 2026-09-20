@@ -4,7 +4,7 @@
     <nav>
       <button class="nav-item" [class.active]="view()==='home' || view()==='detail'" (click)="openHome()"><span>⌂</span><span>Ofertas</span></button>
       <button class="nav-item" [class.active]="view()==='knowledge'" (click)="openKnowledge()"><span>▤</span><span>Conocimiento</span></button>
-      <button class="nav-item"><span>◫</span><span>Plantillas</span></button>
+      <button class="nav-item" [class.active]="view()==='templates'" (click)="openTemplates()"><span>◫</span><span>Plantillas</span></button>
       <button class="nav-item"><span>◇</span><span>Proveedores IA</span></button>
       <button class="nav-item"><span>⚙</span><span>Configuración</span></button>
     </nav>
@@ -13,7 +13,7 @@
 
   <main class="main-content">
     <header class="topbar">
-      <div><span class="eyebrow">PROPOSAL AGENT PLATFORM</span><h1>{{ view() === 'home' ? 'Panel de ofertas' : view() === 'knowledge' ? 'Conocimiento y RAG' : selected()?.name }}</h1></div>
+      <div><span class="eyebrow">PROPOSAL AGENT PLATFORM</span><h1>{{ view() === 'home' ? 'Panel de ofertas' : view() === 'knowledge' ? 'Conocimiento y RAG' : view() === 'templates' ? 'Plantillas corporativas' : selected()?.name }}</h1></div>
       <div class="top-actions">
         <span class="environment">● Backend conectado</span>
         <button *ngIf="view() === 'home'" class="primary" (click)="openCreate()">＋ Crear nueva oferta</button>
@@ -22,6 +22,16 @@
     </header>
 
     <app-knowledge *ngIf="view() === 'knowledge'"></app-knowledge>
+    <ng-container *ngIf="view() === 'templates'">
+      <section class="panel templates-page">
+        <div class="panel-head"><div><span class="eyebrow">CONFIGURACIÓN GLOBAL</span><h2>Plantillas corporativas</h2><p>Se aplican a todas las ofertas. Déjalas vacías para generar documentos y presentaciones nuevas sin plantilla.</p></div></div>
+        <div class="template-grid">
+          <article><h3>Documento de oferta</h3><p>Identificador de una plantilla DOCX disponible en el servicio de renderizado.</p><label><span>Plantilla DOCX</span><input [(ngModel)]="templateDraft.proposalTemplateId" placeholder="Vacío = documento nuevo" /></label></article>
+          <article><h3>Presentación corporativa</h3><p>ID o URL de una presentación de Google Slides utilizada como plantilla global.</p><label><span>Plantilla Google Slides</span><input [(ngModel)]="templateDraft.presentationTemplateId" placeholder="Vacío = presentación nueva" /></label></article>
+        </div>
+        <div class="template-actions"><button class="primary" (click)="saveTemplates()">Guardar plantillas</button></div>
+      </section>
+    </ng-container>
 
     <ng-container *ngIf="view() === 'home'">
       <section class="stat-grid">
@@ -60,13 +70,24 @@
               <span class="step-index">{{p.status === 'approved' ? '✓' : p.status === 'failed' ? '!' : i + 1}}</span>
               <span class="step-content">
                 <strong>{{p.label}}</strong>
-                <small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : p.status === 'failed' ? 'Error' : 'Pendiente'}}</small>
+                <small>{{p.status === 'approved' ? 'Validado' : p.status === 'working' ? 'Trabajando' : p.status === 'waiting_approval' ? 'Esperando aprobación' : p.status === 'failed' ? 'Error' : p.status === 'cancelled' ? 'Opcional · omitida' : 'Pendiente'}}</small>
                 <button *ngIf="p.status === 'waiting_approval'" class="step-approve-btn" (click)="$event.stopPropagation(); selectedPhaseKey.set(p.key); approve()">✓ Validar y continuar</button>
               </span>
             </div>
             <div class="step-line" *ngIf="i < exec.phases.length - 1"></div>
           </ng-container>
         </div>
+      </section>
+
+      <section class="panel proposal-documents-panel" *ngIf="exec.phases.some(p => p.key === 'proposal' && p.status === 'approved') || svc.materializedDocuments().length">
+        <div class="panel-head"><div><span class="eyebrow">DOCUMENTOS FINALES</span><h2>Documento de oferta</h2><p>Versiones DOCX y PDF materializadas desde proposal.md.</p></div><button class="ghost small" (click)="regenerateDocuments()">↻ Regenerar</button></div>
+        <div class="materialized-list" *ngIf="svc.materializedDocuments().length; else materializingEmpty">
+          <article class="materialized-item" *ngFor="let d of svc.materializedDocuments()">
+            <div><strong>{{d.fileName}}</strong><small>contenido v{{d.contentVersion}} · render v{{d.renderVersion}} · {{d.templateId || 'sin plantilla'}} · {{d.rendererVersion}}</small><span class="render-error" *ngIf="d.errorMessage">{{d.errorMessage}}</span></div>
+            <div class="materialized-actions"><span class="doc-status" [ngClass]="d.status.toLowerCase()">{{materializedStatusLabel(d.status)}}</span><button class="ghost small" *ngIf="d.status==='READY'" (click)="downloadMaterialized(d)">↓ Descargar</button></div>
+          </article>
+        </div>
+        <ng-template #materializingEmpty><div class="agent-empty">Los documentos aparecerán aquí cuando termine la materialización.</div></ng-template>
       </section>
 
       <section class="panel agent-activity-panel">
@@ -153,10 +174,9 @@
     <header><div><span class="eyebrow">NUEVA EJECUCIÓN</span><h2>Crear nueva oferta</h2><p>Configura el flujo antes de iniciar el procesamiento.</p></div><button class="icon-btn" (click)="closeCreate()">×</button></header>
     <div class="modal-body">
       <div class="form-grid two"><label><span>Nombre</span><input [(ngModel)]="draft.name" placeholder="Ej. REDEIA · SSIR" /></label><label><span>Idioma de la presentación</span><select [(ngModel)]="draft.presentationLanguage"><option>Español</option><option>English</option><option>Français</option></select></label></div>
-      <label><span>Plantilla de propuesta Word</span><input [(ngModel)]="configDraft.proposalTemplateId" placeholder="builtin-neutral o identificador de plantilla corporativa" /></label>
       <div class="form-grid two"><label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="draft.inputDriveFolder" placeholder="ID o URL de la carpeta de entrada" /></label><label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="draft.outputDriveFolder" placeholder="ID o URL de la carpeta de salida" /></label></div>
-      <div class="form-grid two"><label><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Nombre del documento final" /></label><label><span>Plantilla corporativa · Google Slides</span><input [(ngModel)]="draft.presentationTemplateId" placeholder="ID o URL de la presentación plantilla" /></label></div>
-      <label><span>Plantilla de propuesta Word</span><input [(ngModel)]="draft.proposalTemplateId" placeholder="builtin-neutral o identificador de plantilla corporativa" /></label>
+      <label class="optional-toggle"><input type="checkbox" [(ngModel)]="draft.generatePresentation" /><span>Generar también propuesta y presentación corporativa (opcional)</span></label>
+      <label *ngIf="draft.generatePresentation"><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Si se deja vacío se usará el nombre de la oferta" /></label>
       <div class="section-title"><div><h3>Configuración IA</h3><p>Configuración de proveedor y modelos por fase.</p></div></div>
       <div class="form-grid two"><label><span>Proveedor</span><select [(ngModel)]="draft.provider"><option *ngFor="let p of (providerModels | keyvalue)">{{p.key}}</option></select></label><div class="provider-chip">{{draft.provider}}</div></div>
       <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Análisis'}, {k:'strategy',l:'Estrategia'}, {k:'solution',l:'Solución'}, {k:'proposal',l:'Oferta'}, {k:'slides',l:'Slides'}]"><span>{{item.l}}</span><select [(ngModel)]="draft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
@@ -172,10 +192,10 @@
           <button class="icon-btn subtle" (click)="removeProposalSection(i)">×</button>
         </div>
       </div>
-      <div class="section-title"><div><h3>Estructura de presentación</h3><p>Configuración equivalente a presentation-guidance.yaml.</p></div><button class="ghost small" (click)="addSection()">＋ Añadir sección</button></div>
-      <div class="sections-editor"><div class="section-row" *ngFor="let s of draft.sections; let i = index"><input type="checkbox" [(ngModel)]="s.enabled" /><input class="grow" [(ngModel)]="s.name" /><label class="compact"><span>Máx. slides</span><input type="number" min="1" [(ngModel)]="s.maxSlides" /></label><button class="icon-btn subtle" (click)="removeSection(i)">×</button></div></div>
+      <div class="section-title" *ngIf="draft.generatePresentation"><div><h3>Estructura de presentación</h3><p>Configuración equivalente a presentation-guidance.yaml.</p></div><button class="ghost small" (click)="addSection()">＋ Añadir sección</button></div>
+      <div class="sections-editor" *ngIf="draft.generatePresentation"><div class="section-row" *ngFor="let s of draft.sections; let i = index"><input type="checkbox" [(ngModel)]="s.enabled" /><input class="grow" [(ngModel)]="s.name" /><label class="compact"><span>Máx. slides</span><input type="number" min="1" [(ngModel)]="s.maxSlides" /></label><button class="icon-btn subtle" (click)="removeSection(i)">×</button></div></div>
     </div>
-    <footer><button class="ghost" (click)="closeCreate()">Cancelar</button><button class="primary" [disabled]="!draft.name || !draft.presentationName || !draft.presentationTemplateId || !draft.inputDriveFolder || !draft.outputDriveFolder" (click)="saveCreate()">Guardar e iniciar</button></footer>
+    <footer><button class="ghost" (click)="closeCreate()">Cancelar</button><button class="primary" [disabled]="!draft.name || !draft.inputDriveFolder || !draft.outputDriveFolder" (click)="saveCreate()">Guardar e iniciar</button></footer>
   </section>
 </div>
 
@@ -183,7 +203,7 @@
   <section class="modal config-modal">
     <header><div><span class="eyebrow">CONFIGURACIÓN DE OFERTA</span><h2>Editar configuración</h2><p>Estos cambios se aplicarán a las fases pendientes o a una fase fallida que vuelvas a ejecutar.</p></div><button class="icon-btn" (click)="closeConfig()">×</button></header>
     <div class="modal-body">
-      <div class="form-grid two"><label><span>Idioma de la presentación</span><select [(ngModel)]="configDraft.presentationLanguage"><option value="es">Español</option><option value="en">English</option><option value="fr">Français</option></select></label><label><span>Plantilla corporativa · Google Slides</span><input [(ngModel)]="configDraft.presentationTemplateId" placeholder="ID o URL de la presentación plantilla" /></label></div>
+      <div class="form-grid two"><label><span>Idioma de la presentación</span><select [(ngModel)]="configDraft.presentationLanguage"><option value="es">Español</option><option value="en">English</option><option value="fr">Français</option></select></label><label class="optional-toggle"><input type="checkbox" [(ngModel)]="configDraft.generatePresentation" /><span>Generar presentación corporativa</span></label></div>
       <div class="form-grid two"><label><span>Carpeta de entrada · Google Drive</span><input [(ngModel)]="configDraft.inputDriveFolder" /></label><label><span>Carpeta de salida · Google Drive</span><input [(ngModel)]="configDraft.outputDriveFolder" /></label></div>
       <label><span>Nombre de la presentación</span><input [(ngModel)]="configDraft.presentationName" /></label>
       <div class="section-title"><div><h3>Estructura de la oferta detallada</h3><p>Editable mientras la oferta evoluciona; se aplicará en la fase Oferta detallada.</p></div><button class="ghost small" (click)="addProposalSection('config')">＋ Añadir sección</button></div>

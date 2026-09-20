@@ -3,15 +3,15 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ExecutionService } from './execution.service';
 import { KnowledgeComponent } from './knowledge.component';
-import { AgentExecutionTelemetry, OfferExecution, Phase, ProposalSectionConfig, SectionConfig } from './models';
+import { AgentExecutionTelemetry, MaterializedDocument, OfferExecution, Phase, ProposalSectionConfig, SectionConfig, TemplateSettings } from './models';
 
 type PhaseArtifact={type:string;version:number;title:string;content:string};
 
 @Component({selector:'app-root',standalone:true,imports:[CommonModule,FormsModule,KnowledgeComponent],templateUrl:'./app.component.html'})
 export class AppComponent {
-  svc=inject(ExecutionService); view=signal<'home'|'detail'|'knowledge'>('home'); selectedId=signal<string|null>(null); selectedPhaseKey=signal<string|null>(null); selectedArtifactIndex=signal(0); createOpen=signal(false); configOpen=signal(false); showRawMarkdown=signal(false); chatMessage='';
+  svc=inject(ExecutionService); view=signal<'home'|'detail'|'knowledge'|'templates'>('home'); selectedId=signal<string|null>(null); selectedPhaseKey=signal<string|null>(null); selectedArtifactIndex=signal(0); createOpen=signal(false); configOpen=signal(false); showRawMarkdown=signal(false); chatMessage='';
   providerModels:Record<string,string[]>={ANTHROPIC:['claude-sonnet-4-6','claude-opus-4-6'],'AWS Bedrock':['claude-sonnet-4-6'],OpenAI:['gpt-5.6']};
-  draft:any=this.newDraft(); configDraft:any={}; selected=computed(()=>this.selectedId()?this.svc.get(this.selectedId()!):undefined); selectedPhase=computed(()=>this.selected()?.phases.find(p=>p.key===this.selectedPhaseKey()));
+  draft:any=this.newDraft(); configDraft:any={}; templateDraft:TemplateSettings={proposalTemplateId:'',presentationTemplateId:''}; selected=computed(()=>this.selectedId()?this.svc.get(this.selectedId()!):undefined); selectedPhase=computed(()=>this.selected()?.phases.find(p=>p.key===this.selectedPhaseKey()));
   selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
   selectedArtifact=computed(()=>this.selectedArtifacts()[this.selectedArtifactIndex()]||this.selectedArtifacts()[0]);
   stats=computed(()=>{const items=this.svc.executions();return{total:items.length,working:items.filter(x=>x.overallStatus==='Trabajando').length,waiting:items.filter(x=>x.overallStatus==='Esperando aprobación').length};});
@@ -20,11 +20,13 @@ export class AppComponent {
   failedPhase=computed(()=>this.selected()?.phases.find(p=>p.status==='failed'));
   offerErrorMessage=computed(()=>this.latestFailedAgent()?.errorMessage||this.failedPhase()?.errorMessage||'');
   openCreate(){this.draft=this.newDraft();this.createOpen.set(true);} closeCreate(){this.createOpen.set(false);} saveCreate(){this.svc.create(this.draft);this.createOpen.set(false);}
-  openConfig(){const e=this.selected();if(!e)return;this.configDraft={presentationLanguage:e.presentationLanguage,inputDriveFolder:e.inputDriveFolder,outputDriveFolder:e.outputDriveFolder,presentationName:e.presentationName,presentationTemplateId:e.presentationTemplateId||'',proposalTemplateId:e.proposalTemplateId||'builtin-neutral',aiProvider:e.provider,models:{...e.models},proposalGuidance:structuredClone(e.proposalGuidance||{sections:this.svc.defaultProposalSections}),presentationGuidance:e.sections};this.configOpen.set(true);}
+  openConfig(){const e=this.selected();if(!e)return;this.configDraft={presentationLanguage:e.presentationLanguage,inputDriveFolder:e.inputDriveFolder,outputDriveFolder:e.outputDriveFolder,presentationName:e.presentationName,generatePresentation:e.generatePresentation,aiProvider:e.provider,models:{...e.models},proposalGuidance:structuredClone(e.proposalGuidance||{sections:this.svc.defaultProposalSections}),presentationGuidance:e.sections};this.configOpen.set(true);}
   closeConfig(){this.configOpen.set(false);}
   saveConfig(){const e=this.selected();if(!e)return;this.svc.updateConfiguration(e.id,this.configDraft).subscribe(updated=>{this.svc.executions.update(items=>items.map(x=>x.id===updated.id?updated:x));this.configOpen.set(false);});}
   retryFailedPhase(){const e=this.selected(),p=this.failedPhase();if(e&&p)this.svc.retry(e.id,p.key);}
-  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);this.svc.watchAgents(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
+  openDetail(exec:OfferExecution){this.selectedId.set(exec.id);this.view.set('detail');this.svc.watch(exec.id);this.svc.watchAgents(exec.id);this.svc.refreshDocuments(exec.id);const candidate=exec.phases.find(p=>p.status==='waiting_approval')||exec.phases.find(p=>p.status==='approved');this.selectedPhaseKey.set(candidate?.key||null);this.resetArtifactView();}
+  openTemplates(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.selectedId.set(null);this.selectedPhaseKey.set(null);this.templateDraft={...this.svc.templateSettings()};this.view.set('templates');}
+  saveTemplates(){this.svc.saveTemplateSettings(this.templateDraft).subscribe(v=>{this.svc.templateSettings.set(v);this.templateDraft={...v};});}
   openKnowledge(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.selectedId.set(null);this.selectedPhaseKey.set(null);this.view.set('knowledge');}
   openHome(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.selectedId.set(null);this.selectedPhaseKey.set(null);this.view.set('home');}
   back(){const id=this.selectedId();if(id)this.svc.stopWatchingAgents(id);this.view.set('home');this.selectedId.set(null);this.selectedPhaseKey.set(null);this.resetArtifactView();} phaseClickable(p:Phase){return p.status==='approved'||p.status==='waiting_approval';} choosePhase(p:Phase){if(this.phaseClickable(p)){this.selectedPhaseKey.set(p.key);this.resetArtifactView();}}
@@ -45,6 +47,9 @@ export class AppComponent {
   agentStatusLabel(status:string){return status==='RUNNING'?'Trabajando':status==='COMPLETED'?'Completado':status==='FAILED'?'Error':status;}
   agentDuration(agent:AgentExecutionTelemetry){const start=agent.startedAt?new Date(agent.startedAt).getTime():0;if(!start)return '—';const end=agent.completedAt?new Date(agent.completedAt).getTime():Date.now();const seconds=Math.max(0,Math.round((end-start)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
   agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Entendimiento y cualificación',STRATEGY:'Estrategia de respuesta',SOLUTION:'Propuesta de solución y plan',PROPOSAL:'Documento de oferta detallado',SLIDE_PLAN:'Propuesta de presentación',PRESENTATION:'Generación de presentación corporativa'};return labels[phase]||phase;}
+  materializedStatusLabel(status:string){return status==='READY'?'Disponible':status==='FAILED'?'Error':'Generando';}
+  downloadMaterialized(document:MaterializedDocument){const offer=this.selected();if(offer&&document.status==='READY')this.svc.downloadDocument(offer.id,document);}
+  regenerateDocuments(){const offer=this.selected();if(offer)this.svc.materializeDocuments(offer.id);}
   formatTokens(value:number){return new Intl.NumberFormat('es-ES').format(value||0);}
   friendlyErrorCause(raw:string|undefined):string {
     if(!raw?.trim())return 'Se produjo un error inesperado durante la ejecución del agente.';
@@ -133,5 +138,5 @@ export class AppComponent {
   private tableCells(line:string){return line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());}
   private inlineMarkdown(value:string){let s=this.escapeHtml(value);s=s.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>');return s;}
   private escapeHtml(value:string){return value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
-  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',presentationTemplateId:'',proposalTemplateId:'builtin-neutral',provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',strategy:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',proposal:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},proposalSections:structuredClone(this.svc.defaultProposalSections) as ProposalSectionConfig[],sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
+  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',generatePresentation:false,provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',strategy:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',proposal:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},proposalSections:structuredClone(this.svc.defaultProposalSections) as ProposalSectionConfig[],sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
 }

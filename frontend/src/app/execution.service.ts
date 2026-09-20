@@ -1,10 +1,12 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { AgentExecutionTelemetry, OfferExecution, ProposalSectionConfig, SectionConfig } from './models';
+import { AgentExecutionTelemetry, MaterializedDocument, OfferExecution, ProposalSectionConfig, SectionConfig, TemplateSettings } from './models';
 @Injectable({ providedIn: 'root' })
 export class ExecutionService {
   executions = signal<OfferExecution[]>([]);
   agentExecutions = signal<AgentExecutionTelemetry[]>([]);
+  materializedDocuments = signal<MaterializedDocument[]>([]);
+  templateSettings = signal<TemplateSettings>({proposalTemplateId:'',presentationTemplateId:''});
   readonly defaultSections: SectionConfig[] = [
     { name: 'Resumen ejecutivo', maxSlides: 3, enabled: true },
     { name: 'Introducción, contexto y objetivos', maxSlides: 5, enabled: true },
@@ -26,7 +28,7 @@ export class ExecutionService {
   ];
   private events = new Map<string, EventSource>();
   private agentPollers = new Map<string, ReturnType<typeof setInterval>>();
-  constructor(private http: HttpClient) { this.refresh(); }
+  constructor(private http: HttpClient) { this.refresh(); this.loadTemplateSettings(); }
 
   refresh() {
     this.http.get<OfferExecution[]>('/api/offers').subscribe(items =>
@@ -35,7 +37,7 @@ export class ExecutionService {
   }
 
   create(data: any) {
-    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName, presentationTemplateId:data.presentationTemplateId, proposalTemplateId:data.proposalTemplateId || '', aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, proposal:data.models.proposal, slidePlanning:data.models.slides, presentation:data.models.slides }, proposalGuidance:{ sections:data.proposalSections.filter((s:ProposalSectionConfig)=>s.enabled) }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
+    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName || (data.name+' - Presentación'), generatePresentation:data.generatePresentation!==false, aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, proposal:data.models.proposal, slidePlanning:data.models.slides, presentation:data.models.slides }, proposalGuidance:{ sections:data.proposalSections.filter((s:ProposalSectionConfig)=>s.enabled) }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
     this.http.post<OfferExecution>('/api/offers',request).subscribe(offer=>{this.executions.update(items=>[offer,...items.filter(i=>i.id!==offer.id)]);this.watch(offer.id);this.watchAgents(offer.id);});
   }
 
@@ -56,10 +58,20 @@ export class ExecutionService {
     });
   }
 
+  loadTemplateSettings(){this.http.get<TemplateSettings>('/api/settings/templates').subscribe(v=>this.templateSettings.set(v));}
+  saveTemplateSettings(settings:TemplateSettings){return this.http.put<TemplateSettings>('/api/settings/templates',settings);}
+  refreshDocuments(id:string){this.http.get<MaterializedDocument[]>(`/api/offers/${id}/documents`).subscribe(items=>this.materializedDocuments.set(items.slice().reverse()));}
+  materializeDocuments(id:string){this.http.post<any[]>(`/api/offers/${id}/documents/materialize`,{}).subscribe(()=>this.refreshDocuments(id));}
+  downloadDocument(offerId:string,item:MaterializedDocument){
+    this.http.get(`/api/offers/${offerId}/documents/${item.id}/download`,{responseType:'blob'}).subscribe(blob=>{
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=item.fileName;a.click();URL.revokeObjectURL(url);
+    });
+  }
+
   watch(id:string){
     if(this.events.has(id))return;
     const source=new EventSource(`/api/offers/${id}/events`);
-    source.addEventListener('offer',(event:MessageEvent)=>this.upsertInPlace(JSON.parse(event.data) as OfferExecution));
+    source.addEventListener('offer',(event:MessageEvent)=>{const offer=JSON.parse(event.data) as OfferExecution;this.upsertInPlace(offer);if(offer.phases.some(p=>p.key==='proposal'&&p.status==='approved'))this.refreshDocuments(id);});
     source.onerror=()=>{source.close();this.events.delete(id);};
     this.events.set(id,source);
   }
