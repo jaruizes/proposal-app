@@ -150,17 +150,30 @@ public class OfferWorkflowService {
     private void runAnalysis(Offer offer,String refinement){
         var sourceBundle=sources.loadOrIngest(offer);
         var prompt="""
-                Execute the analyze-opportunity SKILL exactly. Produce the canonical phase outputs, but return them in ONE machine-readable JSON envelope so the platform can persist them safely:
-                {"opportunityBrief":"<complete opportunity-brief.md>","questions":"<complete questions.md or null>","technology":"<complete technology.md or null>"}
-                Do not wrap the JSON in Markdown fences. The source manifest and representations are supplied in runtime context; original customer evidence remains authoritative.
+                Execute the analyze-opportunity SKILL exactly, but in this call return ONLY the complete
+                opportunity-brief.md as raw Markdown. Begin with its level-one heading. Do not return
+                JSON, Markdown fences, questions.md or technology.md. Preserve all required sections,
+                evidence locators and the distinction between bid and project execution.
+                The source manifest and representations are supplied in runtime context; original
+                customer evidence remains authoritative.
                 """+refinement(refinement);
         var context=offerContext(offer)+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+"\n\n"+sourceBundle.textualContext();
-        var result=agents.execute(AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst","analyze-opportunity",
+        var briefResult=agents.execute(AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst","analyze-opportunity",
                 "Entender y cualificar la oportunidad",prompt),model(offer,"analysis"),context,sourceBundle.visualAttachments());
-        var parsed=JsonFragments.parse(result.content());
-        saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.OPPORTUNITY_BRIEF,parsed.getOrDefault("opportunityBrief",result.content()));
-        if(parsed.get("questions")!=null&&!parsed.get("questions").isBlank()) saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.QUESTIONS,parsed.get("questions"));
-        if(parsed.get("technology")!=null&&!parsed.get("technology").isBlank()) saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.TECHNOLOGY,parsed.get("technology"));
+        var brief=AnalysisMarkdown.required(briefResult.content(),"opportunity-brief.md");
+        var followupContext=offerContext(offer)+"\n\n# SOURCE-BASED OPPORTUNITY BRIEF (DRAFT)\n"+brief;
+        var followups=agents.executeParallel(List.of(
+                AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
+                        "Extraer preguntas de aclaración","From the supplied opportunity brief, return ONLY questions.md as raw Markdown. Start with a level-one heading and include a table with ID, Pregunta para el cliente, Motivo / impacto, Fuente, Respuesta cliente, Asunción / decisión tomada. Leave customer answers and decisions empty. Return exactly NONE when no real questions or gaps exist. Do not return JSON or fences."),
+                AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
+                        "Extraer condicionantes tecnológicos","From the supplied opportunity brief, return ONLY technology.md as raw Markdown. Start with a level-one heading and include a table with Categoría, Tecnología / producto / arquitectura, Condición o uso indicado por el cliente, Carácter, Fuente, Observaciones. Return exactly NONE when no material technology or architecture constraints exist. Do not return JSON, fences or a proposed solution.")
+        ),model(offer,"analysis"),followupContext);
+        var questions=AnalysisMarkdown.optional(followups.get(0).content(),"questions.md");
+        var technology=AnalysisMarkdown.optional(followups.get(1).content(),"technology.md");
+        // Publish only after all three outputs have been validated.
+        saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.OPPORTUNITY_BRIEF,brief);
+        if(questions!=null) saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.QUESTIONS,questions);
+        if(technology!=null) saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.TECHNOLOGY,technology);
     }
 
     private void runStrategy(Offer offer,String refinement){
@@ -300,11 +313,16 @@ public class OfferWorkflowService {
     public record CreateOfferCommand(String name,String customer,String language,String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object proposalGuidance,Object presentationGuidance) {}
     public record UpdateOfferConfigurationCommand(String presentationLanguage,String inputDriveFolder,String outputDriveFolder,String presentationName,String presentationTemplateId,String aiProvider,Map<String,String> models,Object proposalGuidance,Object presentationGuidance) {}
 
-    static final class JsonFragments {
-        private static final ObjectMapper MAPPER=new ObjectMapper();
-        static Map<String,String> parse(String raw){
-            try{var node=MAPPER.readTree(stripFences(raw));var out=new HashMap<String,String>();for(var key:List.of("opportunityBrief","questions","technology"))if(node.hasNonNull(key))out.put(key,node.get(key).asText());return out;}
-            catch(Exception e){return Map.of("opportunityBrief",raw);}
+    static final class AnalysisMarkdown {
+        static String required(String raw,String name){
+            var content=raw==null?"":raw.trim();
+            if(!content.startsWith("# ")||!content.contains("\n")||content.startsWith("# {"))
+                throw new DomainException("Invalid or incomplete Markdown for "+name);
+            return content;
+        }
+        static String optional(String raw,String name){
+            if(raw!=null&&raw.trim().equals("NONE"))return null;
+            return required(raw,name);
         }
     }
 }

@@ -13,10 +13,22 @@ class FakeMessages:
         self.error = error
         self.last_payload = None
 
-    async def create(self, **payload):
+    def stream(self, **payload):
         self.last_payload = payload
+        return self
+
+    async def __aenter__(self):
         if self.error:
             raise self.error
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def get_final_text(self):
+        return "".join(block.text for block in self.response.content if block.type == "text")
+
+    async def get_final_message(self):
         return self.response
 
 
@@ -85,6 +97,21 @@ async def test_anthropic_adapter_normalizes_retryable_errors() -> None:
 
     assert error.value.retryable is True
     assert error.value.code == "ANTHROPIC_RATELIMITERROR"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_adapter_rejects_truncated_output() -> None:
+    response = SimpleNamespace(
+        id="msg_truncated", model="claude-test", stop_reason="max_tokens",
+        content=[SimpleNamespace(type="text", text='{"opportunityBrief":"# Partial')],
+        usage=SimpleNamespace(input_tokens=10, output_tokens=2048),
+    )
+    provider = AnthropicModelProvider(settings(), FakeClient(FakeMessages(response=response)))
+
+    with pytest.raises(ModelProviderError) as error:
+        await provider.generate(ModelRequest(messages=[ModelMessage(role=ModelRole.USER, content="Analyze")]))
+
+    assert error.value.code == "ANTHROPIC_OUTPUT_TRUNCATED"
 
 
 def test_anthropic_adapter_requires_api_key_without_injected_client() -> None:

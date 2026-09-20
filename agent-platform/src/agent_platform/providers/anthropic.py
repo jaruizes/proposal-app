@@ -30,5 +30,7 @@ class AnthropicModelProvider:
                 if not retryable or attempt==attempts-1:raise ModelProviderError(f"ANTHROPIC_{name.upper()}",str(exc) or "Anthropic request failed",retryable=retryable) from exc
                 await asyncio.sleep(self._settings.anthropic_retry_base_seconds*(2**attempt))
         else:raise ModelProviderError("ANTHROPIC_REQUEST_FAILED",str(last_exc) if last_exc else "Anthropic request failed",retryable=True)
+        if getattr(response,"stop_reason",None)=="max_tokens":
+            raise ModelProviderError("ANTHROPIC_OUTPUT_TRUNCATED","Model output reached max_tokens; the document may be incomplete")
         usage=getattr(response,"usage",None)
         return ModelResult(content=text,model=getattr(response,"model",model),usage=ModelUsage(input_tokens=getattr(usage,"input_tokens",0) or 0,output_tokens=getattr(usage,"output_tokens",0) or 0,cache_read_tokens=getattr(usage,"cache_read_input_tokens",0) or 0,cache_write_tokens=getattr(usage,"cache_creation_input_tokens",0) or 0),provider_request_id=getattr(response,"id",None),finish_reason=getattr(response,"stop_reason",None),metadata={"provider":"anthropic","transport":"stream"})
