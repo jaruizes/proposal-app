@@ -240,7 +240,7 @@ public class OfferWorkflowService {
         // Draft independent bounded blocks from the compact blueprint. These calls intentionally do not receive
         // the original corpus again: the preceding architect-owned blueprint is the grounded hand-off.
         var draftingContext=approved+"\n\n# INTERNAL SOLUTION BLUEPRINT (authoritative grounding for this draft)\n"+blueprint.content();
-        var solutionParts=agents.executeParallel(List.of(
+        var solutionPartTasks=List.of(
                 solutionPartTask(offer,"Redactar solución · arquitectura base","""
                         Return ONLY JSON {"markdown":"..."} containing sections 1, 2 and 3 through subsection 3.4 of solution.md:
                         ## 1. Resumen de la solución propuesta
@@ -281,7 +281,10 @@ public class OfferWorkflowService {
                         Section 11 must account for every triaged source and preserve disposition/reason. Section 12 must faithfully reflect specialist consultations.
                         Do not add an H1 or repeat prior sections. Keep this block concise and below 2,200 words.
                         """)
-        ),model(offer,"solutionArchitecture"),draftingContext);
+        );
+        var solutionParts=new ArrayList<LlmResult>();
+        for(var partTask:solutionPartTasks)
+            solutionParts.add(agents.execute(partTask,model(offer,"solutionArchitecture"),draftingContext));
 
         var solution="# Definición de solución\n\n"+String.join("\n\n",
                 solutionParts.stream().map(this::markdownFromJson).toList());
