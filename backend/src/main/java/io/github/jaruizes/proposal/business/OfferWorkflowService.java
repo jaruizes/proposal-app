@@ -417,6 +417,8 @@ public class OfferWorkflowService {
     }
 
     private void saveArtifact(UUID offerId,PhaseType phase,ArtifactType type,String content){
+        var latest=artifacts.findLatest(offerId,type);
+        if(latest.isPresent()&&Objects.equals(latest.get().content(),content))return;
         artifacts.save(new Artifact(UUID.randomUUID(),offerId,phase,type,artifacts.nextVersion(offerId,type),content,Instant.now()));
     }
     private String approvedArtifactsContext(UUID offerId,List<ArtifactType> types){var b=new StringBuilder();for(var t:types)artifacts.findLatest(offerId,t).ifPresent(a->b.append("\n\n# ").append(t).append("\n").append(a.content()));return b.toString();}
