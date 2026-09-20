@@ -318,7 +318,15 @@ public class OfferWorkflowService {
     }
 
     private AgentTask solutionPartTask(Offer offer,String objective,String prompt){
-        var key=switch(objective){\n            case "Redactar solución · arquitectura base" -> "solution.part.architecture";\n            case "Redactar solución · seguridad y operación" -> "solution.part.security-operations";\n            case "Redactar solución · decisiones y delivery" -> "solution.part.decisions-delivery";\n            case "Redactar solución · cierre y trazabilidad" -> "solution.part.traceability";\n            default -> "solution.part."+Integer.toHexString(objective.hashCode());\n        };\n        return AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,objective,prompt).withOutputFormat("json").withCheckpoint(key);
+        var key=switch(objective){
+            case "Redactar solución · arquitectura base" -> "solution.part.architecture";
+            case "Redactar solución · seguridad y operación" -> "solution.part.security-operations";
+            case "Redactar solución · decisiones y delivery" -> "solution.part.decisions-delivery";
+            case "Redactar solución · cierre y trazabilidad" -> "solution.part.traceability";
+            default -> "solution.part."+Integer.toHexString(objective.hashCode());
+        };
+        return AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,objective,prompt)
+                .withOutputFormat("json").withCheckpoint(key);
     }
 
     private String markdownFromJson(LlmResult result){
