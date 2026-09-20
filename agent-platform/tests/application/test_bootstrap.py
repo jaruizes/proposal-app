@@ -61,6 +61,7 @@ def test_bootstrap_catalog_replicates_current_proposal_copilot_definitions() -> 
         "analyze-opportunity",
         "build-strategy",
         "define-solution",
+        "compose-proposal",
         "design-proposal",
         "generate-presentation",
     }
@@ -84,7 +85,7 @@ async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default(
     importer = BootstrapImporter(skills, agents)
 
     first = await importer.import_all()
-    assert len(first["skills"]["created"]) == 7
+    assert len(first["skills"]["created"]) == 8
     assert len(first["agents"]["created"]) == 6
 
     original = skill_repository.values["build-strategy"]
