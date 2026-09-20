@@ -28,6 +28,8 @@ public class OfferJpaEntity {
     private String presentationTemplateId;
     @Column(name = "proposal_template_id")
     private String proposalTemplateId;
+    @Column(name = "generate_presentation", nullable = false)
+    private boolean generatePresentation = true;
     @Column(name = "ai_provider")
     private String aiProvider;
     @Column(name = "models_json", columnDefinition = "text")
@@ -66,6 +68,8 @@ public class OfferJpaEntity {
     public void setPresentationTemplateId(String presentationTemplateId) { this.presentationTemplateId = presentationTemplateId; }
     public String getProposalTemplateId() { return proposalTemplateId; }
     public void setProposalTemplateId(String proposalTemplateId) { this.proposalTemplateId = proposalTemplateId; }
+    public boolean isGeneratePresentation() { return generatePresentation; }
+    public void setGeneratePresentation(boolean generatePresentation) { this.generatePresentation = generatePresentation; }
     public String getAiProvider() { return aiProvider; }
     public void setAiProvider(String aiProvider) { this.aiProvider = aiProvider; }
     public String getModelsJson() { return modelsJson; }
