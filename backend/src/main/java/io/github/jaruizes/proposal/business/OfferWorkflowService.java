@@ -209,42 +209,149 @@ public class OfferWorkflowService {
         var sourceBundle=sources.loadOrIngest(offer);
         var approved=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY));
 
-        // First decide which original customer sources are actually needed. This call receives
-        // the source inventory plus approved compact artifacts, not every full source body.
+        // Triage the complete source inventory before loading expensive original evidence.
         var triageContext=approved+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest();
         var triage=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
                 "Triage de fuentes y especialistas opcionales","""
-                Before writing solution.md, use the approved current-offer artifacts plus the source manifest to decide which ORIGINAL customer sources require review.
+                Before designing the solution, use the approved current-offer artifacts plus the source manifest to decide which ORIGINAL customer sources require review.
                 Classify every source as REVIEW_IN_DEPTH, TARGETED_REVIEW or SKIP. Select originals whenever exact technical constraints, versions, integrations, security, data, volumes, SLAs, diagrams or other factual details may affect the solution.
                 Return ONLY JSON: {"sourceReview":[{"id":"DOC-001","disposition":"REVIEW_IN_DEPTH","reason":"..."}],"specialistConsultations":[{"agentKey":"security-specialist","question":"..."}]}.
                 Maximum two consultations. Do not request base roles as specialists.
                 """).withOutputFormat("json"),model(offer,"solutionArchitecture"),triageContext);
 
-        // Only the selected originals are injected into the expensive solution-generation calls.
-        // They remain the factual authority; technology.md and the other approved artifacts are indexes/summaries.
         var selectedSources=sources.selectForSolution(sourceBundle,triage.content());
         var evidenceContext=approved+"\n\n# SOURCE MANIFEST (SELECTED ORIGINALS)\n"+selectedSources.manifest()
                 +"\n\n"+selectedSources.textualContext();
 
         var specialistResults=runRequestedSpecialists(offer,evidenceContext,triage.content(),selectedSources.visualAttachments());
-        var architectContext=evidenceContext+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
-        var architect=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
-                "Definir solución propuesta","Execute section A of define-solution. Produce ONLY the complete solution.md as raw Markdown, without an outer code fence or filename heading, including source review and any specialist consultations. Do not estimate effort, duration, staffing, cost or price."+refinement(refinement)),
-                model(offer,"solutionArchitecture"),architectContext,selectedSources.visualAttachments());
-        var solution=architect.content();
+
+        // The architect performs one evidence-grounding pass over the authoritative originals.
+        // It returns a compact internal blueprint rather than attempting the whole solution.md in one model response.
+        var blueprintContext=evidenceContext+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
+        var blueprint=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
+                "Aterrizar blueprint técnico de la solución","""
+                Execute the evidence-review and architectural reasoning needed for section A of define-solution, but DO NOT write solution.md yet.
+                Produce a compact INTERNAL solution blueprint as JSON. It must preserve enough grounded detail and DOC-nnn/page/slide/sheet/section locators to draft the final document without rereading originals.
+                Include: solutionSummary, principles, logicalArchitecture, components, integrations, data, security, resilience, observability, infrastructure, legacyAndTransition, decisionsAndTradeoffs, deliveryConstraints, risks, capabilityProfiles, assumptionsAndTbds, proposalHighlights, sourceReview, specialistValidations.
+                Distinguish FACT, PRINCIPLE, PROPOSAL, DECISION and ASSUMPTION where material. Do not estimate effort, staffing, duration, cost or price.
+                Be selective: keep the complete JSON below roughly 20,000 characters. Do not duplicate source text.
+                """).withOutputFormat("json"),model(offer,"solutionArchitecture"),blueprintContext,selectedSources.visualAttachments());
+
+        // Draft independent bounded blocks from the compact blueprint. These calls intentionally do not receive
+        // the original corpus again: the preceding architect-owned blueprint is the grounded hand-off.
+        var draftingContext=approved+"\n\n# INTERNAL SOLUTION BLUEPRINT (authoritative grounding for this draft)\n"+blueprint.content();
+        var solutionParts=agents.executeParallel(List.of(
+                solutionPartTask(offer,"Redactar solución · arquitectura base","""
+                        Return ONLY JSON {"markdown":"..."} containing sections 1, 2 and 3 through subsection 3.4 of solution.md:
+                        ## 1. Resumen de la solución propuesta
+                        ## 2. Principios de solución
+                        ## 3. Arquitectura de solución
+                        ### 3.1 Arquitectura lógica
+                        ### 3.2 Componentes principales
+                        ### 3.3 Integraciones
+                        ### 3.4 Datos
+                        Preserve evidence locators and epistemic labels where material. Do not add an H1. Do not write later sections.
+                        Keep this block concise and below 2,500 words.
+                        """),
+                solutionPartTask(offer,"Redactar solución · seguridad y operación","""
+                        Return ONLY JSON {"markdown":"..."} containing exactly:
+                        ### 3.5 Seguridad
+                        ### 3.6 Alta disponibilidad, resiliencia y continuidad
+                        ### 3.7 Observabilidad y operación
+                        ### 3.8 Despliegue e infraestructura
+                        ## 4. Tratamiento del legado y transición
+                        Preserve evidence locators and epistemic labels where material. Do not add an H1 or repeat sections 1-3.4.
+                        Keep this block concise and below 2,500 words.
+                        """),
+                solutionPartTask(offer,"Redactar solución · decisiones y delivery","""
+                        Return ONLY JSON {"markdown":"..."} containing exactly:
+                        ## 5. Decisiones técnicas y trade-offs
+                        ## 6. Condicionantes de delivery
+                        ## 7. Riesgos de ejecución y mitigaciones actualizadas
+                        ## 8. Capacidades/perfiles necesarios a alto nivel
+                        Do not estimate effort, staffing, duration, cost or price. Do not add an H1 or repeat prior sections.
+                        Keep this block concise and below 2,200 words.
+                        """),
+                solutionPartTask(offer,"Redactar solución · cierre y trazabilidad","""
+                        Return ONLY JSON {"markdown":"..."} containing exactly:
+                        ## 9. Decisiones, asunciones y TBDs pendientes
+                        ## 10. Elementos clave que deberán aparecer en la oferta
+                        ## 11. Revisión de fuentes realizada por el arquitecto
+                        ## 12. Consultas/validaciones de especialistas realizadas
+                        Section 11 must account for every triaged source and preserve disposition/reason. Section 12 must faithfully reflect specialist consultations.
+                        Do not add an H1 or repeat prior sections. Keep this block concise and below 2,200 words.
+                        """)
+        ),model(offer,"solutionArchitecture"),draftingContext);
+
+        var solution="# Definición de solución\n\n"+String.join("\n\n",
+                solutionParts.stream().map(this::markdownFromJson).toList());
+        validateAssembledSolution(solution);
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION,solution);
 
-        // Delivery is deliberately sequential and consumes the architect artifact in its own isolated role context.
-        var deliveryContext=evidenceContext+"\n\n# solution.md\n"+solution;
+        // Delivery also uses a grounding pass before the final document, so the Delivery Manager can inspect
+        // authoritative originals without forcing the final delivery-plan.md call to carry the whole corpus.
+        var deliveryReviewContext=evidenceContext+"\n\n# solution.md\n"+solution;
+        var deliveryReview=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
+                "Aterrizar restricciones y estrategia de delivery","""
+                Review the approved solution and the selected ORIGINAL customer evidence for delivery implications. Do NOT write delivery-plan.md yet.
+                Return ONLY compact JSON with: recommendedMethodology, rationale, inceptionOrDiscovery, reestimationOrDecisionGates, workstreams, milestones, dependencies, governance, customerAndThirdPartyParticipation, acceptanceAndValidation, cutoverTransitionHandover, risksAndTbds, capabilityCoverage, sourceReview.
+                Preserve material evidence locators. Do not redefine the technical solution and do not estimate effort, staffing, duration, cost or price.
+                Keep the JSON below roughly 16,000 characters and avoid duplicating source text.
+                """).withOutputFormat("json"),model(offer,"deliveryPlanning"),deliveryReviewContext,selectedSources.visualAttachments());
+
+        var deliveryContext=approved+"\n\n# solution.md\n"+solution+"\n\n# INTERNAL DELIVERY REVIEW\n"+deliveryReview.content();
         var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
-                "Definir enfoque de ejecución","Execute section B of define-solution. Produce ONLY the complete unestimated delivery-plan.md as raw Markdown, without an outer code fence or filename heading. Include capability → workstream coverage."),
-                model(offer,"deliveryPlanning"),deliveryContext,selectedSources.visualAttachments());
+                "Definir enfoque de ejecución","""
+                Execute section B of define-solution. Produce ONLY the complete unestimated delivery-plan.md as raw Markdown, without an outer code fence or filename heading.
+                Use the supplied solution.md and INTERNAL DELIVERY REVIEW. Cover methodology/lifecycle, inception or discovery where appropriate, decision/re-estimation gates, workstreams, milestones, dependencies, governance, customer/third-party participation, acceptance, cutover/transition/handover, risks/TBDs and capability → workstream coverage.
+                Do not redefine the technical solution. Do not estimate effort, staffing, duration, cost or price. Keep the document focused and below 4,500 words.
+                """),model(offer,"deliveryPlanning"),deliveryContext);
         var deliveryPlan=delivery.content();
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.DELIVERY_PLAN,deliveryPlan);
 
         agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"business-analyst","define-solution",
                 "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and delivery-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text"),
                 model(offer,"solutionArchitecture"),approved+"\n\n# solution.md\n"+solution+"\n\n# delivery-plan.md\n"+deliveryPlan);
+    }
+
+    private AgentTask solutionPartTask(Offer offer,String objective,String prompt){
+        return AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,objective,prompt).withOutputFormat("json");
+    }
+
+    private String markdownFromJson(LlmResult result){
+        try{
+            var markdown=json.readTree(result.content()).path("markdown").asText();
+            if(markdown==null||markdown.isBlank())throw new DomainException("Solution section returned empty markdown");
+            return markdown.trim();
+        }catch(DomainException e){throw e;}
+        catch(Exception e){throw new DomainException("Invalid structured solution section: "+e.getMessage());}
+    }
+
+    private void validateAssembledSolution(String solution){
+        var required=List.of(
+                "# Definición de solución",
+                "## 1. Resumen de la solución propuesta",
+                "## 2. Principios de solución",
+                "## 3. Arquitectura de solución",
+                "### 3.1 Arquitectura lógica",
+                "### 3.2 Componentes principales",
+                "### 3.3 Integraciones",
+                "### 3.4 Datos",
+                "### 3.5 Seguridad",
+                "### 3.6 Alta disponibilidad, resiliencia y continuidad",
+                "### 3.7 Observabilidad y operación",
+                "### 3.8 Despliegue e infraestructura",
+                "## 4. Tratamiento del legado y transición",
+                "## 5. Decisiones técnicas y trade-offs",
+                "## 6. Condicionantes de delivery",
+                "## 7. Riesgos de ejecución y mitigaciones actualizadas",
+                "## 8. Capacidades/perfiles necesarios a alto nivel",
+                "## 9. Decisiones, asunciones y TBDs pendientes",
+                "## 10. Elementos clave que deberán aparecer en la oferta",
+                "## 11. Revisión de fuentes realizada por el arquitecto",
+                "## 12. Consultas/validaciones de especialistas realizadas");
+        var missing=required.stream().filter(h->!solution.contains(h)).toList();
+        if(!missing.isEmpty())throw new DomainException("Assembled solution.md is incomplete. Missing headings: "+String.join(", ",missing));
     }
 
     private String runRequestedSpecialists(Offer offer,String context,String triage,List<LlmRequest.Attachment> attachments){
