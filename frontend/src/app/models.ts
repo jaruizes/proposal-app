@@ -6,7 +6,7 @@ export interface AgentExecutionTelemetry{
   id:string;offerId:string;phase:string;agentKey:string;
   status:'PENDING'|'RUNNING'|'COMPLETED'|'FAILED'|'CANCELLED'|string;
   objective?:string;output?:string;model?:string;inputTokens:number;outputTokens:number;
-  providerRequestId?:string;startedAt?:Date|string;completedAt?:Date|string;errorMessage?:string;
+  providerRequestId?:string;startedAt?:Date|string;completedAt?:Date|string;errorMessage?:string;checkpointKey?:string;inputFingerprint?:string;reusedFromExecutionId?:string;
 }
 export interface OfferExecution{id:string;name:string;customer?:string;presentationLanguage:string;inputDriveFolder:string;outputDriveFolder:string;presentationName:string;generatePresentation:boolean;provider:string;models:Record<string,string>;proposalGuidance?:{sections:ProposalSectionConfig[]};sections:any;currentStep:string;overallStatus:'Trabajando'|'Esperando aprobación'|'Cancelado'|'Completado'|'Error'|'Pendiente';createdAt:Date|string;phases:Phase[];}
 
