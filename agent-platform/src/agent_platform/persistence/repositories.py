@@ -12,12 +12,29 @@ def _base_to_domain(r): return KnowledgeBase(id=r.id,key=r.key,name=r.name,descr
 def _document_to_domain(r): return KnowledgeDocument(id=r.id,knowledge_base_key=r.knowledge_base_key,title=r.title,content=r.content,media_type=r.media_type,source_uri=r.source_uri,metadata=r.metadata_json or {},status=KnowledgeDocumentStatus(r.status),created_at=r.created_at)
 def _chunk_to_domain(r): return KnowledgeChunk(id=r.id,document_id=r.document_id,ordinal=r.ordinal,content=r.content,metadata=r.metadata_json or {},embedding=list(r.embedding) if r.embedding is not None else None,embedding_model=r.embedding_model,created_at=r.created_at)
 
+
+def _sync_related_values(existing, desired, key, record_type):
+    """Reuse unchanged child rows so a sync cannot reinsert an existing unique key."""
+    by_value = {getattr(record, key): record for record in existing}
+    return [by_value.get(value) or record_type(**{key: value}) for value in dict.fromkeys(desired)]
+
 class PostgresAgentRepository:
     def __init__(self,session:AsyncSession): self.session=session
     async def list(self): result=await self.session.execute(select(AgentRecord).order_by(AgentRecord.key)); return [_agent_to_domain(r) for r in result.scalars().unique().all()]
     async def get_by_key(self,key): result=await self.session.execute(select(AgentRecord).where(AgentRecord.key==key)); r=result.scalars().unique().one_or_none(); return _agent_to_domain(r) if r else None
     async def create(self,a): self.session.add(AgentRecord(id=a.id,key=a.key,name=a.name,description=a.description,role=a.role,model_policy=a.model_policy.model_dump(mode="json"),constraints=a.constraints.model_dump(mode="json"),version=a.version,enabled=a.enabled,capabilities=[AgentCapabilityRecord(value=v) for v in a.capabilities],skills=[AgentSkillRecord(skill_key=v) for v in a.skills],tools=[AgentToolRecord(tool_key=v) for v in a.allowed_tools],knowledge_scopes=[AgentKnowledgeScopeRecord(scope_key=v) for v in a.knowledge_scopes])); await self.session.commit(); return a
-    async def update(self,a): result=await self.session.execute(select(AgentRecord).where(AgentRecord.key==a.key)); r=result.scalars().unique().one(); r.name=a.name; r.description=a.description; r.role=a.role; r.model_policy=a.model_policy.model_dump(mode="json"); r.constraints=a.constraints.model_dump(mode="json"); r.version=a.version; r.enabled=a.enabled; r.capabilities=[AgentCapabilityRecord(value=v) for v in a.capabilities]; r.skills=[AgentSkillRecord(skill_key=v) for v in a.skills]; r.tools=[AgentToolRecord(tool_key=v) for v in a.allowed_tools]; r.knowledge_scopes=[AgentKnowledgeScopeRecord(scope_key=v) for v in a.knowledge_scopes]; await self.session.commit(); return a
+    async def update(self,a):
+        result=await self.session.execute(select(AgentRecord).where(AgentRecord.key==a.key))
+        r=result.scalars().unique().one()
+        r.name=a.name; r.description=a.description; r.role=a.role
+        r.model_policy=a.model_policy.model_dump(mode="json"); r.constraints=a.constraints.model_dump(mode="json")
+        r.version=a.version; r.enabled=a.enabled
+        r.capabilities=_sync_related_values(r.capabilities,a.capabilities,"value",AgentCapabilityRecord)
+        r.skills=_sync_related_values(r.skills,a.skills,"skill_key",AgentSkillRecord)
+        r.tools=_sync_related_values(r.tools,a.allowed_tools,"tool_key",AgentToolRecord)
+        r.knowledge_scopes=_sync_related_values(r.knowledge_scopes,a.knowledge_scopes,"scope_key",AgentKnowledgeScopeRecord)
+        await self.session.commit()
+        return a
 class PostgresSkillRepository:
     def __init__(self,session:AsyncSession): self.session=session
     async def list(self): result=await self.session.execute(select(SkillRecord).order_by(SkillRecord.key)); return [_skill_to_domain(r) for r in result.scalars().all()]
