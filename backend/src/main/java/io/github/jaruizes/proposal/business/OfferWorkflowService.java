@@ -228,7 +228,7 @@ public class OfferWorkflowService {
         // The architect performs one evidence-grounding pass over the authoritative originals.
         // It returns a compact internal blueprint rather than attempting the whole solution.md in one model response.
         var blueprintContext=evidenceContext+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
-        var blueprint=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
+        var blueprint=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,
                 "Aterrizar blueprint técnico de la solución","""
                 Execute the evidence-review and architectural reasoning needed for section A of define-solution, but DO NOT write solution.md yet.
                 Produce a compact INTERNAL solution blueprint as JSON. It must preserve enough grounded detail and DOC-nnn/page/slide/sheet/section locators to draft the final document without rereading originals.
@@ -239,7 +239,7 @@ public class OfferWorkflowService {
 
         // Draft independent bounded blocks from the compact blueprint. These calls intentionally do not receive
         // the original corpus again: the preceding architect-owned blueprint is the grounded hand-off.
-        var draftingContext=approved+"\n\n# INTERNAL SOLUTION BLUEPRINT (authoritative grounding for this draft)\n"+blueprint.content();
+        var draftingContext=offerContext(offer)+"\n\n# INTERNAL SOLUTION BLUEPRINT (authoritative grounding for this draft)\n"+blueprint.content();
         var solutionPartTasks=List.of(
                 solutionPartTask(offer,"Redactar solución · arquitectura base","""
                         Return ONLY JSON {"markdown":"..."} containing sections 1, 2 and 3 through subsection 3.4 of solution.md:
@@ -294,7 +294,7 @@ public class OfferWorkflowService {
         // Delivery also uses a grounding pass before the final document, so the Delivery Manager can inspect
         // authoritative originals without forcing the final delivery-plan.md call to carry the whole corpus.
         var deliveryReviewContext=evidenceContext+"\n\n# solution.md\n"+solution;
-        var deliveryReview=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
+        var deliveryReview=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager",null,
                 "Aterrizar restricciones y estrategia de delivery","""
                 Review the approved solution and the selected ORIGINAL customer evidence for delivery implications. Do NOT write delivery-plan.md yet.
                 Return ONLY compact JSON with: recommendedMethodology, rationale, inceptionOrDiscovery, reestimationOrDecisionGates, workstreams, milestones, dependencies, governance, customerAndThirdPartyParticipation, acceptanceAndValidation, cutoverTransitionHandover, risksAndTbds, capabilityCoverage, sourceReview.
@@ -302,7 +302,7 @@ public class OfferWorkflowService {
                 Keep the JSON below roughly 16,000 characters and avoid duplicating source text.
                 """).withOutputFormat("json"),model(offer,"deliveryPlanning"),deliveryReviewContext,selectedSources.visualAttachments());
 
-        var deliveryContext=approved+"\n\n# solution.md\n"+solution+"\n\n# INTERNAL DELIVERY REVIEW\n"+deliveryReview.content();
+        var deliveryContext=offerContext(offer)+"\n\n# solution.md\n"+solution+"\n\n# INTERNAL DELIVERY REVIEW\n"+deliveryReview.content();
         var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
                 "Definir enfoque de ejecución","""
                 Execute section B of define-solution. Produce ONLY the complete unestimated delivery-plan.md as raw Markdown, without an outer code fence or filename heading.
