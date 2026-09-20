@@ -1,13 +1,13 @@
 """knowledge document lifecycle and versioning
 
-Revision ID: 0007_knowledge_document_lifecycle
+Revision ID: 0007_knowledge_lifecycle
 Revises: 0006_ontology
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision="0007_knowledge_document_lifecycle"
+revision="0007_knowledge_lifecycle"
 down_revision="0006_ontology"
 branch_labels=None
 depends_on=None
