@@ -99,11 +99,34 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+      document-renderer:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
       interval: 10s
       timeout: 5s
       retries: 20
+
+  document-renderer:
+    build:
+      context: .
+      dockerfile: document-renderer/Dockerfile
+    environment:
+      DOCUMENT_RENDERER_TEMPLATE_DIR: /opt/document-renderer/templates
+    ports:
+      - "8090:8090"
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   backend:
     build:
@@ -120,6 +143,8 @@ services:
       GOOGLE_OAUTH_CREDENTIALS: /app/.secrets/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /app/.secrets/google-token.json
       GOOGLE_SLIDES_TEMPLATE_ID: ${GOOGLE_SLIDES_TEMPLATE_ID:-}
+      PROPOSAL_TEMPLATE_ID: ${PROPOSAL_TEMPLATE_ID:-builtin-neutral}
+      DOCUMENT_RENDERER_URL: http://document-renderer:8090
       MCP_GOOGLE_WORKSPACE_COMMAND: node
       MCP_GOOGLE_WORKSPACE_SCRIPT: /app/mcp/google-workspace/dist/server.js
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-collector:4318/v1/traces

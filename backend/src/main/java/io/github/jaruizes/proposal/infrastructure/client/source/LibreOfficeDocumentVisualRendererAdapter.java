@@ -6,16 +6,28 @@ import org.springframework.stereotype.Component;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Component
 public class LibreOfficeDocumentVisualRendererAdapter implements DocumentVisualRendererPort {
     @Override
     public Optional<Path> renderPdf(Path source, Path outputDirectory) {
+        Path profileDirectory = null;
         try {
             Files.createDirectories(outputDirectory);
-            var process = new ProcessBuilder("soffice", "--headless", "--convert-to", "pdf", "--outdir",
-                    outputDirectory.toString(), source.toString())
+            profileDirectory = Files.createTempDirectory("lo-profile-");
+            var profileUri = profileDirectory.toUri().toString();
+            var process = new ProcessBuilder(
+                    "soffice",
+                    "-env:UserInstallation=" + profileUri,
+                    "--headless",
+                    "--nologo",
+                    "--nodefault",
+                    "--nofirststartwizard",
+                    "--convert-to", "pdf",
+                    "--outdir", outputDirectory.toString(),
+                    source.toString())
                     .redirectErrorStream(true)
                     .start();
             if (!process.waitFor(Duration.ofSeconds(90).toSeconds(), TimeUnit.SECONDS)) {
@@ -26,9 +38,17 @@ public class LibreOfficeDocumentVisualRendererAdapter implements DocumentVisualR
             var dot=name.lastIndexOf('.');
             var base=dot>0?name.substring(0,dot):name;
             var pdf=outputDirectory.resolve(base+".pdf");
-            return Files.exists(pdf)?Optional.of(pdf):Optional.empty();
+            return process.exitValue()==0 && Files.exists(pdf)?Optional.of(pdf):Optional.empty();
         } catch (Exception e) {
             return Optional.empty();
+        } finally {
+            if (profileDirectory != null) {
+                try (var walk = Files.walk(profileDirectory)) {
+                    walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                        try { Files.deleteIfExists(path); } catch (Exception ignored) {}
+                    });
+                } catch (Exception ignored) {}
+            }
         }
     }
 }

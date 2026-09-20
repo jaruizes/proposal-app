@@ -22,7 +22,10 @@ RUN apt-get update && \
       libreoffice-core \
       libreoffice-writer \
       libreoffice-calc \
-      libreoffice-impress && \
+      libreoffice-impress \
+      fontconfig \
+      fonts-dejavu-core \
+      fonts-liberation && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
