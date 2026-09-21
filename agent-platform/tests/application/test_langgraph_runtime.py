@@ -10,6 +10,7 @@ from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
 from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget, _proposal_context_pack, _section_context
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
+from agent_platform.config import Settings
 from agent_platform.domain import AgentDefinition, AgentExecution, AgentExecutionRequest, ExecutionStatus, SkillDefinition
 
 
@@ -416,3 +417,39 @@ def test_proposal_context_pack_is_parsed_without_guidance_tail():
         },
     )
     assert _proposal_context_pack(request)["customerAndOpportunity"]["customer"] == "ACME"
+
+
+@pytest.mark.asyncio
+async def test_proposal_cost_budget_stops_additional_generation(monkeypatch):
+    import agent_platform.application.proposal_graph as proposal_graph
+
+    guarded = Settings(
+        database_url="postgresql+asyncpg://ignored",
+        proposal_input_token_budget=250000,
+        proposal_output_token_budget=30000,
+        proposal_cost_budget_usd=0.000001,
+    )
+    monkeypatch.setattr(proposal_graph, "get_settings", lambda: guarded)
+
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    guidance='{"sections":[{"name":"Executive summary","depth":"SUMMARY"}]}'
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+    ))
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "budget" in result.error.message.lower()
+    assert len(provider.calls) == 1
