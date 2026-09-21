@@ -229,8 +229,11 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             + usage.cache_write_tokens * settings.anthropic_cache_write_cost_per_million_usd
         ) / million
 
-    def output_budget_exhausted(reserve_tokens: int = 0) -> bool:
-        return consumed["output"] + reserve_tokens >= settings.proposal_output_token_budget
+    def soft_budget_exhausted(reserve_tokens: int = 0) -> bool:
+        return (
+            consumed["output"] + reserve_tokens >= settings.proposal_output_token_budget
+            or consumed["cost_usd"] >= settings.proposal_cost_budget_usd
+        )
 
     async def assert_budget(stage: str, estimated_input_tokens: int = 0) -> None:
         """Hard guardrails only; output-token budget is a soft degradation threshold."""
@@ -240,20 +243,22 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     f"Proposal input token budget would be exceeded before {stage}: "
                     f"{consumed['input']} used, {settings.proposal_input_token_budget} allowed"
                 )
-            if consumed["cost_usd"] >= settings.proposal_cost_budget_usd:
+            if consumed["cost_usd"] >= settings.proposal_hard_cost_limit_usd:
                 raise ProposalBudgetExceeded(
-                    f"Proposal cost budget exceeded before {stage}: "
-                    f"${consumed['cost_usd']:.4f} used, ${settings.proposal_cost_budget_usd:.2f} allowed"
+                    f"Proposal hard cost safety limit exceeded before {stage}: "
+                    f"${consumed['cost_usd']:.4f} used, ${settings.proposal_hard_cost_limit_usd:.2f} allowed"
                 )
 
     async def note_soft_budget(stage: str, *, reserve_tokens: int = 0) -> bool:
-        exhausted = output_budget_exhausted(reserve_tokens)
+        exhausted = soft_budget_exhausted(reserve_tokens)
         if exhausted:
             await add_event("proposal.budget.soft_limit", {
                 "stage": stage,
                 "output_tokens": consumed["output"],
-                "soft_limit": settings.proposal_output_token_budget,
+                "soft_output_limit": settings.proposal_output_token_budget,
+                "soft_cost_limit_usd": settings.proposal_cost_budget_usd,
                 "reserve_tokens": reserve_tokens,
+                "current_cost_usd": round(consumed["cost_usd"], 6),
                 "action": "skip_optional_work",
             })
         return exhausted
@@ -760,6 +765,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     "input_tokens": settings.proposal_input_token_budget,
                     "output_tokens": settings.proposal_output_token_budget,
                     "cost_usd": settings.proposal_cost_budget_usd,
+                    "hard_cost_limit_usd": settings.proposal_hard_cost_limit_usd,
                 },
                 "proposal_consumed": {
                     "input_tokens": consumed["input"],
