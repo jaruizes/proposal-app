@@ -642,6 +642,6 @@ async def test_proposal_soft_output_budget_degrades_quality_but_completes(monkey
     assert result.artifacts
     metadata=result.artifacts[0].metadata["model_metadata"]
     assert metadata["quality_degraded"] is True
-    assert "section_reviews" in metadata["skipped_quality_steps"]
+    assert "global_review" in metadata["skipped_quality_steps"]
     events=await er.list_events(result.execution_id)
     assert any(event["event_type"]=="proposal.quality.degraded" for event in events)
