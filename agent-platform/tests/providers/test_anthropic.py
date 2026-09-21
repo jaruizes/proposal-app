@@ -119,3 +119,40 @@ def test_anthropic_adapter_requires_api_key_without_injected_client() -> None:
         AnthropicModelProvider(Settings(database_url="postgresql+asyncpg://ignored", anthropic_api_key=None))
 
     assert error.value.code == "ANTHROPIC_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_adapter_marks_stable_system_and_context_for_prompt_cache() -> None:
+    response = SimpleNamespace(
+        id="msg_cache",
+        model="claude-test",
+        stop_reason="end_turn",
+        content=[SimpleNamespace(type="text", text="OK")],
+        usage=SimpleNamespace(
+            input_tokens=20,
+            output_tokens=2,
+            cache_read_input_tokens=120,
+            cache_creation_input_tokens=0,
+        ),
+    )
+    messages = FakeMessages(response=response)
+    provider = AnthropicModelProvider(settings(), FakeClient(messages))
+
+    await provider.generate(ModelRequest(
+        system_prompt="Stable agent and skill instructions",
+        cache_system_prompt=True,
+        cacheable_context="Stable proposal context",
+        messages=[ModelMessage(role=ModelRole.USER, content="Draft this section")],
+    ))
+
+    assert messages.last_payload["system"] == [{
+        "type": "text",
+        "text": "Stable agent and skill instructions",
+        "cache_control": {"type": "ephemeral"},
+    }]
+    assert messages.last_payload["messages"][0]["content"][0] == {
+        "type": "text",
+        "text": "Stable proposal context",
+        "cache_control": {"type": "ephemeral"},
+    }
+    assert messages.last_payload["messages"][0]["content"][1]["text"] == "Draft this section"
