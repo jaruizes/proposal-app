@@ -45,19 +45,39 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
         var rawTemplateStructure=hasTemplate?text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId))):"{\"slides\":[],\"layouts\":[],\"masters\":[]}";
         var templateStructure=compactTemplateStructure(rawTemplateStructure);
 
-        // Business Analyst materialization step maps the frozen slide-plan onto the live corporate template.
-        var operationPlan=agents.execute(
-                AgentTask.of(offerId,PhaseType.PRESENTATION,"business-analyst","generate-presentation",
-                        "Plan presentation materialization","""
-                        Produce ONLY JSON with this shape: {"operations":[{"tool":"slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|slides_replace_element_text|slides_batch_update","arguments":{...}}]}.
-                        Use $PRESENTATION_ID as the presentationId placeholder. Materialize the approved slides-plan exactly: hierarchy, order and exact titles are frozen. Do not rewrite approved narrative copy.
-                        The corporate template input is a COMPACT TEMPLATE INVENTORY, not the raw Google Slides API response.
-                        Reuse/adapt the listed slide/layout patterns and element identifiers. Do not require omitted style metadata.
-                        If the inventory is empty, build a clean presentation from scratch using slides_batch_update createSlide/createShape/insertText requests.
-                        Keep operations compact: prefer one slides_batch_update operation with multiple requests over many equivalent operations.
-                        """).withOutputFormat("json"),
-                model(offer),
-                "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# COMPACT CORPORATE TEMPLATE INVENTORY\n"+templateStructure).content();
+        // Materialization is planned in bounded, checkpointable chunks. NATS still carries
+        // the same process-agnostic AgentExecution command; only the application chooses
+        // several small executions instead of one giant JSON response.
+        var slideChunks=splitSlidesPlan(slidesPlan,4);
+        var operationPlans=new ArrayList<String>();
+        for(int i=0;i<slideChunks.size();i++){
+            var chunk=slideChunks.get(i);
+            var checkpoint="presentation.materialization.chunk."+(i+1);
+            var operationPlan=agents.execute(
+                    AgentTask.of(offerId,PhaseType.PRESENTATION,"business-analyst","generate-presentation",
+                            "Plan presentation materialization chunk "+(i+1)+" of "+slideChunks.size(),"""
+                            Produce ONLY JSON with this shape:
+                            {"operations":[{"tool":"slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|slides_replace_element_text|slides_batch_update","arguments":{...}}]}.
+
+                            Use $PRESENTATION_ID as the presentationId placeholder.
+                            Materialize ONLY the supplied slides-plan chunk. The global slide IDs/order and exact titles are frozen.
+                            Do not plan or modify slides outside this chunk, except when a referenced corporate-template slide must
+                            be duplicated as the basis for one slide in this chunk. Never delete or reorder slides belonging to
+                            another chunk. Do not rewrite approved narrative copy.
+
+                            The corporate template input is a COMPACT TEMPLATE INVENTORY, not the raw Google Slides API response.
+                            Reuse/adapt listed layouts/elements when useful. If no suitable template pattern exists, use
+                            slides_batch_update createSlide/createShape/insertText requests.
+
+                            Keep the operation payload bounded. Prefer one slides_batch_update with multiple requests where safe.
+                            Do not include explanations, markdown or operations for any other chunk.
+                            """).withOutputFormat("json").withCheckpoint(checkpoint),
+                    model(offer),
+                    "# PRESENTATION GLOBAL OUTLINE\n"+slidesPlanOutline(slidesPlan)
+                            +"\n\n# CURRENT SLIDES-PLAN CHUNK\n"+chunk
+                            +"\n\n# COMPACT CORPORATE TEMPLATE INVENTORY\n"+templateStructure).content();
+            operationPlans.add(operationPlan);
+        }
 
         var folder=driveId(outputFolder);
         String created;
@@ -73,7 +93,8 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
             var node=json.readTree(created); var presentationId=node.path("id").asText(node.path("presentationId").asText());
             if(!hasTemplate&&!folder.isBlank()) tools.execute("drive_move_file",Map.of("fileId",presentationId,"destinationFolderId",folder));
             if(presentationId.isBlank()) throw new IllegalStateException("Presentation creation returned no id: "+created);
-            int initialOperations=applyOperations(presentationId,operationPlan);
+            int initialOperations=0;
+            for(var operationPlan:operationPlans) initialOperations+=applyOperations(presentationId,operationPlan);
             int qaOperations=runStructuralQa(offer,slidesPlan,presentationId);
             var structure=text(tools.execute("slides_get_presentation",Map.of("presentationId",presentationId)));
             var url="https://docs.google.com/presentation/d/"+presentationId+"/edit";
@@ -169,6 +190,53 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
             tools.execute(tool,args); count++;
         }
         return count;
+    }
+
+    List<String> splitSlidesPlan(String slidesPlan,int maxSlidesPerChunk){
+        if(slidesPlan==null||slidesPlan.isBlank())return List.of("");
+        var lines=slidesPlan.split("\\R",-1);
+        var chunks=new ArrayList<String>();
+        var header=new StringBuilder();
+        var current=new StringBuilder();
+        int currentSlides=0;
+        boolean seenSlide=false;
+
+        for(var line:lines){
+            if(line.startsWith("## SLIDE-")){
+                if(currentSlides>=maxSlidesPerChunk && current.length()>0){
+                    chunks.add(current.toString().trim());
+                    current.setLength(0);
+                    currentSlides=0;
+                }
+                currentSlides++;
+                seenSlide=true;
+            }
+            if(!seenSlide){
+                header.append(line).append('\n');
+            }else{
+                current.append(line).append('\n');
+            }
+        }
+        if(current.length()>0)chunks.add(current.toString().trim());
+        if(chunks.isEmpty())chunks.add(slidesPlan.trim());
+
+        var prefix=header.toString().trim();
+        if(!prefix.isBlank()){
+            for(int i=0;i<chunks.size();i++) chunks.set(i,prefix+"\n\n"+chunks.get(i));
+        }
+        return List.copyOf(chunks);
+    }
+
+    String slidesPlanOutline(String slidesPlan){
+        if(slidesPlan==null||slidesPlan.isBlank())return "";
+        var out=new StringBuilder();
+        for(var line:slidesPlan.split("\\R")){
+            if(line.startsWith("# ")||line.startsWith("## SLIDE-")){
+                out.append(line).append('\n');
+            }
+        }
+        var value=out.toString().trim();
+        return value.length()>12_000?value.substring(0,12_000):value;
     }
 
     String compactTemplateStructure(String raw) {
