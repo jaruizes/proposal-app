@@ -361,7 +361,7 @@ The proposal must not look like independently generated sections concatenated to
 
 ## Large-volume fallback
 
-Only when the input context is too large for a safe single-pass generation does the platform switch to bounded generation:
+Only when the input context is too large for a safe single-pass generation does the same Business Analyst AgentExecution switch to bounded internal generation:
 
 ```text
 large approved context
@@ -381,7 +381,7 @@ one global consistency review
 proposal.md
 ```
 
-Successful substeps are persisted in Valkey and reused across retries.
+Successful internal substeps are persisted in Valkey and reused across retries. Large-volume mode does not create a separate Business Analyst AgentExecution per section or for context compaction.
 
 The system does **not** regenerate already successful sections after a late failure when their input fingerprint is unchanged.
 
@@ -463,7 +463,7 @@ The plan is human-reviewed before presentation materialization starts.
 **Owner:** Business Analyst / Offer Owner  
 **Skill:** `generate-presentation`
 
-The Business Analyst owns the approved presentation content. The materialization layer applies the corporate template and may use bounded visual-design support for layout/QA.
+The Business Analyst owns the approved presentation content. The materialization layer applies the corporate template and the Business Analyst performs bounded visual QA against the generated deck.
 
 Authority order:
 
