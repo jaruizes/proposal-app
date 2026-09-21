@@ -42,6 +42,10 @@ class GraphRegistry:
             from agent_platform.application.presentation_plan_graph import add_presentation_plan_nodes
             add_presentation_plan_nodes(builder, runtime, execution)
             return
+        if graph_key == "presentation-materialization":
+            from agent_platform.application.presentation_materialization_graph import add_presentation_materialization_nodes
+            add_presentation_materialization_nodes(builder, runtime, execution)
+            return
         raise ValueError(
             f"Unknown cognitive graph {graph_key!r}. Register it in GraphRegistry before assigning it to a skill."
         )
