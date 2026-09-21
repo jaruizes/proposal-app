@@ -440,6 +440,7 @@ async def test_proposal_cost_budget_stops_additional_generation(monkeypatch):
         proposal_input_token_budget=250000,
         proposal_output_token_budget=30000,
         proposal_cost_budget_usd=0.000001,
+        proposal_hard_cost_limit_usd=0.000001,
     )
     monkeypatch.setattr(proposal_graph, "get_settings", lambda: guarded)
 
@@ -604,3 +605,51 @@ async def test_proposal_soft_output_budget_returns_valid_assembled_document(monk
     events=await er.list_events(result.execution_id)
     assert any(event["event_type"]=="proposal.global.review.skipped" for event in events)
     assert result.artifacts[0].metadata["model_metadata"]["global_review_skipped"] is True
+
+
+@pytest.mark.asyncio
+async def test_proposal_soft_output_budget_degrades_quality_but_completes(monkeypatch):
+    import agent_platform.application.proposal_graph as proposal_graph
+
+    guarded = Settings(
+        database_url="postgresql+asyncpg://ignored",
+        proposal_input_token_budget=250000,
+        proposal_output_token_budget=1,
+        proposal_cost_budget_usd=10.0,
+        proposal_hard_cost_limit_usd=20.0,
+    )
+    monkeypatch.setattr(proposal_graph, "get_settings", lambda: guarded)
+
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    guidance='{"sections":[{"name":"Executive summary","depth":"SUMMARY"},{"name":"Technical approach","depth":"STANDARD"}]}'
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":
+            "Offer name: Example\n\n"
+            "# PROPOSAL MODE\nSPLIT\n\n"
+            "# APPROVED OFFER ARTIFACTS\n"
+            "## opportunity-brief.md\nBrief\n\n"
+            "## solution.md\nSolution\n\n"
+            "## delivery-plan.md\nDelivery\n\n"
+            "# PROPOSAL GUIDANCE JSON\n"+guidance
+        },
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert result.artifacts
+    metadata=result.artifacts[0].metadata["model_metadata"]
+    assert metadata["quality_degraded"] is True
+    assert "section_reviews" in metadata["skipped_quality_steps"]
+    events=await er.list_events(result.execution_id)
+    assert any(event["event_type"]=="proposal.quality.degraded" for event in events)
