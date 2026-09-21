@@ -495,12 +495,7 @@ async def test_proposal_single_mode_uses_one_model_call_and_keeps_coherent_docum
         agent_key=agent.key,
         skill_key=skill.key,
         objective="Compose",
-        context={"business_context":
-            "Offer name: Example\n\n"
-            "# PROPOSAL MODE\nSINGLE\n\n"
-            "# APPROVED OFFER ARTIFACTS\nQualified context and approved solution.\n\n"
-            proposal_business_context(guidance)
-        },
+        context={"business_context": proposal_business_context(guidance, mode="SINGLE")},
     ))
 
     assert result.status is ExecutionStatus.COMPLETED
