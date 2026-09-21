@@ -907,6 +907,12 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "reason": "output_budget",
                 "output_tokens": consumed["output"],
             })
+            await add_event("proposal.quality.degraded", {
+                "reason": "soft_budget_or_skipped_quality_work",
+                "skipped": skipped,
+                "output_tokens": consumed["output"],
+                "estimated_cost_usd": round(consumed["cost_usd"], 6),
+            })
             last = calls[-1] if calls else None
             final = final_result(
                 proposal=proposal,
