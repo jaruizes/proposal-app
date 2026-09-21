@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from agent_platform.application.cache import CacheService, InMemoryCacheProvider
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
-from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget, _approved_artifacts, _section_context
+from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget, _approved_artifacts, _section_context, _proposal_mode
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.config import Settings
@@ -548,3 +548,26 @@ async def test_proposal_single_mode_uses_one_business_analyst_generation():
     assert result.artifacts[0].content.startswith("# Example")
     events=await er.list_events(result.execution_id)
     assert any(event["event_type"]=="proposal.single_pass" for event in events)
+
+
+def test_proposal_mode_routes_large_requested_document_to_split_before_generation():
+    guidance = '{"sections":[' + ",".join(
+        '{"name":"Section %d","depth":"DETAILED"}' % index
+        for index in range(1, 7)
+    ) + ']}'
+    request = AgentExecutionRequest(
+        agent_key="business-analyst",
+        objective="Compose",
+        context={"business_context": proposal_business_context(guidance, mode="SINGLE")},
+    )
+    assert _proposal_mode(request) == "SPLIT"
+
+
+def test_proposal_mode_keeps_small_document_single_pass():
+    guidance = '{"sections":[{"name":"Summary","depth":"SUMMARY"},{"name":"Solution","depth":"STANDARD"}]}'
+    request = AgentExecutionRequest(
+        agent_key="business-analyst",
+        objective="Compose",
+        context={"business_context": proposal_business_context(guidance, mode="SINGLE")},
+    )
+    assert _proposal_mode(request) == "SINGLE"
