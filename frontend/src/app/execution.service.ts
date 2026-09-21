@@ -91,7 +91,11 @@ export class ExecutionService {
 
   refreshAgents(id:string){
     this.http.get<AgentExecutionTelemetry[]>(`/api/offers/${id}/agents`).subscribe(items=>
-      this.agentExecutions.set([...items].sort((a,b)=>new Date(b.startedAt||0).getTime()-new Date(a.startedAt||0).getTime()))
+      this.agentExecutions.set(
+        items
+          .filter(item=>!item.reusedFromExecutionId)
+          .sort((a,b)=>new Date(b.startedAt||0).getTime()-new Date(a.startedAt||0).getTime())
+      )
     );
   }
 
