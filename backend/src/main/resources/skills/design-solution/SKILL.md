@@ -71,3 +71,10 @@ A specialist does not own the final artifact.
 `solution.md`
 
 The document must be coherent as one solution even when bounded generation is used internally for very large contexts.
+
+
+## Output size discipline
+
+For normal single-pass solution generation, keep `solution.md` below roughly 8,000 words. Prefer structured task tables, architecture/component tables and concise decision records over repetitive prose.
+
+When the selected evidence/context is large, the application may switch to bounded blueprint/block generation. That is a volume safeguard, not a reason to duplicate content.
