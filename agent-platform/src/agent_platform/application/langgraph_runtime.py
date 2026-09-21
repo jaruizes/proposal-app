@@ -26,6 +26,7 @@ class LangGraphState(TypedDict, total=False):
     proposal_content: str
     proposal_force_split: bool
     proposal_references: dict[str, list[dict]]
+    proposal_context_pack: dict
 
 
 class LangGraphAgentRuntime(AgentRuntime):
