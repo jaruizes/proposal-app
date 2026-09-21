@@ -45,7 +45,7 @@ class HttpAgentPlatformAdapterTest {
 
         var props = new AgentPlatformProperties("http://localhost:" + server.getAddress().getPort(), "", Duration.ofMillis(1), Duration.ofSeconds(2), Duration.ofSeconds(2));
         var adapter = new HttpAgentPlatformAdapter(props, WebClient.builder());
-        var task = AgentTask.of(UUID.randomUUID(), PhaseType.ANALYSIS, "business-analyst", "analyze-opportunity", "Analyze", "Return analysis");
+        var task = AgentTask.of(UUID.randomUUID(), PhaseType.ANALYSIS, "business-analyst", "qualify-opportunity", "Qualify", "Return qualification");
 
         var result = adapter.execute(task, "claude-test", "Customer context", List.of());
 
