@@ -884,3 +884,65 @@ def test_presentation_outline_oversized_section_is_split_deterministically():
     ]
     assert [slide["id"] for slide in sections[1]["slides"]]==["SLIDE-6","SLIDE-7"]
     assert sections[1]["title"].startswith("Solución y delivery")
+
+
+@pytest.mark.asyncio
+async def test_generic_resilient_single_retries_invalid_json_contract():
+    class InvalidJsonThenOkProvider:
+        def __init__(self):
+            self.requests=[]
+        async def generate(self, request: ModelRequest):
+            self.requests.append(request)
+            if len(self.requests)==1:
+                return ModelResult(
+                    content='{"operations":[{"tool":"slides_batch_update"',
+                    model="test-model",
+                    usage=ModelUsage(input_tokens=20,output_tokens=100),
+                )
+            return ModelResult(
+                content='{"operations":[]}',
+                model="test-model",
+                usage=ModelUsage(input_tokens=20,output_tokens=10),
+            )
+
+    skill=SkillDefinition(
+        key="future-json-skill",
+        name="Future JSON",
+        objective="Produce JSON",
+        instructions="Return JSON",
+        constraints={"execution":{
+            "graph":"resilient-single",
+            "truncation":{"max_attempts":3,"shrink_factors":[1.0,0.65,0.40],"min_output_tokens":500},
+        }},
+    )
+    agent=AgentDefinition(
+        key="business-analyst",
+        name="BA",
+        role="Worker",
+        skills=[skill.key],
+        model_policy={"preferred_model":"test-model","max_output_tokens":4000},
+    )
+    provider=InvalidJsonThenOkProvider();er=ExecutionRepo()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Execute",
+        constraints={"output_format":"json"},
+        context={"business_context":"bounded"},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert len(provider.requests)==2
+    assert result.artifacts[0].content == '{"operations": []}'
+    assert "complete valid JSON object" in provider.requests[1].messages[0].content
+    events=await er.list_events(result.execution_id)
+    failures=[e for e in events if e["event_type"]=="execution.model.attempt.failed"]
+    assert failures[0]["payload"]["code"]=="INVALID_AGENT_OUTPUT"
+    assert failures[0]["payload"]["recoverable_output_failure"] is True
