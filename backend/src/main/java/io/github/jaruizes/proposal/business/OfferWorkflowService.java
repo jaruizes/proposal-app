@@ -321,12 +321,13 @@ public class OfferWorkflowService {
                         Do not add an H1 or repeat prior sections. Keep this block concise and below 2,200 words.
                         """)
         );
-        var solutionParts=new ArrayList<LlmResult>();
-        for(var partTask:solutionPartTasks)
-            solutionParts.add(agents.execute(partTask,model(offer,"solutionArchitecture"),draftingContext));
+        var solutionParts=new ArrayList<String>();
+        for(var partTask:solutionPartTasks){
+            var result=agents.execute(partTask,model(offer,"solutionArchitecture"),draftingContext);
+            solutionParts.add(validateAndRepairSolutionPart(offer,partTask,result,draftingContext));
+        }
 
-        var solution="# Definición de solución\n\n"+String.join("\n\n",
-                solutionParts.stream().map(this::markdownFromJson).toList());
+        var solution="# Definición de solución\n\n"+String.join("\n\n",solutionParts);
         validateAssembledSolution(solution);
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION,solution);
 
@@ -375,6 +376,88 @@ public class OfferWorkflowService {
             return markdown.trim();
         }catch(DomainException e){throw e;}
         catch(Exception e){throw new DomainException("Invalid structured solution section: "+e.getMessage());}
+    }
+
+    private String validateAndRepairSolutionPart(Offer offer,AgentTask partTask,LlmResult result,String draftingContext){
+        var expected=expectedSolutionHeadings(partTask.objective());
+        var markdown=normalizeSolutionHeadings(markdownFromJson(result),expected);
+        var missing=missingSolutionHeadings(markdown,expected);
+        if(missing.isEmpty())return markdown;
+
+        var repairKey="solution.part.repair."+Integer.toHexString(partTask.objective().hashCode());
+        var repairPrompt="""
+                Repair ONLY the supplied solution.md block. Return ONLY JSON {"markdown":"..."}.
+                The block MUST contain every required heading below exactly once and in the same order.
+                Preserve all valid existing content, evidence locators, FACT/PRINCIPLE/PROPOSAL/DECISION/ASSUMPTION labels and technical decisions.
+                If a required section is genuinely missing, complete only that section from the INTERNAL SOLUTION BLUEPRINT.
+                Do not add sections outside this block. Do not estimate effort, staffing, duration, cost or price.
+
+                REQUIRED HEADINGS:
+                """+String.join("\n",expected)+"""
+
+                MISSING HEADINGS:
+                """+String.join("\n",missing);
+
+        var repairContext=draftingContext+"\n\n# BLOCK TO REPAIR\n"+markdown;
+        var repaired=agents.execute(
+                AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,
+                        "Reparar bloque de solution.md · "+partTask.objective(),repairPrompt)
+                        .withOutputFormat("json").withCheckpoint(repairKey),
+                model(offer,"solutionArchitecture"),repairContext);
+
+        var repairedMarkdown=normalizeSolutionHeadings(markdownFromJson(repaired),expected);
+        var stillMissing=missingSolutionHeadings(repairedMarkdown,expected);
+        if(!stillMissing.isEmpty())
+            throw new DomainException("Solution block is incomplete after targeted repair. Missing headings: "+String.join(", ",stillMissing));
+        return repairedMarkdown;
+    }
+
+    private List<String> expectedSolutionHeadings(String objective){
+        return switch(objective){
+            case "Redactar solución · arquitectura base" -> List.of(
+                    "## 1. Resumen de la solución propuesta",
+                    "## 2. Principios de solución",
+                    "## 3. Arquitectura de solución",
+                    "### 3.1 Arquitectura lógica",
+                    "### 3.2 Componentes principales",
+                    "### 3.3 Integraciones",
+                    "### 3.4 Datos");
+            case "Redactar solución · seguridad y operación" -> List.of(
+                    "### 3.5 Seguridad",
+                    "### 3.6 Alta disponibilidad, resiliencia y continuidad",
+                    "### 3.7 Observabilidad y operación",
+                    "### 3.8 Despliegue e infraestructura",
+                    "## 4. Tratamiento del legado y transición");
+            case "Redactar solución · decisiones y delivery" -> List.of(
+                    "## 5. Decisiones técnicas y trade-offs",
+                    "## 6. Condicionantes de delivery",
+                    "## 7. Riesgos de ejecución y mitigaciones actualizadas",
+                    "## 8. Capacidades/perfiles necesarios a alto nivel");
+            case "Redactar solución · cierre y trazabilidad" -> List.of(
+                    "## 9. Decisiones, asunciones y TBDs pendientes",
+                    "## 10. Elementos clave que deberán aparecer en la oferta",
+                    "## 11. Revisión de fuentes realizada por el arquitecto",
+                    "## 12. Consultas/validaciones de especialistas realizadas");
+            default -> List.of();
+        };
+    }
+
+    private List<String> missingSolutionHeadings(String markdown,List<String> expected){
+        return expected.stream().filter(heading->!markdown.contains(heading)).toList();
+    }
+
+    private String normalizeSolutionHeadings(String markdown,List<String> expected){
+        var normalized=markdown;
+        for(var canonical:expected){
+            var number=canonical.replaceFirst("^#{2,3}\\s+","").split("\\s+",2)[0];
+            var level=canonical.startsWith("### ")?"###":"##";
+            // Accept harmless model variations such as different wording after the same numbered heading,
+            // missing punctuation, or a wrong H2/H3 level. The canonical heading remains owned by the workflow.
+            var pattern="(?mi)^\\s*#{1,4}\\s*"+java.util.regex.Pattern.quote(number)
+                    +"(?:\\s+|\\s*[-–—:]\\s*).*$";
+            normalized=normalized.replaceFirst(pattern,java.util.regex.Matcher.quoteReplacement(canonical));
+        }
+        return normalized.trim();
     }
 
     private void validateAssembledSolution(String solution){
