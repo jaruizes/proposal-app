@@ -87,7 +87,7 @@ Large volume or an incomplete/truncated single pass:
 
 ```text
 build_context
-  → compact approved artifacts once
+  → deterministically select canonical artifacts per section
   → section-aware reference retrieval
   → bounded section drafting
   → issues-only review
