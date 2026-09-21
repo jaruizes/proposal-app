@@ -145,7 +145,7 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
         var content = hasArtifact ? artifacts.get(0).path("content").asText() : null;
         var usage = payload.path("usage");
         var error = completed ? null
-                : (hasArtifact
+                : ("execution.failed".equals(eventType)
                     ? payload.path("error").path("message").asText("Agent Platform execution failed")
                     : "Agent Platform completed without a usable artifact");
 
