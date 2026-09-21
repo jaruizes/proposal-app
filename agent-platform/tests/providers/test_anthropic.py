@@ -112,6 +112,11 @@ async def test_anthropic_adapter_rejects_truncated_output() -> None:
         await provider.generate(ModelRequest(messages=[ModelMessage(role=ModelRole.USER, content="Analyze")]))
 
     assert error.value.code == "ANTHROPIC_OUTPUT_TRUNCATED"
+    assert error.value.partial_content == '{"opportunityBrief":"# Partial'
+    assert error.value.usage is not None
+    assert error.value.usage.input_tokens == 10
+    assert error.value.usage.output_tokens == 2048
+    assert error.value.provider_request_id == "msg_truncated"
 
 
 def test_anthropic_adapter_requires_api_key_without_injected_client() -> None:
