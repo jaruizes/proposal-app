@@ -178,6 +178,30 @@
                   <div><strong>{{formatTokens(agent.outputTokens)}}</strong><small>salida</small></div>
                   <div><strong>{{formatTokens(agent.inputTokens + agent.outputTokens)}}</strong><small>total</small></div>
                 </div>
+                <div class="agent-detail" *ngIf="proposalSteps(agent).length">
+                  <div class="agent-meta">
+                    <span><b>Coste estimado PROPOSAL</b> {{formatCost(proposalConsumed(agent)?.estimated_cost_usd)}}</span>
+                    <span><b>Presupuesto</b> {{formatCost(proposalBudget(agent)?.cost_usd)}}</span>
+                    <span><b>Cache read</b> {{formatTokens(proposalConsumed(agent)?.cache_read_tokens || 0)}}</span>
+                    <span><b>Cache write</b> {{formatTokens(proposalConsumed(agent)?.cache_write_tokens || 0)}}</span>
+                  </div>
+                  <div style="overflow-x:auto">
+                    <table style="width:100%;border-collapse:collapse;margin:.75rem 0;font-size:.82rem">
+                      <thead><tr><th style="text-align:left">Paso</th><th style="text-align:left">Sección</th><th>Input</th><th>Output</th><th>Cache R</th><th>Cache W</th><th>Coste</th></tr></thead>
+                      <tbody>
+                        <tr *ngFor="let step of proposalSteps(agent)">
+                          <td>{{proposalStepLabel(step.stage)}} <span *ngIf="step.reused">♻</span></td>
+                          <td>{{step.section || '—'}}</td>
+                          <td style="text-align:right">{{formatTokens(step.input_tokens)}}</td>
+                          <td style="text-align:right">{{formatTokens(step.output_tokens)}}</td>
+                          <td style="text-align:right">{{formatTokens(step.cache_read_tokens)}}</td>
+                          <td style="text-align:right">{{formatTokens(step.cache_write_tokens)}}</td>
+                          <td style="text-align:right">{{formatCost(step.estimated_cost_usd)}}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
                 <div class="agent-error friendly" *ngIf="agent.errorMessage">
                   <div><strong>Qué ha ocurrido</strong><span>{{friendlyAgentError(agent)}}</span></div>
                   <details><summary>Ver detalle técnico</summary><pre>{{agent.errorMessage}}</pre></details>
