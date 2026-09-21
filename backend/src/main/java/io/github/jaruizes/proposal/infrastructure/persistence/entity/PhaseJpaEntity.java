@@ -25,6 +25,8 @@ public class PhaseJpaEntity {
     private Instant startedAt;
     @Column(name = "completed_at")
     private Instant completedAt;
+    @Column(columnDefinition = "text")
+    private String refinement;
 
     public PhaseJpaEntity() {}
 
@@ -44,4 +46,6 @@ public class PhaseJpaEntity {
     public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
     public Instant getCompletedAt() { return completedAt; }
     public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
+    public String getRefinement() { return refinement; }
+    public void setRefinement(String refinement) { this.refinement = refinement; }
 }
