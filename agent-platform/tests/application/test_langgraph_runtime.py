@@ -23,6 +23,18 @@ class AgentRepo:
 
 class SkillRepo(AgentRepo):pass
 
+
+def proposal_business_context(guidance: str, mode: str = "SPLIT") -> str:
+    return (
+        "Offer name: Example\n\n"
+        f"# PROPOSAL MODE\n{mode}\n\n"
+        "# APPROVED OFFER ARTIFACTS\n"
+        "# OPPORTUNITY_BRIEF\nApproved opportunity brief.\n\n"
+        "# SOLUTION\nApproved solution.\n\n"
+        "# DELIVERY_PLAN\nApproved delivery plan.\n\n"
+        "# PROPOSAL GUIDANCE JSON\n" + guidance
+    )
+
 class ExecutionRepo:
     def __init__(self):self.items={};self.events={}
     async def get(self,id):return self.items.get(id)
@@ -99,14 +111,14 @@ async def test_proposal_graph_preserves_configured_order_and_usage():
     er=ExecutionRepo();provider=ProposalProvider()
     runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
     guidance='{"sections":[{"name":"Executive summary","depth":"SUMMARY"},{"name":"Ignored","enabled":false},{"name":"Technical approach","depth":"DETAILED","guidance":"Explain integrations"}]}'
-    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance})
+    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":proposal_business_context(guidance)})
     result=await runtime.execute(request)
     assert result.status is ExecutionStatus.COMPLETED
     content=result.artifacts[0].content
     assert content.startswith("# Example\n\n## Executive summary\n")
     assert content.index("## Executive summary") < content.index("## Technical approach")
     assert "Ignored" not in content
-    assert result.usage.input_tokens==60
+    assert result.usage.input_tokens==50
     assert [e["event_type"] for e in await er.list_events(result.execution_id)].count("proposal.section.reviewed")==2
 
 
@@ -116,14 +128,14 @@ async def test_proposal_global_review_corrects_issues_without_non_convergent_fai
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider(issues=True)
     runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
-    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+'{"sections":[{"name":"Technical approach"}]}'})
+    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":proposal_business_context('{"sections":[{"name":"Technical approach"}]}')})
     result=await runtime.execute(request)
     assert result.status is ExecutionStatus.COMPLETED
     assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
     events=await er.list_events(result.execution_id)
     assert any(e["event_type"]=="proposal.section.revised" for e in events)
     assert any(e["event_type"]=="proposal.global.review.corrected" for e in events)
-    assert result.usage.input_tokens==50
+    assert result.usage.input_tokens==40
 
 
 @pytest.mark.asyncio
@@ -132,12 +144,12 @@ async def test_proposal_global_review_revises_only_affected_section():
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider(revise_once=True)
     runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
-    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+'{"sections":[{"name":"Executive summary"},{"name":"Technical approach"}]}'})
+    request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":proposal_business_context('{"sections":[{"name":"Executive summary"},{"name":"Technical approach"}]}')})
     result=await runtime.execute(request)
     assert result.status is ExecutionStatus.COMPLETED
     assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
     assert "## Executive summary\n\nEvidence-backed draft." in result.artifacts[0].content
-    assert result.usage.input_tokens==70
+    assert result.usage.input_tokens==60
 
 
 def test_proposal_rejects_missing_or_invalid_guidance():
@@ -199,7 +211,7 @@ async def test_proposal_graph_retrieves_section_reference_as_non_factual_context
         agent_key=agent.key,
         skill_key=skill.key,
         objective="Compose",
-        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+        context={"business_context":proposal_business_context(guidance)},
     )
     result=await runtime.execute(request)
 
@@ -233,7 +245,7 @@ async def test_proposal_graph_falls_back_cleanly_when_no_reference_is_relevant()
         agent_key=agent.key,
         skill_key=skill.key,
         objective="Compose",
-        context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+guidance},
+        context={"business_context":proposal_business_context(guidance)},
     )
     result=await runtime.execute(request)
 
@@ -297,7 +309,7 @@ async def test_proposal_graph_serializes_db_bound_retrieval_and_event_persistenc
         agent_key=agent.key,
         skill_key=skill.key,
         objective="Compose",
-        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+        context={"business_context":proposal_business_context(guidance)},
     ))
 
     assert result.status is ExecutionStatus.COMPLETED
@@ -365,7 +377,7 @@ async def test_proposal_substeps_are_reused_across_new_execution_ids():
         agent_key=agent.key,
         skill_key=skill.key,
         objective="Compose",
-        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+        context={"business_context":proposal_business_context(guidance)},
     )
 
     first=await runtime.execute(request)
@@ -446,7 +458,7 @@ async def test_proposal_cost_budget_stops_additional_generation(monkeypatch):
         agent_key=agent.key,
         skill_key=skill.key,
         objective="Compose",
-        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+        context={"business_context":proposal_business_context(guidance)},
     ))
 
     assert result.status is ExecutionStatus.FAILED
@@ -487,7 +499,7 @@ async def test_proposal_single_mode_uses_one_model_call_and_keeps_coherent_docum
             "Offer name: Example\n\n"
             "# PROPOSAL MODE\nSINGLE\n\n"
             "# APPROVED OFFER ARTIFACTS\nQualified context and approved solution.\n\n"
-            "# PROPOSAL GUIDANCE JSON\n"+guidance
+            proposal_business_context(guidance)
         },
     ))
 
