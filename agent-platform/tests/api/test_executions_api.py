@@ -15,12 +15,12 @@ def setup_function() -> None:
         key="business-analyst",
         name="Business Analyst",
         role="Analyze business opportunities.",
-        skills=["analyze-opportunity"],
+        skills=["qualify-opportunity"],
     )
-    skills["analyze-opportunity"] = SkillDefinition(
-        key="analyze-opportunity",
-        name="Analyze opportunity",
-        objective="Understand the opportunity.",
+    skills["qualify-opportunity"] = SkillDefinition(
+        key="qualify-opportunity",
+        name="Qualify opportunity",
+        objective="Understand and qualify the opportunity.",
         instructions="Analyze the supplied context and identify facts, assumptions and questions.",
     )
 
@@ -30,23 +30,27 @@ def test_execution_contract_runs_agent_and_returns_result() -> None:
         "/v1/executions",
         json={
             "agent_key": "business-analyst",
-            "skill_key": "analyze-opportunity",
+            "skill_key": "qualify-opportunity",
             "objective": "Analyze this opportunity",
             "context": {"offer_id": "offer-123"},
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 202
     body = response.json()
-    assert body["status"] == "COMPLETED"
-    assert body["artifacts"][0]["type"] == "AGENT_OUTPUT"
-    assert "Runtime executed successfully" in body["artifacts"][0]["content"]
-    assert body["usage"]["input_tokens"] == 100
-    assert body["provider_request_id"] == "msg_test_123"
+    assert body["status"] == "QUEUED"
+    execution_id = body["id"]
 
-    fetched = client.get(f"/v1/executions/{body['execution_id']}")
+    result = client.get(f"/v1/executions/{execution_id}/events")
+    assert result.status_code == 200
+    assert "event: execution.completed" in result.text
+    assert "event: execution.result" in result.text
+
+    fetched = client.get(f"/v1/executions/{execution_id}")
     assert fetched.status_code == 200
     assert fetched.json()["status"] == "COMPLETED"
     assert fetched.json()["model"] == "claude-test"
+    assert fetched.json()["usage"]["input_tokens"] == 100
+    assert fetched.json()["provider_request_id"] == "msg_test_123"
 
 
 def test_execution_requires_registered_agent_and_skill() -> None:
@@ -68,7 +72,7 @@ def test_execution_events_exposes_full_lifecycle() -> None:
         "/v1/executions",
         json={"agent_key": "business-analyst", "objective": "Analyze this opportunity"},
     )
-    execution_id = created.json()["execution_id"]
+    execution_id = created.json()["id"]
 
     events = client.get(f"/v1/executions/{execution_id}/events")
     assert events.status_code == 200
