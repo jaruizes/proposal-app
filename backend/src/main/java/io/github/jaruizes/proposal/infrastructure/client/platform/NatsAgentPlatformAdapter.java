@@ -153,18 +153,40 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
 
     private void publishTerminalEvent(AgentExecutionProtocol.EventEnvelope event) {
         var payload = mapper.valueToTree(event.payload());
-        var artifacts = payload.path("artifacts");
-        var hasArtifact = artifacts.isArray() && !artifacts.isEmpty()
-                && !artifacts.get(0).path("content").asText("").isBlank();
+        var artifactNodes = payload.path("artifacts");
+        var artifactList = new java.util.ArrayList<AgentPlatformArtifact>();
+        if (artifactNodes.isArray()) {
+            for (var artifact : artifactNodes) {
+                artifactList.add(new AgentPlatformArtifact(
+                        artifact.path("type").asText("AGENT_OUTPUT"),
+                        nullIfBlank(artifact.path("name").asText()),
+                        artifact.path("media_type").asText("text/plain"),
+                        nullIfBlank(artifact.path("content").asText()),
+                        nullIfBlank(artifact.path("uri").asText()),
+                        artifact.path("metadata").isObject()
+                                ? mapper.convertValue(artifact.path("metadata"), new TypeReference<Map<String,Object>>(){})
+                                : Map.of()
+                ));
+            }
+        }
+        var primary = artifactList.stream()
+                .filter(AgentPlatformArtifact::hasInlineContent)
+                .findFirst()
+                .orElse(null);
+        var hasArtifact = artifactList.stream().anyMatch(a -> a.hasInlineContent() || a.hasReference());
         var completed = "execution.completed".equals(event.eventType())
                 && !"FAILED".equals(payload.path("status").asText())
                 && hasArtifact;
-        var content = hasArtifact ? artifacts.get(0).path("content").asText() : null;
+        var content = primary == null ? null : primary.content();
         var usage = payload.path("usage");
         Map<String,Object> telemetry=Map.of();
-        if(hasArtifact){
-            var modelMetadata=artifacts.get(0).path("metadata").path("model_metadata");
-            if(modelMetadata.isObject()) telemetry=mapper.convertValue(modelMetadata,new TypeReference<Map<String,Object>>(){});
+        if(primary!=null && primary.metadata()!=null){
+            var modelMetadata=primary.metadata().get("model_metadata");
+            if(modelMetadata instanceof Map<?,?> map){
+                @SuppressWarnings("unchecked")
+                var cast=(Map<String,Object>)map;
+                telemetry=cast;
+            }
         }
         var error = completed ? null
                 : ("execution.failed".equals(event.eventType())
@@ -182,7 +204,8 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
                 usage.path("output_tokens").asLong(0),
                 nullIfBlank(payload.path("provider_request_id").asText()),
                 error,
-                telemetry
+                telemetry,
+                List.copyOf(artifactList)
         ));
     }
 
