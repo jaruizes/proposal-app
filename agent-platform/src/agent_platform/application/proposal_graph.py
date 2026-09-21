@@ -24,6 +24,10 @@ class ProposalPlanError(ValueError):
     pass
 
 
+class ProposalBudgetExceeded(ProposalPlanError):
+    pass
+
+
 _SECTION_BUDGETS = {
     "SUMMARY": {"words": 700, "tokens": 2200},
     "STANDARD": {"words": 1200, "tokens": 3600},
@@ -33,6 +37,46 @@ _SECTION_BUDGETS = {
 
 def _section_budget(depth: str) -> dict[str, int]:
     return _SECTION_BUDGETS.get(depth, _SECTION_BUDGETS["STANDARD"])
+
+
+def _proposal_context_pack(request: AgentExecutionRequest) -> dict[str, Any]:
+    context = request.context.get("business_context", "")
+    marker = "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
+    end_marker = "\n\n# PROPOSAL GUIDANCE JSON\n"
+    if not isinstance(context, str) or marker not in context:
+        return {}
+    raw = context.split(marker, 1)[1]
+    if end_marker in raw:
+        raw = raw.split(end_marker, 1)[0]
+    try:
+        value = json.loads(raw.strip())
+        return value if isinstance(value, dict) else {}
+    except ValueError:
+        return {}
+
+
+def _section_context(pack: dict[str, Any], section: dict[str, str]) -> dict[str, Any]:
+    """Select only context-pack slices relevant to one configured proposal section."""
+    text = (section.get("name", "") + " " + section.get("guidance", "")).casefold()
+    keys = {"customerAndOpportunity", "mandatoryRequirements", "evidenceIndex"}
+    rules = [
+        (("resumen", "summary", "executive", "valor", "value"), {"goalsAndScope", "strategy", "solutionHighlights", "differentiators", "risksAssumptionsAndTbds"}),
+        (("reto", "context", "understand", "necesidad"), {"goalsAndScope", "strategy", "risksAssumptionsAndTbds"}),
+        (("objetiv", "alcance", "scope", "goal"), {"goalsAndScope", "strategy", "risksAssumptionsAndTbds"}),
+        (("requis", "condicion", "constraint"), {"goalsAndScope", "securityAndOperations", "risksAssumptionsAndTbds"}),
+        (("estrateg", "strategy"), {"strategy", "goalsAndScope", "solutionHighlights", "differentiators"}),
+        (("solución", "solution", "technical"), {"solutionHighlights", "architectureAndIntegrations", "securityAndOperations", "strategy"}),
+        (("arquitect", "integr", "datos", "data"), {"architectureAndIntegrations", "solutionHighlights", "securityAndOperations"}),
+        (("ejecución", "delivery", "workstream", "metodolog"), {"deliveryApproach", "risksAssumptionsAndTbds", "goalsAndScope"}),
+        (("calidad", "risk", "riesg", "supuest", "assumption"), {"risksAssumptionsAndTbds", "securityAndOperations", "deliveryApproach"}),
+        (("diferenci", "próxim", "next step", "valor añadido"), {"differentiators", "strategy", "solutionHighlights", "deliveryApproach"}),
+    ]
+    for needles, additions in rules:
+        if any(needle in text for needle in needles):
+            keys.update(additions)
+    if len(keys) <= 3:
+        keys.update({"goalsAndScope", "strategy", "solutionHighlights", "risksAssumptionsAndTbds"})
+    return {key: pack[key] for key in keys if key in pack}
 
 
 def configured_sections(request: AgentExecutionRequest) -> list[dict[str, str]]:
