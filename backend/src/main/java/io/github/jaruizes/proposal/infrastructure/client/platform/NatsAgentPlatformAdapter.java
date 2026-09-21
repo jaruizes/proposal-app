@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jaruizes.proposal.domain.exceptions.DomainException;
 import io.github.jaruizes.proposal.domain.model.AgentPlatformExecutionEvent;
+import io.github.jaruizes.proposal.domain.model.AgentExecutionProtocol;
 import io.github.jaruizes.proposal.domain.model.AgentTask;
 import io.github.jaruizes.proposal.domain.model.LlmRequest;
 import io.github.jaruizes.proposal.domain.model.LlmResult;
@@ -60,36 +61,45 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
     @Override
     public void submit(AgentTask task, String model, String context, List<LlmRequest.Attachment> attachments) {
         try {
-            var executionId = task.id().toString();
-            var request = new LinkedHashMap<String,Object>();
-            request.put("execution_id", executionId);
-            request.put("correlation_id", task.offerId().toString());
-            request.put("agent_key", task.agentKey());
-            request.put("skill_key", task.skillKey());
-            request.put("objective", task.prompt() == null || task.prompt().isBlank() ? task.objective() : task.prompt());
-            request.put("model", model);
-            request.put("context", Map.of(
-                    "offer_id", task.offerId().toString(),
-                    "phase", task.phase().name(),
-                    "business_context", context,
-                    "spring_objective", task.objective()
-            ));
-            request.put("constraints", Map.of(
-                    "workflow_owner", "spring",
-                    "business_phase", task.phase().name(),
-                    "commercial_estimation_allowed", false,
-                    "output_format", task.metadata().getOrDefault("output_format", "text")
-            ));
-            request.put("attachments", attachments.stream().map(a -> Map.of(
-                    "name", a.name(), "media_type", a.mediaType(), "content", "",
-                    "metadata", Map.of("visual_attachment", true, "source", "spring", "base64_omitted", true)
-            )).toList());
+            var executionId = task.id();
+            var request = new AgentExecutionProtocol.Request(
+                    executionId,
+                    task.offerId(),
+                    task.agentKey(),
+                    task.skillKey(),
+                    task.prompt() == null || task.prompt().isBlank() ? task.objective() : task.prompt(),
+                    model,
+                    Map.of(
+                            "process_instance_id", task.offerId().toString(),
+                            "business_step", task.phase().name(),
+                            "business_context", context,
+                            "business_objective", task.objective()
+                    ),
+                    Map.of(
+                            "workflow_owner", "spring",
+                            "business_step", task.phase().name(),
+                            "commercial_estimation_allowed", false,
+                            "output_format", task.metadata().getOrDefault("output_format", "text")
+                    ),
+                    attachments.stream().map(a -> new AgentExecutionProtocol.InputResource(
+                            a.name(),
+                            a.mediaType(),
+                            null,
+                            null,
+                            Map.of(
+                                    "source", "spring",
+                                    "inline_binary_omitted", true,
+                                    "original_bytes_base64", a.base64Data()==null?0:a.base64Data().length()
+                            )
+                    )).toList()
+            );
 
-            var envelope = Map.of(
-                    "schema_version", "1",
-                    "application", "proposal-copilot",
-                    "execution_id", executionId,
-                    "request", request
+            var envelope = new AgentExecutionProtocol.CommandEnvelope(
+                    AgentExecutionProtocol.SCHEMA_VERSION,
+                    AgentExecutionProtocol.COMMAND_MESSAGE_TYPE,
+                    "proposal-copilot",
+                    executionId,
+                    request
             );
             var payload = mapper.writeValueAsBytes(envelope);
             if (payload.length > properties.maxCommandBytes()) {
@@ -100,7 +110,7 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
                 );
             }
             var headers = new Headers();
-            headers.add("Nats-Msg-Id", executionId);
+            headers.add("Nats-Msg-Id", executionId.toString());
             PublishAck ack = jetStream.publish(properties.commandSubject(), headers, payload);
             if (ack == null) throw new DomainException("NATS did not acknowledge execution command");
         } catch (DomainException e) {
