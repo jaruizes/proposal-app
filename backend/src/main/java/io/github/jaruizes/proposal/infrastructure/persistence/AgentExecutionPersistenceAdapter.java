@@ -26,4 +26,9 @@ public class AgentExecutionPersistenceAdapter implements AgentExecutionRepositor
     public List<AgentExecution> findByOfferId(UUID offerId) {
         return repository.findByOfferIdOrderByStartedAtAsc(offerId).stream().map(PersistenceMapper::toDomain).toList();
     }
+
+    @Override
+    public java.util.Optional<AgentExecution> findById(UUID id) {
+        return repository.findById(id).map(PersistenceMapper::toDomain);
+    }
 }
