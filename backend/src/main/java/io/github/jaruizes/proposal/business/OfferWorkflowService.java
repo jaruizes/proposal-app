@@ -434,7 +434,34 @@ public class OfferWorkflowService {
     }
 
     private void runProposal(Offer offer,String refinement){
-        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
+        var approved=approvedArtifactsContext(offer.id(),List.of(
+                ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,
+                ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
+
+        // Build one compact, evidence-preserving representation of all approved upstream artifacts.
+        // It is checkpointed independently, so retries do not pay again for compaction.
+        var contextPack=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst",null,
+                "Construir contexto compacto para la oferta","""
+                Build an INTERNAL proposal context pack from the approved artifacts below.
+                Return ONLY compact JSON with these top-level keys:
+                customerAndOpportunity, mandatoryRequirements, goalsAndScope, strategy, solutionHighlights,
+                architectureAndIntegrations, securityAndOperations, deliveryApproach, risksAssumptionsAndTbds,
+                differentiators, evidenceIndex.
+
+                Requirements:
+                - Preserve material FACT/DECISION/ASSUMPTION distinctions and DOC/page/section locators.
+                - Keep exact mandatory requirements, constraints and unresolved gaps.
+                - Do not invent or strengthen claims.
+                - Deduplicate repeated content across upstream artifacts.
+                - Prefer concise arrays/objects over prose.
+                - evidenceIndex should map short evidence ids to source locators, not copy source text.
+                - Keep the complete JSON below roughly 24,000 characters.
+                - This is internal context, not proposal prose.
+                """).withOutputFormat("json").withCheckpoint("proposal.context-pack"),
+                model(offer,"proposal"),offerContext(offer)+approved+refinement(refinement));
+
+        var context=offerContext(offer)
+                +"\n\n# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"+contextPack.content();
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst","compose-proposal",
                 "Redactar oferta detallada","Execute compose-proposal exactly. Produce ONLY the complete canonical proposal.md in Markdown. Follow PROPOSAL GUIDANCE as authoritative structure/depth guidance. Never invent prices, effort, staffing, dates, contractual commitments or customer facts."+refinement(refinement)).withCheckpoint("proposal.document"),
                 model(offer,"proposal"),context+"\n\n# PROPOSAL GUIDANCE JSON\n"+proposalGuidanceJson(offer.proposalGuidance()));
