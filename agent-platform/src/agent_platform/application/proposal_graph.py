@@ -651,7 +651,10 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 for ref in references
             ]
 
-        results = dict(await asyncio.gather(*(one(section) for section in sections)))
+        results = {}
+        for section in sections:
+            name, references = await one(section)
+            results[name] = references
         await add_event("proposal.retrieval.summary", {
             "enabled": True,
             "sections": len(sections),
@@ -702,7 +705,9 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             }, max_output_tokens=budget["tokens"])
             return name, await validated_section_body(base, result.content, name, source_stage="draft")
 
-        results = await asyncio.gather(*(one(section) for section in sections))
+        results = []
+        for section in sections:
+            results.append(await one(section))
         return {"proposal_drafts": dict(results)}
 
     async def review_sections(state: dict) -> dict:
@@ -753,7 +758,9 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 base, correction.content, name, source_stage="section-review"
             )
 
-        results = await asyncio.gather(*(one(section) for section in state["proposal_sections"]))
+        results = []
+        for section in state["proposal_sections"]:
+            results.append(await one(section))
         return {"proposal_drafts": dict(results)}
 
     async def assemble(state: dict) -> dict:
@@ -835,9 +842,10 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     section_base, correction.content, name, source_stage="global-revision"
                 )
 
-            drafts.update(await asyncio.gather(
-                *(revise(name, instructions) for name, instructions in grouped.items())
-            ))
+            revisions = []
+            for name, instructions in grouped.items():
+                revisions.append(await revise(name, instructions))
+            drafts.update(revisions)
             proposal = _assemble(title, sections, drafts)
             await add_event("proposal.global.review.corrected", {
                 "issues": len(normalized),
