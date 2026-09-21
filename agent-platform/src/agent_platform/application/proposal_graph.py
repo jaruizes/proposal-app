@@ -377,10 +377,20 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         assembled = runtime._prompt_assembler.build(agent, skill, request, context)
 
         business_context = request.context.get("business_context", "")
-        pack_marker = "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
-        offer_header = business_context.split(pack_marker, 1)[0].strip() if isinstance(business_context, str) else ""
         state_pack = state.get("proposal_context_pack")
         pack = state_pack if isinstance(state_pack, dict) else _proposal_context_pack(request)
+
+        if isinstance(business_context, str):
+            if isinstance(state_pack, dict):
+                # Once the large-context pack exists, do not keep injecting the original
+                # approved artifacts into every section call.
+                offer_header = business_context.split("# APPROVED OFFER ARTIFACTS\n", 1)[0].strip()
+            else:
+                pack_marker = "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
+                offer_header = business_context.split(pack_marker, 1)[0].strip()
+        else:
+            offer_header = ""
+
         selected = _section_context(pack, section) if section is not None else {}
         cacheable_parts = ["# Current offer", offer_header]
         if selected:
