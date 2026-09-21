@@ -904,7 +904,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         if await note_soft_budget("proposal.global.reviewed", reserve_tokens=2500):
             skipped.append("global_review")
             await add_event("proposal.global.review.skipped", {
-                "reason": "output_budget",
+                "reason": "soft_budget",
                 "output_tokens": consumed["output"],
             })
             await add_event("proposal.quality.degraded", {
