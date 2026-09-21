@@ -166,7 +166,6 @@ public class OfferWorkflowService {
                 var offer=find(offerId);
                 switch(phaseType){
                     case ANALYSIS->runAnalysis(offer,refinement);
-                    case STRATEGY->runStrategy(offer,refinement);
                     case SOLUTION->runSolution(offer,refinement);
                     case PROPOSAL->runProposal(offer,refinement);
                     case SLIDE_PLAN->runSlidePlan(offer,refinement);
@@ -209,44 +208,61 @@ public class OfferWorkflowService {
 
     private void runAnalysis(Offer offer,String refinement){
         var sourceBundle=sources.loadOrIngest(offer);
-        var prompt="""
-                Execute the analyze-opportunity SKILL exactly, but in this call return ONLY the complete
-                opportunity-brief.md as raw Markdown. Begin with its level-one heading. Do not return
-                JSON, Markdown fences, questions.md or technology.md. Preserve all required sections,
-                evidence locators and the distinction between bid and project execution.
-                The source manifest and representations are supplied in runtime context; original
-                customer evidence remains authoritative.
-                """+refinement(refinement);
-        var context=offerContext(offer)+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+"\n\n"+sourceBundle.textualContext();
-        var briefResult=agents.execute(AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst","analyze-opportunity",
-                "Entender y cualificar la oportunidad",prompt).withCheckpoint("analysis.opportunity-brief"),model(offer,"analysis"),context,sourceBundle.visualAttachments());
-        var brief=AnalysisMarkdown.required(briefResult.content(),"opportunity-brief.md");
-        var followupContext=offerContext(offer)+"\n\n# SOURCE-BASED OPPORTUNITY BRIEF (DRAFT)\n"+brief;
-        var followups=agents.executeParallel(List.of(
-                AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
-                        "Extraer preguntas de aclaración","From the supplied opportunity brief, return ONLY questions.md as raw Markdown. Start with a level-one heading and include a table with ID, Pregunta para el cliente, Motivo / impacto, Fuente, Respuesta cliente, Asunción / decisión tomada. Leave customer answers and decisions empty. Return exactly NONE when no real questions or gaps exist. Do not return JSON or fences.").withOutputFormat("optional_markdown").withCheckpoint("analysis.questions"),
-                AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst",null,
-                        "Extraer condicionantes tecnológicos","From the supplied opportunity brief, return ONLY technology.md as raw Markdown. Start with a level-one heading and include a table with Categoría, Tecnología / producto / arquitectura, Condición o uso indicado por el cliente, Carácter, Fuente, Observaciones. Return exactly NONE when no material technology or architecture constraints exist. Do not return JSON, fences or a proposed solution.").withOutputFormat("optional_markdown").withCheckpoint("analysis.technology")
-        ),model(offer,"analysis"),followupContext);
-        var questions=AnalysisMarkdown.optional(followups.get(0).content(),"questions.md");
-        var technology=AnalysisMarkdown.optional(followups.get(1).content(),"technology.md");
-        // Publish only after all three outputs have been validated.
-        saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.OPPORTUNITY_BRIEF,brief);
-        if(questions!=null) saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.QUESTIONS,questions);
-        if(technology!=null) saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.TECHNOLOGY,technology);
-    }
+        var context=offerContext(offer)
+                +"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()
+                +"\n\n"+sourceBundle.textualContext();
 
-    private void runStrategy(Offer offer,String refinement){
-        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY));
-        var result=agents.execute(AgentTask.of(offer.id(),PhaseType.STRATEGY,"business-analyst","build-strategy",
-                "Construir estrategia de respuesta","Execute build-strategy exactly. Return only the complete strategy.md Markdown."+refinement(refinement)).withCheckpoint("strategy.document"),
-                model(offer,"strategy"),context);
-        saveArtifact(offer.id(),PhaseType.STRATEGY,ArtifactType.STRATEGY,result.content());
+        var result=agents.execute(
+                AgentTask.of(offer.id(),PhaseType.ANALYSIS,"business-analyst","qualify-opportunity",
+                        "Entender, calificar y definir la estrategia de respuesta","""
+                        Execute qualify-opportunity exactly using the authoritative customer sources.
+                        Perform the complete opportunity understanding, qualification and response-strategy reasoning ONCE.
+
+                        Return ONLY JSON with this exact structure:
+                        {
+                          "opportunityBriefMarkdown":"# Entendimiento y calificación de la oportunidad\\n...",
+                          "questionsMarkdown":"# Preguntas de aclaración\\n... or NONE",
+                          "technologyMarkdown":"# Tecnologías y condicionantes tecnológicos\\n... or NONE"
+                        }
+
+                        opportunityBriefMarkdown is the main canonical artifact and MUST include:
+                        - what the customer wants and why;
+                        - expected outcomes/objectives;
+                        - bid/process dates and project timing when known;
+                        - scope IN and scope OUT;
+                        - relevant constraints and dependencies;
+                        - initial execution risks;
+                        - assumptions that can be made while questions remain open;
+                        - response strategy and recommended positioning;
+                        - potential value-add opportunities;
+                        - evidence locators and explicit gaps;
+                        - a decision-support section for the human GO/NO-GO gate.
+                        Never make the GO/NO-GO decision on behalf of the human owner.
+
+                        questionsMarkdown is optional. Use NONE when there are no material questions.
+                        technologyMarkdown is optional. Use NONE when no material customer technology/
+                        architecture constraint or stated technology exists.
+                        Do not propose the technical solution yet.
+                        """+refinement(refinement))
+                        .withOutputFormat("json")
+                        .withCheckpoint("analysis.qualification"),
+                model(offer,"analysis"),context,sourceBundle.visualAttachments());
+
+        try{
+            var root=json.readTree(result.content());
+            var brief=AnalysisMarkdown.required(root.path("opportunityBriefMarkdown").asText(),"opportunity-brief.md");
+            var questions=AnalysisMarkdown.optional(root.path("questionsMarkdown").asText("NONE"),"questions.md");
+            var technology=AnalysisMarkdown.optional(root.path("technologyMarkdown").asText("NONE"),"technology.md");
+            saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.OPPORTUNITY_BRIEF,brief);
+            if(questions!=null)saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.QUESTIONS,questions);
+            if(technology!=null)saveArtifact(offer.id(),PhaseType.ANALYSIS,ArtifactType.TECHNOLOGY,technology);
+        }catch(DomainException e){throw e;}
+        catch(Exception e){throw new DomainException("Invalid qualification output: "+e.getMessage());}
     }
 
     private void runSolution(Offer offer,String refinement){
         var sourceBundle=sources.loadOrIngest(offer);
-        var approved=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY));
+        var approved=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY));
 
         // Triage the complete source inventory before loading expensive original evidence.
         var triageContext=approved+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+refinement(refinement);
@@ -520,7 +536,7 @@ public class OfferWorkflowService {
     private void runProposal(Offer offer,String refinement){
         var approved=approvedArtifactsContext(offer.id(),List.of(
                 ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,
-                ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
+                ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
 
         // Build one compact, evidence-preserving representation of all approved upstream artifacts.
         // It is checkpointed independently, so retries do not pay again for compaction.
@@ -557,7 +573,7 @@ public class OfferWorkflowService {
     }
 
     private void runSlidePlan(Offer offer,String refinement){
-        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.STRATEGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN,ArtifactType.PROPOSAL));
+        var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN,ArtifactType.PROPOSAL));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.SLIDE_PLAN,"business-analyst","design-proposal",
                 "Planificar narrativa de presentación","Execute design-proposal exactly. Produce ONLY the canonical slides-plan.md. Human presentation guidance follows in context."+refinement(refinement)).withCheckpoint("slides.plan"),
                 model(offer,"slidePlanning"),context+"\n\n# PRESENTATION GUIDANCE\n"+Objects.toString(offer.presentationGuidance(),"none"));
@@ -601,8 +617,8 @@ public class OfferWorkflowService {
         if(generatePresentation&&(presentationName==null||presentationName.isBlank()))missing.add("nombre de la presentación");
         if(aiProvider==null||aiProvider.isBlank())missing.add("proveedor de IA");
         var requiredModels=generatePresentation
-                ?List.of("analysis","strategy","solutionArchitecture","deliveryPlanning","proposal","slidePlanning","presentation")
-                :List.of("analysis","strategy","solutionArchitecture","deliveryPlanning","proposal");
+                ?List.of("analysis","solutionArchitecture","deliveryPlanning","proposal","slidePlanning","presentation")
+                :List.of("analysis","solutionArchitecture","deliveryPlanning","proposal");
         for(var key:requiredModels)if(models==null||models.get(key)==null||models.get(key).isBlank())missing.add("modelo IA para "+key);
         if(proposalGuidance==null)missing.add("estructura de oferta detallada");
         if(generatePresentation&&guidance==null)missing.add("estructura de presentación");
@@ -615,7 +631,6 @@ public class OfferWorkflowService {
                 Map.of("name","Entendimiento del reto","enabled",true,"depth","STANDARD","guidance","Explicar contexto, necesidades y condicionantes sin inventar hechos."),
                 Map.of("name","Objetivos y alcance","enabled",true,"depth","STANDARD","guidance","Cubrir objetivos, alcance, exclusiones y dependencias conocidas."),
                 Map.of("name","Requisitos y condicionantes","enabled",true,"depth","DETAILED","guidance","Responder a requisitos funcionales, no funcionales y restricciones relevantes."),
-                Map.of("name","Estrategia de respuesta","enabled",true,"depth","STANDARD","guidance","Conectar necesidades con la estrategia aprobada."),
                 Map.of("name","Solución propuesta","enabled",true,"depth","DETAILED","guidance","Describir la solución funcional y técnica con suficiente profundidad."),
                 Map.of("name","Arquitectura e integraciones","enabled",true,"depth","DETAILED","guidance","Detallar arquitectura, componentes, datos, integraciones, seguridad y operación cuando aplique."),
                 Map.of("name","Enfoque de ejecución","enabled",true,"depth","DETAILED","guidance","Describir fases, workstreams, entregables, gobierno y dependencias sin inventar estimaciones."),
