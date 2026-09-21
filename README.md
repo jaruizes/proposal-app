@@ -713,6 +713,46 @@ Anthropic prompt caching is enabled for stable agent/skill instructions and reus
 - Google Workspace MCP integration.
 - deterministic DOCX/PDF materialization.
 
+## Reusable cognitive execution policy
+
+Agent Platform does not hard-code business skills into the LangGraph runtime. Every skill declares its cognitive execution policy in `manifest.json`:
+
+```json
+{
+  "constraints": {
+    "execution": {
+      "graph": "resilient-single",
+      "truncation": {
+        "max_attempts": 3,
+        "shrink_factors": [1.0, 0.65, 0.40],
+        "min_output_tokens": 700
+      }
+    }
+  }
+}
+```
+
+The built-in graph strategies are:
+
+| Graph | Use |
+|---|---|
+| `resilient-single` | Default for any bounded current or future skill. One cognitive task with checkpoint/cache support and automatic compact retries on provider truncation. |
+| `proposal` | Semantic decomposition for large proposal documents. |
+| `presentation-plan` | Semantic decomposition for large presentation storylines. |
+
+A new workflow step therefore does **not** require changing `LangGraphAgentRuntime`. A new skill such as `find-investments` can initially use `resilient-single`. If its cognitive process later needs planning, loops, specialist delegation or tool-driven research, implement and register a graph such as `investment-research` and reference it declaratively from the skill.
+
+The rule is:
+
+```text
+business phase / human gate       -> Spring workflow
+one cognitive execution           -> Agent Platform
+internal cognitive topology       -> graph selected by Skill
+provider max_tokens recovery      -> common resilient runtime policy
+```
+
+Specialized graphs may add semantic splitting, soft budgets and graceful quality degradation, but they remain behind the same `AgentExecutionRequest -> AgentExecutionResult` contract.
+
 ## Agent Platform
 
 - Python/FastAPI.
