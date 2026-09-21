@@ -78,11 +78,11 @@ class ProposalProvider:
         self.calls.append(stage)
         if stage.startswith("Write ONLY the body"):
             content="Evidence-backed draft."
-        elif stage.startswith("Review and correct ONLY"):
-            content="Evidence-backed reviewed body."
+        elif stage.startswith("Review ONLY section"):
+            content='{"issues":[]}'
         elif stage.startswith("Review the complete proposal"):
             needs_revision=self.issues or (self.revise_once and sum(s.startswith("Review the complete proposal") for s in self.calls)==1)
-            content='{"issues":[{"section":"Technical approach","instruction":"Clarify coverage"}]}' if needs_revision else '{"issues":[]}'
+            content='{"issues":[{"section":"Technical approach","severity":"BLOCKING","instruction":"Clarify coverage"}]}' if needs_revision else '{"issues":[]}'
         else:
             content="Evidence-backed revised body."
         return ModelResult(content=content,model="test-model",usage=ModelUsage(input_tokens=10,output_tokens=4))
@@ -132,7 +132,7 @@ async def test_proposal_global_review_revises_only_affected_section():
     result=await runtime.execute(request)
     assert result.status is ExecutionStatus.COMPLETED
     assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
-    assert "## Executive summary\n\nEvidence-backed reviewed body." in result.artifacts[0].content
+    assert "## Executive summary\n\nEvidence-backed draft." in result.artifacts[0].content
     assert result.usage.input_tokens==60
 
 
