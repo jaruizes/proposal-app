@@ -22,8 +22,6 @@ public class AgentRegistryService {
                 Set.of("source.read","source.search","knowledge.search"),"agents/delivery-manager.md"));
         register(new AgentDefinition("security-specialist","Security Specialist","Specialist",
                 Set.of("security-review","cryptography"),Set.of("source.read","knowledge.search"),"agents/security-specialist.md"));
-        register(new AgentDefinition("corporate-slide-designer","Corporate Slide Designer","Visual Specialist",
-                Set.of("corporate-layout-selection","visual-qa"),Set.of("presentation.read"),"agents/corporate-slide-designer.md"));
     }
 
     public void register(AgentDefinition definition){agents.put(definition.key(),definition);}
