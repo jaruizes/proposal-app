@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -233,3 +234,65 @@ async def test_proposal_graph_falls_back_cleanly_when_no_reference_is_relevant()
     events=await er.list_events(result.execution_id)
     section_event=next(e for e in events if e["event_type"]=="proposal.section.retrieval")
     assert section_event["payload"]["hits"]==[]
+
+
+@pytest.mark.asyncio
+async def test_proposal_graph_serializes_db_bound_retrieval_and_event_persistence():
+    class GuardedExecutionRepo(ExecutionRepo):
+        def __init__(self):
+            super().__init__()
+            self.active = 0
+            self.max_active = 0
+
+        async def add_event(self, id, event_type, payload):
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            if self.active > 1:
+                self.active -= 1
+                raise RuntimeError("concurrent AsyncSession use")
+            try:
+                await asyncio.sleep(0.005)
+                await super().add_event(id, event_type, payload)
+            finally:
+                self.active -= 1
+
+    class GuardedRetrieval(ProposalRetrievalService):
+        def __init__(self):
+            super().__init__()
+            self.active = 0
+            self.max_active = 0
+
+        async def retrieve(self, query):
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            if self.active > 1:
+                self.active -= 1
+                raise RuntimeError("concurrent AsyncSession use")
+            try:
+                await asyncio.sleep(0.005)
+                return await super().retrieve(query)
+            finally:
+                self.active -= 1
+
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=GuardedExecutionRepo();provider=ProposalProvider();retrieval=GuardedRetrieval()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+        proposal_retrieval_service=retrieval,
+    )
+    guidance='{"sections":[{"name":"Arquitectura"},{"name":"Seguridad"},{"name":"Próximos pasos"}]}'
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert retrieval.max_active == 1
+    assert er.max_active == 1
