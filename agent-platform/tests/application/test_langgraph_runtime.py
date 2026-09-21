@@ -856,7 +856,7 @@ async def test_generic_resilient_single_retries_truncation_for_future_skill():
     events=await er.list_events(result.execution_id)
     failures=[e for e in events if e["event_type"]=="execution.model.attempt.failed"]
     assert len(failures)==2
-    assert all(e["payload"]["truncated"] is True for e in failures)
+    assert all(e["payload"]["recoverable_output_failure"] is True for e in failures)
 
 
 def test_presentation_outline_oversized_section_is_split_deterministically():
