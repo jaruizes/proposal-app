@@ -26,12 +26,14 @@ agent-platform:
   api-key: ${AGENT_PLATFORM_API_KEY:}
   poll-interval: ${AGENT_PLATFORM_POLL_INTERVAL:1s}
   execution-timeout: ${AGENT_PLATFORM_EXECUTION_TIMEOUT:10m}
+  proposal-execution-timeout: ${AGENT_PLATFORM_PROPOSAL_EXECUTION_TIMEOUT:30m}
   nats:
     url: ${NATS_URL:nats://localhost:4222}
     command-subject: ${AGENT_PLATFORM_COMMAND_SUBJECT:agent-platform.commands.execution.requested}
     events-subject: ${AGENT_PLATFORM_EVENTS_SUBJECT:agent-platform.events.execution.*}
     events-durable: ${AGENT_PLATFORM_EVENTS_DURABLE:proposal-backend-events}
     execution-timeout: ${AGENT_PLATFORM_EXECUTION_TIMEOUT:10m}
+    proposal-execution-timeout: ${AGENT_PLATFORM_PROPOSAL_EXECUTION_TIMEOUT:30m}
 
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}
