@@ -467,32 +467,43 @@ public class OfferWorkflowService {
 
     private List<String> expectedSolutionHeadings(String objective){
         return switch(objective){
-            case "Redactar solución · arquitectura base" -> List.of(
+            case "Redactar solución · arquitectura" -> List.of(
+                    "# Definición de solución",
                     "## 1. Resumen de la solución propuesta",
-                    "## 2. Principios de solución",
+                    "## 2. Principios, drivers y asunciones",
                     "## 3. Arquitectura de solución",
-                    "### 3.1 Arquitectura lógica",
-                    "### 3.2 Componentes principales",
-                    "### 3.3 Integraciones",
-                    "### 3.4 Datos");
-            case "Redactar solución · seguridad y operación" -> List.of(
-                    "### 3.5 Seguridad",
-                    "### 3.6 Alta disponibilidad, resiliencia y continuidad",
-                    "### 3.7 Observabilidad y operación",
-                    "### 3.8 Despliegue e infraestructura",
-                    "## 4. Tratamiento del legado y transición");
-            case "Redactar solución · decisiones y delivery" -> List.of(
-                    "## 5. Decisiones técnicas y trade-offs",
-                    "## 6. Condicionantes de delivery",
-                    "## 7. Riesgos de ejecución y mitigaciones actualizadas",
-                    "## 8. Tareas de implementación, complejidad y perfiles");
-            case "Redactar solución · cierre y trazabilidad" -> List.of(
-                    "## 9. Decisiones, asunciones y TBDs pendientes",
-                    "## 10. Elementos clave que deberán aparecer en la oferta",
-                    "## 11. Revisión de fuentes realizada por el arquitecto",
-                    "## 12. Consultas/validaciones de especialistas realizadas");
+                    "### 3.1 Arquitectura conceptual",
+                    "### 3.2 Arquitectura lógica",
+                    "### 3.3 Arquitectura física");
+            case "Redactar solución · componentes y decisiones" -> List.of(
+                    "### 3.4 Componentes y tecnologías",
+                    "### 3.5 Integraciones y datos",
+                    "### 3.6 Seguridad, resiliencia, observabilidad y operación",
+                    "## 4. Alternativas, pros/contras y decisiones");
+            case "Redactar solución · riesgos y tareas" -> List.of(
+                    "## 5. Riesgos técnicos y puntos a validar",
+                    "## 6. Tareas de implementación, complejidad, dependencias y perfiles",
+                    "## 7. TBDs y trazabilidad");
             default -> List.of();
         };
+    }
+
+    private List<String> requiredSolutionHeadings(){
+        return List.of(
+                "# Definición de solución",
+                "## 1. Resumen de la solución propuesta",
+                "## 2. Principios, drivers y asunciones",
+                "## 3. Arquitectura de solución",
+                "### 3.1 Arquitectura conceptual",
+                "### 3.2 Arquitectura lógica",
+                "### 3.3 Arquitectura física",
+                "### 3.4 Componentes y tecnologías",
+                "### 3.5 Integraciones y datos",
+                "### 3.6 Seguridad, resiliencia, observabilidad y operación",
+                "## 4. Alternativas, pros/contras y decisiones",
+                "## 5. Riesgos técnicos y puntos a validar",
+                "## 6. Tareas de implementación, complejidad, dependencias y perfiles",
+                "## 7. TBDs y trazabilidad");
     }
 
     private List<String> missingSolutionHeadings(String markdown,List<String> expected){
@@ -515,30 +526,9 @@ public class OfferWorkflowService {
     }
 
     private void validateAssembledSolution(String solution){
-        var required=List.of(
-                "# Definición de solución",
-                "## 1. Resumen de la solución propuesta",
-                "## 2. Principios de solución",
-                "## 3. Arquitectura de solución",
-                "### 3.1 Arquitectura lógica",
-                "### 3.2 Componentes principales",
-                "### 3.3 Integraciones",
-                "### 3.4 Datos",
-                "### 3.5 Seguridad",
-                "### 3.6 Alta disponibilidad, resiliencia y continuidad",
-                "### 3.7 Observabilidad y operación",
-                "### 3.8 Despliegue e infraestructura",
-                "## 4. Tratamiento del legado y transición",
-                "## 5. Decisiones técnicas y trade-offs",
-                "## 6. Condicionantes de delivery",
-                "## 7. Riesgos de ejecución y mitigaciones actualizadas",
-                "## 8. Tareas de implementación, complejidad y perfiles",
-                "## 9. Decisiones, asunciones y TBDs pendientes",
-                "## 10. Elementos clave que deberán aparecer en la oferta",
-                "## 11. Revisión de fuentes realizada por el arquitecto",
-                "## 12. Consultas/validaciones de especialistas realizadas");
-        var missing=required.stream().filter(h->!solution.contains(h)).toList();
-        if(!missing.isEmpty())throw new DomainException("Assembled solution.md is incomplete. Missing headings: "+String.join(", ",missing));
+        var missing=requiredSolutionHeadings().stream().filter(h->!solution.contains(h)).toList();
+        if(!missing.isEmpty())
+            throw new DomainException("Assembled solution.md is incomplete. Missing headings: "+String.join(", ",missing));
     }
 
     private String runRequestedSpecialists(Offer offer,String context,String triage,List<LlmRequest.Attachment> attachments){
