@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     anthropic_api_key:str|None=None;anthropic_base_url:str|None=None;anthropic_default_model:str="claude-sonnet-4-6"
     anthropic_timeout_seconds:float=300.0;anthropic_default_max_output_tokens:int=4096;anthropic_max_retries:int=0;anthropic_retry_base_seconds:float=0.5
     embedding_provider:str="hash";embedding_model:str="hash-embedding-v1";embedding_dimensions:int=384
-    cache_backend:str="memory";cache_url:str="redis://localhost:6379/0";cache_prefix:str="agent-platform";embedding_cache_ttl_seconds:int=86400;retrieval_cache_ttl_seconds:int=900;cognitive_cache_ttl_seconds:int=900
+    cache_backend:str="memory";cache_url:str="redis://localhost:6379/0";cache_prefix:str="agent-platform";embedding_cache_ttl_seconds:int=86400;retrieval_cache_ttl_seconds:int=900;cognitive_cache_ttl_seconds:int=900;proposal_checkpoint_ttl_seconds:int=604800
     observability_enabled:bool=False;otel_service_name:str="proposal-agent-platform";otel_exporter_otlp_endpoint:str="http://localhost:4317"
     api_key_enabled:bool=False;api_key:str|None=None;protect_metrics:bool=False
     max_request_body_bytes:int=Field(default=30*1024*1024,ge=1024);rate_limit_enabled:bool=True;rate_limit_requests_per_minute:int=Field(default=240,ge=1)
