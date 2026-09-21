@@ -503,6 +503,21 @@ skill != mandatory separate model invocation
 more complexity != more agents
 ```
 
+### Expected execution shape
+
+For a normal-size offer without optional specialists, the intended cognitive execution shape is deliberately small:
+
+| Business phase | Typical AgentExecutions | Notes |
+|---|---:|---|
+| Entendimiento y calificación | 1 | One Business Analyst execution produces brief + optional questions/technology |
+| Solución y delivery | 3 | Architect source triage, architect solution, Delivery Manager plan |
+| Documento de oferta | 1 | One Business Analyst AgentExecution; large mode may use multiple internal model substeps |
+| Hilo de presentación | 1 | Only when presentation is requested |
+| Generación de presentación | 1–4 | Initial Business Analyst materialization plan plus bounded visual-QA iterations |
+
+Optional solution specialists add at most two bounded executions. A large solution may also use a compact blueprint plus three bounded architect drafting executions. Those are exceptions driven by volume or specialist need, not the default.
+
+
 Prefer:
 
 ```text
