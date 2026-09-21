@@ -6,7 +6,7 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
-from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body
+from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.domain import AgentDefinition, AgentExecution, AgentExecutionRequest, ExecutionStatus, SkillDefinition
@@ -323,3 +323,18 @@ def test_proposal_section_body_accepts_bold_repeated_h2_title():
 Contenido respaldado por evidencia.
 """
     assert _section_body(raw, "Requisitos y condicionantes") == "Contenido respaldado por evidencia."
+
+
+def test_proposal_section_budgets_are_bounded_below_agent_global_limit():
+    summary = _section_budget("SUMMARY")
+    standard = _section_budget("STANDARD")
+    detailed = _section_budget("DETAILED")
+
+    assert summary == {"words": 700, "tokens": 2200}
+    assert standard == {"words": 1200, "tokens": 3600}
+    assert detailed == {"words": 1800, "tokens": 5600}
+    assert summary["tokens"] < standard["tokens"] < detailed["tokens"] < 16000
+
+
+def test_unknown_proposal_depth_falls_back_to_standard_budget():
+    assert _section_budget("UNKNOWN") == _section_budget("STANDARD")
