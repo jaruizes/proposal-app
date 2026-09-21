@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     anthropic_timeout_seconds:float=300.0;anthropic_default_max_output_tokens:int=4096;anthropic_max_retries:int=0;anthropic_retry_base_seconds:float=0.5
     embedding_provider:str="hash";embedding_model:str="hash-embedding-v1";embedding_dimensions:int=384
     cache_backend:str="memory";cache_url:str="redis://localhost:6379/0";cache_prefix:str="agent-platform";embedding_cache_ttl_seconds:int=86400;retrieval_cache_ttl_seconds:int=900;cognitive_cache_ttl_seconds:int=900;proposal_checkpoint_ttl_seconds:int=604800
-    proposal_input_token_budget:int=250000;proposal_output_token_budget:int=30000;proposal_cost_budget_usd:float=2.0
+    proposal_input_token_budget:int=250000;proposal_output_token_budget:int=30000;proposal_cost_budget_usd:float=2.0;proposal_hard_cost_limit_usd:float=5.0
     anthropic_input_cost_per_million_usd:float=3.0;anthropic_output_cost_per_million_usd:float=15.0;anthropic_cache_read_cost_per_million_usd:float=0.30;anthropic_cache_write_cost_per_million_usd:float=3.75
     observability_enabled:bool=False;otel_service_name:str="proposal-agent-platform";otel_exporter_otlp_endpoint:str="http://localhost:4317"
     api_key_enabled:bool=False;api_key:str|None=None;protect_metrics:bool=False
