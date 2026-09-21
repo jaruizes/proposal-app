@@ -78,6 +78,11 @@ def test_bootstrap_catalog_replicates_current_proposal_copilot_definitions() -> 
     assert "design-presentation" in business_analyst.skills
     design_solution = next(skill for skill in skills if skill.key == "design-solution")
     assert "Design Solution" in design_solution.instructions
+    assert design_solution.constraints["execution"]["graph"] == "resilient-single"
+    compose = next(skill for skill in skills if skill.key == "compose-proposal")
+    assert compose.constraints["execution"]["graph"] == "proposal"
+    slides = next(skill for skill in skills if skill.key == "design-presentation")
+    assert slides.constraints["execution"]["graph"] == "presentation-plan"
 
 
 async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default() -> None:
