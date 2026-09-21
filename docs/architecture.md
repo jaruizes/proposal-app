@@ -24,24 +24,34 @@ Spring is the workflow and governance boundary. Agent Platform is the cognitive 
 
 ```text
 ANALYSIS
-  Entendimiento y cualificación
-      ↓ human approval
-STRATEGY
-  Estrategia de respuesta
-      ↓ human approval
+  Entendimiento y calificación
+  Business Analyst
+  → opportunity-brief.md + optional questions.md / technology.md
+      ↓ human GO / NO-GO
+
 SOLUTION
-  Propuesta de solución y plan
+  Propuesta de solución y plan de delivery
+  Solution Architect + Delivery Manager + optional bounded specialists
+  → solution.md + delivery-plan.md
       ↓ human approval
+
 PROPOSAL
-  Documento de oferta detallado
+  Documento de oferta
+  Business Analyst
+  → proposal.md
       ↓ human approval
       ├─ deterministic DOCX/PDF materialization
       └─ finish when presentation is disabled
+
 SLIDE_PLAN (optional)
-  Propuesta de presentación
+  Hilo de presentación
+  Business Analyst
+  → slides-plan.md
       ↓ human approval
+
 PRESENTATION (optional)
-  Generación de presentación corporativa
+  Generación de presentación
+  Business Analyst + deterministic Google Slides materialization
 ```
 
 ## Evidence authority
@@ -61,22 +71,33 @@ Historical/reference RAG
 
 SOLUTION performs source triage before injecting original documents into expensive generation calls. If triage cannot be safely interpreted, the full source bundle is used.
 
-## Proposal graph
+## Proposal generation
 
-`compose-proposal` uses LangGraph internally:
+`compose-proposal` is adaptive but always owned by one Business Analyst AgentExecution.
+
+Normal volume:
 
 ```text
 build_context
-  → plan_proposal
-  → section-aware reference retrieval
-  → parallel/bounded section drafting
-  → section review
-  → assembly
-  → global review
-  → optional targeted correction
+  → one coherent proposal generation
+  → proposal.md
 ```
 
-Reference retrieval is constrained to `reference-offers` and explicitly marked non-factual.
+Large volume or an incomplete/truncated single pass:
+
+```text
+build_context
+  → compact approved artifacts once
+  → section-aware reference retrieval
+  → bounded section drafting
+  → issues-only review
+  → targeted correction only where needed
+  → deterministic assembly
+  → one global review
+  → proposal.md
+```
+
+Large-mode substeps are checkpointed in Valkey and reused across retries. Reference retrieval is constrained to `reference-offers` and explicitly marked non-factual.
 
 ## Messaging and APIs
 
