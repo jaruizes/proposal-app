@@ -88,7 +88,8 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
             PublishAck ack = jetStream.publish(properties.commandSubject(), headers, mapper.writeValueAsBytes(envelope));
             if (ack == null) throw new DomainException("NATS did not acknowledge execution command");
 
-            JsonNode event = future.get(properties.executionTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            var timeout=timeoutFor(task);
+            JsonNode event = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
             var payload = event.path("payload");
             if ("FAILED".equals(payload.path("status").asText()) || event.path("event_type").asText().equals("execution.failed")) {
                 throw new DomainException(payload.path("error").path("message").asText("Agent Platform execution failed"));
@@ -104,7 +105,7 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
                     nullIfBlank(payload.path("provider_request_id").asText())
             );
         } catch (TimeoutException e) {
-            throw new DomainException("Agent Platform execution timed out after " + properties.executionTimeout());
+            throw new DomainException("Agent Platform execution timed out after " + timeoutFor(task));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DomainException("Interrupted while waiting for Agent Platform event");
@@ -117,6 +118,12 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
         } finally {
             pending.remove(executionId);
         }
+    }
+
+    private Duration timeoutFor(AgentTask task) {
+        return task.phase() == io.github.jaruizes.proposal.domain.model.PhaseType.PROPOSAL
+                ? properties.proposalExecutionTimeout()
+                : properties.executionTimeout();
     }
 
     private void consumeLoop() {
