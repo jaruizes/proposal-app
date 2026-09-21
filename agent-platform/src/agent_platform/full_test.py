@@ -12,11 +12,11 @@ import uuid
 EXPECTED_SKILLS = {
     "create-offer",
     "ingest-sources",
-    "analyze-opportunity",
-    "build-strategy",
-    "define-solution",
+    "qualify-opportunity",
+    "design-solution",
+    "plan-delivery",
     "compose-proposal",
-    "design-proposal",
+    "design-presentation",
     "generate-presentation",
 }
 
@@ -24,9 +24,7 @@ EXPECTED_AGENTS = {
     "business-analyst",
     "solution-architect",
     "delivery-manager",
-    "presentation-builder",
     "security-specialist",
-    "corporate-slide-designer",
 }
 
 EXPECTED_KNOWLEDGE_BASES = {
@@ -116,7 +114,7 @@ def verify_catalog(client: Client) -> None:
     for agent in agents:
         missing = set(agent.get("skills", [])) - skill_keys
         check(not missing, f"Agent {agent['key']} references missing skills: {sorted(missing)}")
-    log("6 agents + 7 skills verified, including cross references")
+    log("4 agents + 8 skills verified, including cross references")
 
 
 def bootstrap_knowledge(client: Client) -> None:
@@ -134,8 +132,8 @@ def exercise_platform(client: Client, real_model: bool) -> None:
     log("liveness/readiness + hardening headers verified")
 
     overview, _ = client.get("/v1/admin/overview")
-    check(overview["counts"]["agents"] == 6, "Admin overview agent count mismatch")
-    check(overview["counts"]["skills"] == 7, "Admin overview skill count mismatch")
+    check(overview["counts"]["agents"] == 4, "Admin overview agent count mismatch")
+    check(overview["counts"]["skills"] == 8, "Admin overview skill count mismatch")
     log("admin API verified")
 
     suffix = uuid.uuid4().hex[:8]
@@ -220,18 +218,26 @@ def exercise_platform(client: Client, real_model: bool) -> None:
         execution, _ = client.post("/v1/executions", {
             "correlation_id": str(uuid.uuid4()),
             "agent_key": "business-analyst",
-            "skill_key": "analyze-opportunity",
+            "skill_key": "qualify-opportunity",
             "objective": "Independent platform smoke test. Return a very short validation summary.",
             "context": {
                 "customer": "Milestone 23 Test",
                 "evidence": "FACT: this is synthetic test data only.",
             },
             "constraints": {"smoke_test": True},
-        })
-        check(execution["status"] == "COMPLETED", f"Real model execution failed: {execution}")
-        check(execution["artifacts"] and execution["artifacts"][0]["content"].strip(), "Real model returned empty output")
-        client.get(f"/v1/executions/{execution['execution_id']}/diagnostics")
-        log(f"real Anthropic execution verified ({execution['execution_id']})")
+        }, expected=(202,))
+        execution_id = execution["id"]
+        for _ in range(60):
+            current, _ = client.get(f"/v1/executions/{execution_id}")
+            if current["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+                break
+            import time
+            time.sleep(0.5)
+        check(current["status"] == "COMPLETED", f"Real model execution failed: {current}")
+        result, _ = client.get(f"/v1/executions/{execution_id}/result")
+        check(result["artifacts"] and result["artifacts"][0]["content"].strip(), "Real model returned empty output")
+        client.get(f"/v1/executions/{execution_id}/diagnostics")
+        log(f"real Anthropic execution verified ({execution_id})")
     else:
         log("real model execution skipped (use --real-model to enable paid Anthropic smoke test)")
 
