@@ -188,25 +188,6 @@
         "temperature": 0.1,
         "max_output_tokens": 12000
       }
-    },
-    {
-      "key": "corporate-slide-designer",
-      "source": "agents/corporate-slide-designer.md",
-      "capabilities": [
-        "corporate-layout-selection",
-        "visual-qa"
-      ],
-      "skills": [
-        "generate-presentation"
-      ],
-      "allowed_tools": [
-        "presentation.read"
-      ],
-      "model_policy": {
-        "preferred_model": "claude-sonnet-4-6",
-        "temperature": 0.1,
-        "max_output_tokens": 8000
-      }
     }
   ]
 }
