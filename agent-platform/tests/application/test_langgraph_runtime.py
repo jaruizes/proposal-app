@@ -789,3 +789,71 @@ async def test_design_presentation_large_proposal_routes_directly_to_split():
     assert result.status is ExecutionStatus.COMPLETED
     assert len(provider.prompts) == 2
     assert provider.prompts[0].startswith("Design ONLY the presentation storyline")
+
+
+@pytest.mark.asyncio
+async def test_generic_resilient_single_retries_truncation_for_future_skill():
+    class TruncatingThenOkProvider:
+        def __init__(self):
+            self.requests=[]
+        async def generate(self, request: ModelRequest):
+            self.requests.append(request)
+            if len(self.requests) < 3:
+                raise ModelProviderError(
+                    "ANTHROPIC_OUTPUT_TRUNCATED",
+                    "Model output reached max_tokens",
+                    partial_content="partial",
+                    usage=ModelUsage(input_tokens=10,output_tokens=request.max_output_tokens or 0),
+                    model="test-model",
+                )
+            return ModelResult(
+                content="# Result\n\nComplete bounded result.",
+                model="test-model",
+                usage=ModelUsage(input_tokens=10,output_tokens=20),
+            )
+
+    skill=SkillDefinition(
+        key="future-business-skill",
+        name="Future",
+        objective="Do bounded work",
+        instructions="Return complete markdown",
+        constraints={"execution":{
+            "graph":"resilient-single",
+            "truncation":{
+                "max_attempts":3,
+                "shrink_factors":[1.0,0.5,0.25],
+                "min_output_tokens":500,
+            },
+        }},
+    )
+    agent=AgentDefinition(
+        key="business-analyst",
+        name="BA",
+        role="Worker",
+        skills=[skill.key],
+        model_policy={"preferred_model":"test-model","max_output_tokens":4000},
+    )
+    provider=TruncatingThenOkProvider();er=ExecutionRepo()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Execute future workflow step",
+        constraints={"output_format":"markdown"},
+        context={"business_context":"Small bounded context"},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert len(provider.requests)==3
+    assert [r.max_output_tokens for r in provider.requests] == [4000,2000,1000]
+    assert result.artifacts[0].content.startswith("# Result")
+    events=await er.list_events(result.execution_id)
+    failures=[e for e in events if e["event_type"]=="execution.model.attempt.failed"]
+    assert len(failures)==2
+    assert all(e["payload"]["truncated"] is True for e in failures)
