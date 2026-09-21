@@ -28,6 +28,27 @@ class Attachment(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentExecutionCommandEnvelope(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: str = "1"
+    message_type: str = "agent.execution.command"
+    application: str
+    execution_id: UUID
+    request: "AgentExecutionRequest"
+
+
+class AgentExecutionEventEnvelope(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: str = "1"
+    message_type: str = "agent.execution.event"
+    execution_id: UUID
+    event_type: str
+    source_event_type: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentExecutionRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -99,3 +120,5 @@ class AgentExecutionResult(BaseModel):
     provider_request_id: str | None = None
     trace_id: str | None = None
     error: AgentError | None = None
+
+AgentExecutionCommandEnvelope.model_rebuild()
