@@ -3,11 +3,13 @@ package io.github.jaruizes.proposal.business;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jaruizes.proposal.domain.exceptions.DomainException;
+import io.github.jaruizes.proposal.domain.exceptions.AgentExecutionDeferredException;
 import io.github.jaruizes.proposal.domain.model.*;
 import io.github.jaruizes.proposal.domain.ports.*;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
+import org.springframework.context.event.EventListener;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -111,7 +113,7 @@ public class OfferWorkflowService {
         if(phase.status()!=ExecutionStatus.FAILED) throw new DomainException("Only failed phases can be retried");
         var offer=find(offerId);
         validateConfiguration(offer.presentationLanguage(),offer.inputDriveFolder(),offer.outputDriveFolder(),offer.presentationName(),offer.generatePresentation(),offer.aiProvider(),offer.models(),offer.proposalGuidance(),offer.presentationGuidance());
-        phases.save(new PhaseExecution(phase.id(),offerId,phaseType,ExecutionStatus.RUNNING,phase.version()+1,null,Instant.now(),null));
+        phases.save(new PhaseExecution(phase.id(),offerId,phaseType,ExecutionStatus.RUNNING,phase.version()+1,null,Instant.now(),null,phase.refinement()));
         offers.save(copyOffer(offer,phaseType,ExecutionStatus.RUNNING));
         submitPhase(offerId,phaseType,null);
     }
@@ -121,7 +123,7 @@ public class OfferWorkflowService {
         var phase=phases.find(offerId,phaseType).orElseThrow(()->new DomainException("Phase not found"));
         if(phase.status()==ExecutionStatus.RUNNING) throw new DomainException("Phase is already running");
         invalidateDownstream(offerId,phaseType);
-        phases.save(new PhaseExecution(phase.id(),offerId,phaseType,ExecutionStatus.RUNNING,phase.version()+1,null,Instant.now(),null));
+        phases.save(new PhaseExecution(phase.id(),offerId,phaseType,ExecutionStatus.RUNNING,phase.version()+1,null,Instant.now(),null,instruction));
         offers.save(copyOffer(find(offerId),phaseType,ExecutionStatus.RUNNING));
         submitPhase(offerId,phaseType,instruction);
     }
@@ -165,7 +167,24 @@ public class OfferWorkflowService {
                 case PRESENTATION->runPresentation(offer,refinement);
             }
             markWaiting(offerId,phaseType);
+        }catch(AgentExecutionDeferredException deferred){
+            // Expected for the NATS command/event transport. The phase remains RUNNING;
+            // the terminal event will resume the durable phase from its persisted checkpoints.
         }catch(Exception e){markFailed(offerId,phaseType,e);}
+    }
+
+    @EventListener
+    public void onAgentPlatformExecutionEvent(AgentPlatformExecutionEvent event){
+        var execution=agents.completeAsync(event);
+        if(execution==null)return; // duplicate, stale or unknown terminal event
+        if(execution.status()==AgentTaskStatus.FAILED){
+            markFailed(execution.offerId(),execution.phase(),
+                    new DomainException(execution.errorMessage()==null?"Agent Platform execution failed":execution.errorMessage()));
+            return;
+        }
+        var phase=phases.find(execution.offerId(),execution.phase()).orElse(null);
+        if(phase==null||phase.status()!=ExecutionStatus.RUNNING)return;
+        submitPhase(execution.offerId(),execution.phase(),phase.refinement());
     }
 
     private void runAnalysis(Offer offer,String refinement){
@@ -426,7 +445,7 @@ public class OfferWorkflowService {
     private String model(Offer offer,String key){return offer.models().getOrDefault(key,"claude-sonnet-4-6");}
     private String refinement(String r){return r==null||r.isBlank()?"":"\n\n# HUMAN REFINEMENT (authoritative)\n"+r;}
     private void markWaiting(UUID offerId,PhaseType type){var p=phases.find(offerId,type).orElseThrow();phases.save(new PhaseExecution(p.id(),offerId,type,ExecutionStatus.WAITING_FOR_HUMAN,p.version(),null,p.startedAt(),Instant.now()));offers.save(copyOffer(find(offerId),type,ExecutionStatus.WAITING_FOR_HUMAN));}
-    private void markFailed(UUID offerId,PhaseType type,Exception e){var p=phases.find(offerId,type).orElseThrow();phases.save(new PhaseExecution(p.id(),offerId,type,ExecutionStatus.FAILED,p.version(),e.getMessage(),p.startedAt(),Instant.now()));offers.save(copyOffer(find(offerId),type,ExecutionStatus.FAILED));}
+    private void markFailed(UUID offerId,PhaseType type,Exception e){var p=phases.find(offerId,type).orElseThrow();phases.save(new PhaseExecution(p.id(),offerId,type,ExecutionStatus.FAILED,p.version(),e.getMessage(),p.startedAt(),Instant.now(),p.refinement()));offers.save(copyOffer(find(offerId),type,ExecutionStatus.FAILED));}
     private Offer copyOffer(Offer o,PhaseType phase,ExecutionStatus status){return new Offer(o.id(),o.name(),o.customer(),o.language(),o.presentationLanguage(),o.inputDriveFolder(),o.outputDriveFolder(),o.presentationName(),"","",o.generatePresentation(),o.aiProvider(),o.models(),o.proposalGuidance(),o.presentationGuidance(),phase,status,o.createdAt(),Instant.now());}
     private void updateOptionalPresentationPhases(UUID offerId,boolean enabled){
         for(var type:List.of(PhaseType.SLIDE_PLAN,PhaseType.PRESENTATION)){
