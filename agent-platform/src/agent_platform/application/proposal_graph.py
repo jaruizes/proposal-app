@@ -339,13 +339,29 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     })
         raise AssertionError("Unreachable")
 
-    async def base_request(state: dict) -> ModelRequest:
+    async def base_request(state: dict, section: dict[str, str] | None = None) -> ModelRequest:
         request = AgentExecutionRequest.model_validate(state["request"])
         context = CognitiveContext.model_validate(state["cognitive_context"])
-        # Compose the same system prompt and bounded cognitive context used by other skills.
         agent = await runtime._agents.get(request.agent_key)
         skill = await runtime._skills.get(request.skill_key)
-        return runtime._prompt_assembler.build(agent, skill, request, context)
+        assembled = runtime._prompt_assembler.build(agent, skill, request, context)
+
+        business_context = request.context.get("business_context", "")
+        pack_marker = "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
+        offer_header = business_context.split(pack_marker, 1)[0].strip() if isinstance(business_context, str) else ""
+        pack = _proposal_context_pack(request)
+        selected = _section_context(pack, section) if section is not None else {}
+        cacheable_parts = ["# Current offer", offer_header]
+        if selected:
+            cacheable_parts.extend([
+                "# Section-specific proposal context",
+                json.dumps(selected, ensure_ascii=False, separators=(",", ":"), default=str),
+            ])
+        return assembled.model_copy(update={
+            "messages": [ModelMessage(role=ModelRole.USER, content=f"# Task\n{request.objective}")],
+            "cache_system_prompt": True,
+            "cacheable_context": "\n\n".join(part for part in cacheable_parts if part),
+        })
 
     async def validated_section_body(
         base: ModelRequest,
@@ -467,10 +483,10 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         )
 
     async def draft(state: dict) -> dict:
-        base = await base_request(state)
         sections = state["proposal_sections"]
 
         async def one(section: dict) -> tuple[str, str]:
+            base = await base_request(state, section)
             name = section["name"]
             references = state.get("proposal_references", {}).get(name, [])
             budget = _section_budget(section["depth"])
@@ -494,9 +510,8 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         return {"proposal_drafts": dict(results)}
 
     async def review_sections(state: dict) -> dict:
-        base = await base_request(state)
-
         async def one(section: dict) -> tuple[str, str]:
+            base = await base_request(state, section)
             name = section["name"]
             current = state["proposal_drafts"][name]
             budget = _section_budget(section["depth"])
