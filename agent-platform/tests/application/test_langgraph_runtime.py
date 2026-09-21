@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from agent_platform.application.cache import CacheService, InMemoryCacheProvider
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
-from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget, _proposal_context_pack, _section_context
+from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget, _approved_artifacts, _section_context
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.config import Settings
@@ -381,44 +381,42 @@ async def test_proposal_substeps_are_reused_across_new_execution_ids():
     assert any(event["event_type"]=="proposal.step.reused" for event in events)
 
 
-def test_proposal_context_pack_selects_section_specific_slices():
+def test_proposal_context_selects_only_relevant_canonical_artifacts():
     pack = {
-        "customerAndOpportunity": {"customer": "ACME"},
-        "mandatoryRequirements": ["R1"],
-        "goalsAndScope": ["G1"],
-        "responseStrategy": ["S1"],
-        "solutionHighlights": ["H1"],
-        "architectureAndIntegrations": ["A1"],
-        "securityAndOperations": ["SEC1"],
-        "deliveryApproach": ["D1"],
-        "risksAssumptionsAndTbds": ["RISK1"],
-        "differentiators": ["DIFF1"],
-        "evidenceIndex": {"E1": "DOC-001 p.2"},
+        "opportunityBrief": "Customer needs and scope",
+        "questions": "Open questions",
+        "technology": "Technology constraints",
+        "solution": "Approved technical solution",
+        "deliveryPlan": "Approved delivery plan",
     }
     architecture = _section_context(pack, {"name": "Arquitectura e integraciones", "guidance": "Detalle técnico"})
     delivery = _section_context(pack, {"name": "Enfoque de ejecución", "guidance": "Workstreams y metodología"})
 
-    assert "architectureAndIntegrations" in architecture
-    assert "securityAndOperations" in architecture
-    assert "deliveryApproach" not in architecture
-    assert "deliveryApproach" in delivery
-    assert "architectureAndIntegrations" not in delivery
-    assert "mandatoryRequirements" in architecture
-    assert "evidenceIndex" in delivery
+    assert "solution" in architecture
+    assert "technology" in architecture
+    assert "deliveryPlan" not in architecture
+    assert "deliveryPlan" in delivery
+    assert "technology" not in delivery
+    assert "opportunityBrief" in architecture
 
 
-def test_proposal_context_pack_is_parsed_without_guidance_tail():
+def test_approved_artifacts_are_parsed_deterministically():
     request = AgentExecutionRequest(
         agent_key="ba",
         objective="Compose",
         context={"business_context":
             "Offer name: Example\n\n"
-            "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
-            "{\"customerAndOpportunity\":{\"customer\":\"ACME\"}}\n\n"
+            "# APPROVED OFFER ARTIFACTS\n"
+            "# OPPORTUNITY_BRIEF\nBrief\n\n"
+            "# SOLUTION\nSolution\n\n"
+            "# DELIVERY_PLAN\nDelivery\n\n"
             "# PROPOSAL GUIDANCE JSON\n{\"sections\":[]}"
         },
     )
-    assert _proposal_context_pack(request)["customerAndOpportunity"]["customer"] == "ACME"
+    pack = _approved_artifacts(request)
+    assert pack["opportunityBrief"] == "Brief"
+    assert pack["solution"] == "Solution"
+    assert pack["deliveryPlan"] == "Delivery"
 
 
 @pytest.mark.asyncio
