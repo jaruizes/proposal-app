@@ -22,6 +22,8 @@ MEMORY_ITEMS = Histogram("agent_platform_memory_items","Memory items recalled")
 TOOL_CALLS = Counter("agent_platform_tool_calls_total","Tool invocations",["tool","provider","status"])
 TOOL_LATENCY = Histogram("agent_platform_tool_duration_seconds","Tool invocation duration",["tool","provider"])
 CACHE_OPS = Counter("agent_platform_cache_operations_total","Cache operations",["namespace","operation","result"])
+PROPOSAL_STEP_TOKENS = Counter("agent_platform_proposal_step_tokens_total","Proposal workflow tokens",["stage","type"])
+PROPOSAL_STEP_COST = Counter("agent_platform_proposal_step_estimated_cost_usd_total","Estimated proposal workflow cost in USD",["stage"])
 
 
 _configured=False
