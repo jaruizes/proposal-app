@@ -189,7 +189,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                 var elements=s.putArray("elements");
                 int elementCount=0;
                 for(var element:slide.path("pageElements")){
-                    if(elementCount++>=60) break;
+                    if(elementCount++>=12) break;
                     var e=elements.addObject();
                     e.put("objectId",element.path("objectId").asText(""));
                     if(element.has("shape")){
@@ -250,10 +250,10 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
         for(var element:textNode.path("textElements")){
             var value=element.path("textRun").path("content").asText("");
             if(!value.isBlank()) b.append(value);
-            if(b.length()>=500)break;
+            if(b.length()>=180)break;
         }
         var text=b.toString().replaceAll("\\s+"," ").trim();
-        return text.length()>500?text.substring(0,500):text;
+        return text.length()>180?text.substring(0,180):text;
     }
 
     private String model(Offer offer){return offer.models().getOrDefault("presentation",offer.models().getOrDefault("presentationGeneration","claude-sonnet-4-6"));}
