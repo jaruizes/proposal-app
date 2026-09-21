@@ -18,8 +18,7 @@ class McpGoogleSlidesPresentationAdapterTest {
                 mock(ToolGatewayPort.class),
                 mock(AgentRuntimeService.class),
                 mock(OfferRepositoryPort.class),
-                mock(TemplateSettingsService.class),
-                0);
+                mock(TemplateSettingsService.class));
 
         var json=new ObjectMapper();
         var root=json.createObjectNode();
@@ -59,4 +58,50 @@ class McpGoogleSlidesPresentationAdapterTest {
         assertThat(compact).contains("template-1","slide-0","element-0-0","layout-0");
         assertThat(compact).doesNotContain("heavyStyleBlob");
     }
+
+    @Test
+    void splitsSlidePlanIntoBoundedStructurallyValidChunks() {
+        var adapter=new McpGoogleSlidesPresentationAdapter(
+                mock(ToolGatewayPort.class),
+                mock(AgentRuntimeService.class),
+                mock(OfferRepositoryPort.class),
+                mock(TemplateSettingsService.class));
+
+        var plan = """
+                # SSIR
+
+                # SECTION-1 — Contexto
+
+                ## SLIDE-1
+                ### Título de slide
+                Uno
+
+                ## SLIDE-2
+                ### Título de slide
+                Dos
+
+                ## SLIDE-3
+                ### Título de slide
+                Tres
+
+                # SECTION-2 — Solución
+
+                ## SLIDE-4
+                ### Título de slide
+                Cuatro
+
+                ## SLIDE-5
+                ### Título de slide
+                Cinco
+                """;
+
+        var chunks=adapter.splitSlidesPlan(plan,3);
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(0)).contains("# SECTION-1 — Contexto","## SLIDE-1","## SLIDE-2","## SLIDE-3");
+        assertThat(chunks.get(0)).doesNotContain("# SECTION-2 — Solución");
+        assertThat(chunks.get(1)).contains("# SECTION-2 — Solución","## SLIDE-4","## SLIDE-5");
+        assertThat(chunks.get(1)).doesNotContain("## SLIDE-3");
+    }
+
 }
