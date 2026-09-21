@@ -513,7 +513,7 @@ public class OfferWorkflowService {
     private String normalizeSolutionHeadings(String markdown,List<String> expected){
         var normalized=markdown;
         for(var canonical:expected){
-            var number=canonical.replaceFirst("^#{2,3}\\s+","").split("\\s+",2)[0];
+            var number=canonical.replaceFirst("^#{1,3}\\s+","").split("\\s+",2)[0];
             var bareNumber=number.endsWith(".")?number.substring(0,number.length()-1):number;
             var numberPattern=java.util.regex.Pattern.quote(bareNumber)+(number.endsWith(".")?"\\.?":"");
             // Accept harmless model variations such as different wording after the same numbered heading,
