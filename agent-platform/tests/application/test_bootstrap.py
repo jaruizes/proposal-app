@@ -70,7 +70,6 @@ def test_bootstrap_catalog_replicates_current_proposal_copilot_definitions() -> 
         "solution-architect",
         "delivery-manager",
         "security-specialist",
-        "corporate-slide-designer",
     }
     business_analyst = next(agent for agent in agents if agent.key == "business-analyst")
     assert "Business Analyst / Offer Owner" in business_analyst.role
@@ -87,7 +86,7 @@ async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default(
 
     first = await importer.import_all()
     assert len(first["skills"]["created"]) == 8
-    assert len(first["agents"]["created"]) == 5
+    assert len(first["agents"]["created"]) == 4
 
     original = skill_repository.values["qualify-opportunity"]
     skill_repository.values["qualify-opportunity"] = original.model_copy(update={"description": "Runtime edited description"})
@@ -96,7 +95,7 @@ async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default(
     assert len(second["skills"]["created"]) == 0
     assert "qualify-opportunity" in second["skills"]["skipped"]
     assert skill_repository.values["qualify-opportunity"].description == "Runtime edited description"
-    assert len(agent_repository.values) == 5
+    assert len(agent_repository.values) == 4
 
 
 async def test_bootstrap_sync_updates_changed_definitions_and_versions_them() -> None:
