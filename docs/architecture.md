@@ -185,3 +185,63 @@ GraphRegistry
 `resilient-single` is the default and provides bounded truncation recovery for any skill, including newly added business processes. Specialized graphs are justified only when the task has a meaningful semantic decomposition that cannot be recovered safely by concise retry alone.
 
 This keeps the platform open for workflows such as investment discovery, vendor assessment or architecture review without adding skill-specific conditionals to the central runtime.
+
+
+## Standard AgentExecution protocol
+
+Spring and Agent Platform communicate through a versioned, process-agnostic protocol. The transport never contains proposal-specific DTOs.
+
+### Command
+
+```text
+AgentExecutionCommandV1
+  schema_version
+  message_type = agent.execution.command
+  application
+  execution_id
+  request
+    execution_id
+    correlation_id
+    agent_key
+    skill_key
+    objective
+    model
+    context
+    constraints
+    attachments[]
+      name
+      media_type
+      content?   # small inline values only
+      uri?       # preferred for large/binary resources
+      metadata
+```
+
+### Event / result
+
+```text
+AgentExecutionEventV1
+  schema_version
+  message_type = agent.execution.event
+  execution_id
+  event_type
+  source_event_type
+  payload
+    status
+    artifacts[]
+      type
+      name?
+      media_type
+      content?
+      uri?
+      metadata
+    usage
+    model
+    provider_request_id
+    error?
+```
+
+Business semantics belong to the Skill and artifact content/metadata, not to the NATS envelope. New processes can therefore reuse the same protocol unchanged.
+
+Large documents and binaries must be externalized and referenced by URI. NATS transports commands/events and lightweight descriptors, not document payloads.
+
+Output validation is also platform-wide. The declared `constraints.output_format` is validated by the common runtime. Recoverable failures such as provider truncation or incomplete JSON/Markdown are retried according to the Skill execution policy before a terminal failure is emitted.
