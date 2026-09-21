@@ -33,6 +33,7 @@ agent-platform:
     command-subject: ${AGENT_PLATFORM_COMMAND_SUBJECT:agent-platform.commands.execution.requested}
     events-subject: ${AGENT_PLATFORM_EVENTS_SUBJECT:agent-platform.events.execution.*}
     events-durable: ${AGENT_PLATFORM_EVENTS_DURABLE:proposal-backend-events}
+    max-command-bytes: ${AGENT_PLATFORM_NATS_MAX_COMMAND_BYTES:900000}
 
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}
