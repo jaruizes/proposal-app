@@ -1,7 +1,7 @@
 {
   "source": {
     "repository": "jaruizes/proposal-app",
-    "description": "Bootstrap snapshot of the agents and skills used by the existing Proposal Copilot runtime before integration with the independent platform."
+    "description": "Bootstrap catalog for ProposalFlow's simplified five-phase proposal workflow."
   },
   "skills": [
     {
@@ -21,8 +21,8 @@
       "output_schema": {}
     },
     {
-      "key": "analyze-opportunity",
-      "source": "skills/analyze-opportunity/SKILL.md",
+      "key": "qualify-opportunity",
+      "source": "skills/qualify-opportunity/SKILL.md",
       "inputs": [
         "workspace",
         "source-manifest"
@@ -30,22 +30,22 @@
       "output_schema": {}
     },
     {
-      "key": "build-strategy",
-      "source": "skills/build-strategy/SKILL.md",
+      "key": "design-solution",
+      "source": "skills/design-solution/SKILL.md",
       "inputs": [
         "workspace",
-        "approved-analysis"
+        "approved-qualification",
+        "source-manifest"
       ],
       "output_schema": {}
     },
     {
-      "key": "define-solution",
-      "source": "skills/define-solution/SKILL.md",
+      "key": "plan-delivery",
+      "source": "skills/plan-delivery/SKILL.md",
       "inputs": [
         "workspace",
-        "approved-analysis",
-        "approved-strategy",
-        "source-manifest"
+        "approved-qualification",
+        "approved-solution"
       ],
       "output_schema": {}
     },
@@ -54,9 +54,9 @@
       "source": "skills/compose-proposal/SKILL.md",
       "inputs": [
         "workspace",
-        "approved-analysis",
-        "approved-strategy",
+        "approved-qualification",
         "approved-solution",
+        "approved-delivery-plan",
         "proposal-guidance"
       ],
       "output_schema": {},
@@ -71,13 +71,12 @@
       }
     },
     {
-      "key": "design-proposal",
-      "source": "skills/design-proposal/SKILL.md",
+      "key": "design-presentation",
+      "source": "skills/design-presentation/SKILL.md",
       "inputs": [
         "workspace",
-        "approved-analysis",
-        "approved-strategy",
-        "approved-solution"
+        "approved-proposal",
+        "presentation-guidance"
       ],
       "output_schema": {}
     },
@@ -98,22 +97,24 @@
       "source": "agents/business-analyst.md",
       "capabilities": [
         "opportunity-analysis",
+        "qualification",
         "response-strategy",
         "proposal-authoring",
         "slide-planning",
-        "coherence-review"
+        "presentation-materialization"
       ],
       "skills": [
-        "analyze-opportunity",
-        "build-strategy",
-        "define-solution",
+        "qualify-opportunity",
         "compose-proposal",
-        "design-proposal"
+        "design-presentation",
+        "generate-presentation"
       ],
       "allowed_tools": [
         "source.read",
         "source.search",
-        "knowledge.search"
+        "knowledge.search",
+        "presentation.read",
+        "presentation.write"
       ],
       "model_policy": {
         "preferred_model": "claude-sonnet-4-6",
@@ -127,10 +128,11 @@
       "capabilities": [
         "architecture-design",
         "technical-decisions",
-        "source-analysis"
+        "source-analysis",
+        "implementation-task-modeling"
       ],
       "skills": [
-        "define-solution"
+        "design-solution"
       ],
       "allowed_tools": [
         "source.read",
@@ -149,37 +151,17 @@
       "source": "agents/delivery-manager.md",
       "capabilities": [
         "delivery-planning",
-        "work-breakdown",
+        "workstream-design",
+        "governance",
         "risk-coordination"
       ],
       "skills": [
-        "define-solution"
+        "plan-delivery"
       ],
       "allowed_tools": [
         "source.read",
         "source.search",
         "knowledge.search"
-      ],
-      "model_policy": {
-        "preferred_model": "claude-sonnet-4-6",
-        "temperature": 0.1,
-        "max_output_tokens": 16000
-      }
-    },
-    {
-      "key": "presentation-builder",
-      "source": "agents/presentation-builder.md",
-      "capabilities": [
-        "presentation-materialization",
-        "visual-mapping"
-      ],
-      "skills": [
-        "generate-presentation"
-      ],
-      "allowed_tools": [
-        "presentation.read",
-        "presentation.write",
-        "source.read"
       ],
       "model_policy": {
         "preferred_model": "claude-sonnet-4-6",
@@ -195,7 +177,7 @@
         "cryptography"
       ],
       "skills": [
-        "define-solution"
+        "design-solution"
       ],
       "allowed_tools": [
         "source.read",
@@ -204,7 +186,7 @@
       "model_policy": {
         "preferred_model": "claude-sonnet-4-6",
         "temperature": 0.1,
-        "max_output_tokens": 16000
+        "max_output_tokens": 12000
       }
     },
     {
@@ -223,7 +205,7 @@
       "model_policy": {
         "preferred_model": "claude-sonnet-4-6",
         "temperature": 0.1,
-        "max_output_tokens": 16000
+        "max_output_tokens": 8000
       }
     }
   ]
