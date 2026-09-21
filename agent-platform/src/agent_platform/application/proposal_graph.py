@@ -218,7 +218,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 ),
                 "proposal.section.format.repaired",
                 {"section": name, "source_stage": source_stage},
-                max_output_tokens=4000,
+                max_output_tokens=_SECTION_BUDGETS["DETAILED"]["tokens"],
             )
             return _section_body(repaired.content, name)
 
