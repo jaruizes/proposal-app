@@ -78,7 +78,9 @@ class ProposalProvider:
     async def generate(self, request: ModelRequest):
         stage=request.messages[0].content.split("# Current stage\n")[-1]
         self.calls.append(stage)
-        if stage.startswith("Write ONLY the body"):
+        if stage.startswith("Build an INTERNAL compact proposal context pack"):
+            content='{"customerAndOpportunity":{"customer":"Example"},"mandatoryRequirements":[],"goalsAndScope":[],"responseStrategy":[],"solutionHighlights":[],"architectureAndIntegrations":[],"securityAndOperations":[],"deliveryApproach":[],"risksAssumptionsAndTbds":[],"differentiators":[],"evidenceIndex":{}}'
+        elif stage.startswith("Write ONLY the body"):
             content="Evidence-backed draft."
         elif stage.startswith("Review ONLY section"):
             content='{"issues":[]}'
@@ -104,7 +106,7 @@ async def test_proposal_graph_preserves_configured_order_and_usage():
     assert content.startswith("# Example\n\n## Executive summary\n")
     assert content.index("## Executive summary") < content.index("## Technical approach")
     assert "Ignored" not in content
-    assert result.usage.input_tokens==50
+    assert result.usage.input_tokens==60
     assert [e["event_type"] for e in await er.list_events(result.execution_id)].count("proposal.section.reviewed")==2
 
 
@@ -121,7 +123,7 @@ async def test_proposal_global_review_corrects_issues_without_non_convergent_fai
     events=await er.list_events(result.execution_id)
     assert any(e["event_type"]=="proposal.section.revised" for e in events)
     assert any(e["event_type"]=="proposal.global.review.corrected" for e in events)
-    assert result.usage.input_tokens==40
+    assert result.usage.input_tokens==50
 
 
 @pytest.mark.asyncio
@@ -135,7 +137,7 @@ async def test_proposal_global_review_revises_only_affected_section():
     assert result.status is ExecutionStatus.COMPLETED
     assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
     assert "## Executive summary\n\nEvidence-backed draft." in result.artifacts[0].content
-    assert result.usage.input_tokens==60
+    assert result.usage.input_tokens==70
 
 
 def test_proposal_rejects_missing_or_invalid_guidance():
