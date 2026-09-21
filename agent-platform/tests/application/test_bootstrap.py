@@ -95,7 +95,7 @@ async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default(
     second = await importer.import_all()
     assert len(second["skills"]["created"]) == 0
     assert "qualify-opportunity" in second["skills"]["skipped"]
-    assert skill_repository.values["build-strategy"].description == "Runtime edited description"
+    assert skill_repository.values["qualify-opportunity"].description == "Runtime edited description"
     assert len(agent_repository.values) == 5
 
 
