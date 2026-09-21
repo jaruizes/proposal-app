@@ -42,6 +42,8 @@ public class AgentExecutionJpaEntity {
     private String inputFingerprint;
     @Column(name = "reused_from_execution_id")
     private UUID reusedFromExecutionId;
+    @Column(name = "telemetry_json", columnDefinition = "text")
+    private String telemetryJson;
 
     public AgentExecutionJpaEntity() {}
 
@@ -79,4 +81,6 @@ public class AgentExecutionJpaEntity {
     public void setInputFingerprint(String inputFingerprint) { this.inputFingerprint = inputFingerprint; }
     public UUID getReusedFromExecutionId() { return reusedFromExecutionId; }
     public void setReusedFromExecutionId(UUID reusedFromExecutionId) { this.reusedFromExecutionId = reusedFromExecutionId; }
+    public String getTelemetryJson() { return telemetryJson; }
+    public void setTelemetryJson(String telemetryJson) { this.telemetryJson = telemetryJson; }
 }
