@@ -10,15 +10,15 @@ public record NatsAgentPlatformProperties(
         String commandSubject,
         String eventsSubject,
         String eventsDurable,
-        Duration executionTimeout,
-        Duration proposalExecutionTimeout) {
+        Duration executionTimeout) {
 
     public NatsAgentPlatformProperties {
         if (url == null || url.isBlank()) url = "nats://localhost:4222";
         if (commandSubject == null || commandSubject.isBlank()) commandSubject = "agent-platform.commands.execution.requested";
         if (eventsSubject == null || eventsSubject.isBlank()) eventsSubject = "agent-platform.events.execution.*";
         if (eventsDurable == null || eventsDurable.isBlank()) eventsDurable = "proposal-backend-events";
+        // Retained only for configuration compatibility with older deployments.
+        // The NATS transport does not use an execution timeout: completion is event-driven.
         if (executionTimeout == null) executionTimeout = Duration.ofMinutes(10);
-        if (proposalExecutionTimeout == null) proposalExecutionTimeout = Duration.ofMinutes(30);
     }
 }
