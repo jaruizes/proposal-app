@@ -63,5 +63,48 @@ class AgentRuntimeServiceCheckpointTest {
         @Override public List<AgentExecution> findByOfferId(UUID offerId) {
             return items.stream().filter(item->item.offerId().equals(offerId)).toList();
         }
+
+        @Override public java.util.Optional<AgentExecution> findById(UUID id) {
+            return items.stream().filter(item->item.id().equals(id)).findFirst();
+        }
     }
+
+    @Test
+    void asyncTransportDispatchesAndResumesFromTerminalEvent() {
+        class AsyncPlatform implements io.github.jaruizes.proposal.domain.ports.AsyncAgentPlatformPort {
+            int submits;
+            @Override public void submit(AgentTask task,String model,String context,List<LlmRequest.Attachment> attachments){submits++;}
+            @Override public LlmResult execute(AgentTask task,String model,String context,List<LlmRequest.Attachment> attachments){
+                throw new AssertionError("synchronous execute must not be used");
+            }
+        }
+        var platform=new AsyncPlatform();
+        var repository=new InMemoryExecutions();
+        var service=new AgentRuntimeService(platform,repository,ObservationRegistry.create(),new SimpleMeterRegistry());
+        var offerId=UUID.randomUUID();
+        var task=AgentTask.of(offerId,PhaseType.PROPOSAL,"business-analyst","compose-proposal",
+                "Redactar oferta detallada","compose").withCheckpoint("proposal.document");
+
+        io.github.jaruizes.proposal.domain.exceptions.AgentExecutionDeferredException deferred=null;
+        try{service.execute(task,"claude-sonnet-4-6","context");}
+        catch(io.github.jaruizes.proposal.domain.exceptions.AgentExecutionDeferredException e){deferred=e;}
+
+        assertThat(deferred).isNotNull();
+        assertThat(platform.submits).isEqualTo(1);
+        assertThat(repository.findById(task.id()).orElseThrow().status()).isEqualTo(AgentTaskStatus.RUNNING);
+
+        service.completeAsync(new AgentPlatformExecutionEvent(
+                task.id(),offerId,PhaseType.PROPOSAL,true,"# Proposal\nDone","claude-sonnet-4-6",
+                100,20,"req-1",null));
+
+        var retry=AgentTask.of(offerId,PhaseType.PROPOSAL,"business-analyst","compose-proposal",
+                "Redactar oferta detallada","compose").withCheckpoint("proposal.document");
+        var result=service.execute(retry,"claude-sonnet-4-6","context");
+
+        assertThat(platform.submits).isEqualTo(1);
+        assertThat(result.content()).contains("# Proposal");
+        assertThat(result.inputTokens()).isZero();
+        assertThat(result.outputTokens()).isZero();
+    }
+
 }
