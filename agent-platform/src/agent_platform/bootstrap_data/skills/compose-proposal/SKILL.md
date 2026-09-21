@@ -68,9 +68,17 @@ The document should work for human evaluation and automated AI screening:
 ## Canonical output
 
 When the LangGraph proposal workflow invokes this skill, its intermediate calls
-request one section body or a JSON review. Follow the current stage instruction
-for those calls. Only the assembled, globally reviewed result is the canonical
-proposal. A review with unresolved issues fails the phase for human retry.
+request one section body or a compact JSON review. Follow the current stage instruction
+for those calls. The workflow receives a compact, evidence-preserving Proposal Context
+Pack built once from approved upstream artifacts; do not expect every original artifact
+to be repeated in every section call.
+
+Section review is issues-only: an acceptable draft is reused unchanged, and only sections
+with material issues are regenerated. Successful intermediate model calls are durably
+checkpointed by exact input fingerprint so retries can reuse completed work across new
+outer execution IDs. Only the assembled result is the canonical proposal. Global review
+must converge: it may trigger targeted corrections, but stylistic preferences or optional
+improvements must not fail the entire phase.
 
 Return ONLY the complete Markdown for:
 
