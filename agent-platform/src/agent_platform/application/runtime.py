@@ -15,10 +15,10 @@ from agent_platform.domain import AgentArtifact,AgentError,AgentExecution,AgentE
 class AgentRuntimeValidationError(RuntimeError):pass
 
 class AgentRuntime:
-    def __init__(self,agents,skills,executions,model_provider,prompt_assembler=None,cognitive_context_builder=None,memory_service=None,cache=None)->None:
+    def __init__(self,agents,skills,executions,model_provider,prompt_assembler=None,cognitive_context_builder=None,memory_service=None,cache=None,tool_registry=None)->None:
         self._agents=agents;self._skills=skills;self._executions=executions;self._model_provider=model_provider
         self._prompt_assembler=prompt_assembler or AgentPromptAssembler();self._cognitive_context_builder=cognitive_context_builder or CognitiveContextBuilder()
-        self._memory_service=memory_service;self._cache=cache
+        self._memory_service=memory_service;self._cache=cache;self._tools=tool_registry
 
     async def submit(self,request):
         agent=await self._agents.get(request.agent_key)
