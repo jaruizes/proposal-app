@@ -125,15 +125,22 @@ def configured_sections(request: AgentExecutionRequest) -> list[dict[str, str]]:
     return sections
 
 
-def _json_response(content: str) -> dict[str, Any]:
+def _json_object(content: str, label: str) -> dict[str, Any]:
     raw = content.strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw).strip()
     try:
         result = json.loads(raw)
     except ValueError as exc:
-        raise ProposalPlanError("Global review returned invalid JSON") from exc
-    if not isinstance(result, dict) or not isinstance(result.get("issues"), list):
+        raise ProposalPlanError(f"{label} returned invalid JSON") from exc
+    if not isinstance(result, dict):
+        raise ProposalPlanError(f"{label} must return a JSON object")
+    return result
+
+
+def _json_response(content: str) -> dict[str, Any]:
+    result = _json_object(content, "Global review")
+    if not isinstance(result.get("issues"), list):
         raise ProposalPlanError("Global review must contain an issues array")
     return result
 
@@ -372,7 +379,8 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         business_context = request.context.get("business_context", "")
         pack_marker = "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
         offer_header = business_context.split(pack_marker, 1)[0].strip() if isinstance(business_context, str) else ""
-        pack = _proposal_context_pack(request)
+        state_pack = state.get("proposal_context_pack")
+        pack = state_pack if isinstance(state_pack, dict) else _proposal_context_pack(request)
         selected = _section_context(pack, section) if section is not None else {}
         cacheable_parts = ["# Current offer", offer_header]
         if selected:
@@ -415,6 +423,30 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 max_output_tokens=_SECTION_BUDGETS["DETAILED"]["tokens"],
             )
             return _section_body(repaired.content, name)
+
+    async def compact_context(state: dict) -> dict:
+        base = await base_request(state)
+        result = await generate(
+            base,
+            (
+                "Build an INTERNAL compact proposal context pack from the approved current-offer artifacts. "
+                "Return ONLY a compact JSON object with these top-level keys: "
+                "customerAndOpportunity, mandatoryRequirements, goalsAndScope, responseStrategy, "
+                "solutionHighlights, architectureAndIntegrations, securityAndOperations, deliveryApproach, "
+                "risksAssumptionsAndTbds, differentiators, evidenceIndex. "
+                "Preserve material FACT/DECISION/ASSUMPTION distinctions, mandatory constraints, open gaps "
+                "and evidence locators. Deduplicate aggressively. Do not invent or strengthen claims. "
+                "evidenceIndex should map short evidence ids to source locators rather than copying source text. "
+                "Keep the JSON below roughly 24,000 characters."
+            ),
+            "proposal.context.compacted",
+            {"mode": "split"},
+            max_output_tokens=6500,
+        )
+        pack = _json_object(result.content, "Proposal context compaction")
+        if not pack:
+            raise ProposalPlanError("Proposal context compaction returned an empty object")
+        return {"proposal_context_pack": pack}
 
     async def direct_proposal(state: dict) -> dict:
         request = AgentExecutionRequest.model_validate(state["request"])
@@ -782,6 +814,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         return {"model_result": final.model_dump(mode="json")}
 
     builder.add_node("direct_proposal", direct_proposal)
+    builder.add_node("compact_proposal_context", compact_context)
     builder.add_node("plan_proposal", plan)
     builder.add_node("retrieve_references", retrieve_references)
     builder.add_node("draft_sections", draft)
@@ -792,13 +825,14 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
     builder.add_conditional_edges(
         "build_context",
         lambda state: "single" if _proposal_mode(AgentExecutionRequest.model_validate(state["request"])) == "SINGLE" else "split",
-        {"single": "direct_proposal", "split": "plan_proposal"},
+        {"single": "direct_proposal", "split": "compact_proposal_context"},
     )
     builder.add_conditional_edges(
         "direct_proposal",
         after_direct,
-        {"done": END, "split": "plan_proposal"},
+        {"done": END, "split": "compact_proposal_context"},
     )
+    builder.add_edge("compact_proposal_context", "plan_proposal")
     builder.add_edge("plan_proposal", "retrieve_references")
     builder.add_edge("retrieve_references", "draft_sections")
     builder.add_edge("draft_sections", "review_sections")
