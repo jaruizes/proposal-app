@@ -168,8 +168,65 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
     """Attach the proposal stages after build_context, ending with model_result."""
     semaphore = asyncio.Semaphore(3)
     db_lock = asyncio.Lock()
+    budget_lock = asyncio.Lock()
     calls: list[ModelResult] = []
-    checkpoint_ttl = get_settings().proposal_checkpoint_ttl_seconds
+    step_usage: list[dict[str, Any]] = []
+    settings = get_settings()
+    checkpoint_ttl = settings.proposal_checkpoint_ttl_seconds
+    consumed = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cost_usd": 0.0}
+
+    def estimated_cost(usage: ModelUsage) -> float:
+        million = 1_000_000.0
+        return (
+            usage.input_tokens * settings.anthropic_input_cost_per_million_usd
+            + usage.output_tokens * settings.anthropic_output_cost_per_million_usd
+            + usage.cache_read_tokens * settings.anthropic_cache_read_cost_per_million_usd
+            + usage.cache_write_tokens * settings.anthropic_cache_write_cost_per_million_usd
+        ) / million
+
+    async def assert_budget(stage: str, estimated_input_tokens: int = 0) -> None:
+        async with budget_lock:
+            if consumed["input"] + estimated_input_tokens > settings.proposal_input_token_budget:
+                raise ProposalBudgetExceeded(
+                    f"Proposal input token budget would be exceeded before {stage}: "
+                    f"{consumed['input']} used, {settings.proposal_input_token_budget} allowed"
+                )
+            if consumed["output"] >= settings.proposal_output_token_budget:
+                raise ProposalBudgetExceeded(
+                    f"Proposal output token budget exceeded before {stage}: "
+                    f"{consumed['output']} used, {settings.proposal_output_token_budget} allowed"
+                )
+            if consumed["cost_usd"] >= settings.proposal_cost_budget_usd:
+                raise ProposalBudgetExceeded(
+                    f"Proposal cost budget exceeded before {stage}: "
+                    f"${consumed['cost_usd']:.4f} used, ${settings.proposal_cost_budget_usd:.2f} allowed"
+                )
+
+    async def record_step(stage: str, payload: dict, result: ModelResult, *, reused: bool = False) -> None:
+        usage = result.usage
+        cost = 0.0 if reused else estimated_cost(usage)
+        async with budget_lock:
+            if not reused:
+                consumed["input"] += usage.input_tokens
+                consumed["output"] += usage.output_tokens
+                consumed["cache_read"] += usage.cache_read_tokens
+                consumed["cache_write"] += usage.cache_write_tokens
+                consumed["cost_usd"] += cost
+            item = {
+                "stage": stage,
+                "section": payload.get("section"),
+                "reused": reused,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cache_read_tokens": usage.cache_read_tokens,
+                "cache_write_tokens": usage.cache_write_tokens,
+                "estimated_cost_usd": round(cost, 6),
+                "cumulative_cost_usd": round(consumed["cost_usd"], 6),
+            }
+            step_usage.append(item)
+        await add_event("proposal.step.usage", item)
+        if not reused:
+            await assert_budget(stage)
 
     async def add_event(event_type: str, payload: dict) -> None:
         # All proposal substeps share the request-scoped SQLAlchemy AsyncSession.
