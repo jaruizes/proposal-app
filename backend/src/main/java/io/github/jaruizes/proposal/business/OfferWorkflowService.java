@@ -450,7 +450,6 @@ public class OfferWorkflowService {
         var normalized=markdown;
         for(var canonical:expected){
             var number=canonical.replaceFirst("^#{2,3}\\s+","").split("\\s+",2)[0];
-            var level=canonical.startsWith("### ")?"###":"##";
             // Accept harmless model variations such as different wording after the same numbered heading,
             // missing punctuation, or a wrong H2/H3 level. The canonical heading remains owned by the workflow.
             var pattern="(?mi)^\\s*#{1,4}\\s*"+java.util.regex.Pattern.quote(number)
