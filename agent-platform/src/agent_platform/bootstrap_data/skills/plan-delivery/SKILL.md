@@ -50,3 +50,8 @@ Qualitative task complexity belongs in `solution.md`; the Delivery Manager may u
 ## Canonical output
 
 `delivery-plan.md`
+
+
+## Output size discipline
+
+Keep `delivery-plan.md` below roughly 4,500 words. Prefer milestone/workstream/governance tables and dependency views over repeating the technical solution.
