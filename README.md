@@ -494,7 +494,6 @@ ProposalFlow intentionally keeps the base team small.
 | `solution-architect` | `design-solution` | End-to-end solution design |
 | `delivery-manager` | `plan-delivery` | Delivery approach and governance |
 | `security-specialist` | `design-solution` | Optional bounded specialist consultation |
-| `corporate-slide-designer` | `generate-presentation` | Optional bounded visual/layout support |
 
 The governing rules are:
 
