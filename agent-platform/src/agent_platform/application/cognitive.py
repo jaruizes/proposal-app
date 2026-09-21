@@ -91,7 +91,7 @@ class CognitiveContextBuilder:
             except Exception as exc:
                 if contributor.required:raise
                 return[],f"{contributor.name}: {str(exc) or type(exc).__name__}"
-        results=await asyncio.gather(*(run(c) for c in self._contributors));groups=[items for items,_ in results];warnings=[w for _,w in results if w];candidates=[item for group in groups for item in group];selected,dropped=self._apply_budget(candidates)
+        # Contributors share request-scoped persistence services backed by one SQLAlchemy AsyncSession.\n        # AsyncSession is not safe for concurrent operations, so collect context sequentially.\n        # Network/model concurrency belongs inside contributors that own independent resources/sessions.\n        results=[]\n        for contributor in self._contributors:\n            results.append(await run(contributor))\n        groups=[items for items,_ in results];warnings=[w for _,w in results if w];candidates=[item for group in groups for item in group];selected,dropped=self._apply_budget(candidates)
         skill_tools=skill.allowed_tools if skill else []
         if skill_tools and agent.allowed_tools:allowed=[tool for tool in skill_tools if tool in set(agent.allowed_tools)]
         elif skill_tools:allowed=list(skill_tools)
