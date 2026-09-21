@@ -7,7 +7,7 @@ description: Materialize the approved slides-plan.md into the final corporate pr
 
 Owner: **Business Analyst / Offer Owner**
 
-The Business Analyst owns the approved presentation content. The materialization layer applies the corporate template and may use a bounded visual-design specialist for layout/visual QA only.
+The Business Analyst owns the approved presentation content. The deterministic materialization layer applies the corporate template, while the Business Analyst performs bounded visual QA against real slide thumbnails.
 
 ## Preconditions
 
