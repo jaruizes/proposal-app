@@ -34,7 +34,7 @@ export class MockExecutionService {
     return {
       id: crypto.randomUUID(), name, presentationLanguage: 'Español', inputDriveFolder: '/Propuestas/Entrada',
       outputDriveFolder: '/Propuestas/Salida', presentationName: `${name} - Propuesta`, provider: 'AWS Bedrock',
-      models: { analysis: 'Claude Sonnet 4', solution: 'Claude Sonnet 4', proposal: 'Claude Sonnet 4', slides: 'Claude Sonnet 4' },
+      models: { analysis: 'Claude Sonnet 4', solutionArchitecture: 'Claude Sonnet 4', deliveryPlanning: 'Claude Sonnet 4', proposal: 'Claude Sonnet 4', slidePlanning: 'Claude Sonnet 4', presentation: 'Claude Sonnet 4' },
       sections: structuredClone(this.defaultSections), currentStep, overallStatus, createdAt: new Date(), phases
     };
   }
