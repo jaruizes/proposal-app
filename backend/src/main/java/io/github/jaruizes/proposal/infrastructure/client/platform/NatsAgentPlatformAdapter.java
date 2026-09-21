@@ -91,9 +91,17 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
                     "execution_id", executionId,
                     "request", request
             );
+            var payload = mapper.writeValueAsBytes(envelope);
+            if (payload.length > properties.maxCommandBytes()) {
+                throw new DomainException(
+                        "Agent command payload is too large for NATS transport: %d bytes (safe limit %d). "
+                        .formatted(payload.length, properties.maxCommandBytes())
+                        + "Compact or externalize large documents/binaries and send references instead."
+                );
+            }
             var headers = new Headers();
             headers.add("Nats-Msg-Id", executionId);
-            PublishAck ack = jetStream.publish(properties.commandSubject(), headers, mapper.writeValueAsBytes(envelope));
+            PublishAck ack = jetStream.publish(properties.commandSubject(), headers, payload);
             if (ack == null) throw new DomainException("NATS did not acknowledge execution command");
         } catch (DomainException e) {
             throw e;
