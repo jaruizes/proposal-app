@@ -56,10 +56,24 @@ class ModelResult(BaseModel):
 
 
 class ModelProviderError(RuntimeError):
-    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        partial_content: str | None = None,
+        usage: ModelUsage | None = None,
+        model: str | None = None,
+        provider_request_id: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+        self.partial_content = partial_content
+        self.usage = usage
+        self.model = model
+        self.provider_request_id = provider_request_id
 
 
 class ModelProvider(Protocol):
