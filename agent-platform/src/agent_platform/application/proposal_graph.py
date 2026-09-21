@@ -252,6 +252,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             "model": base.model,
             "system_prompt": base.system_prompt,
             "base_prompt": base.messages[0].content,
+            "cacheable_context": base.cacheable_context,
             "instruction": instruction,
             "max_output_tokens": effective_max,
         })
