@@ -622,8 +622,9 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
 
             async def revise(name: str, instructions: list[str]) -> tuple[str, str]:
                 section = next(item for item in sections if item["name"] == name)
+                section_base = await base_request(state, section)
                 budget = _section_budget(section["depth"])
-                correction = await generate(base, (
+                correction = await generate(section_base, (
                     f"Revise ONLY the body of section {name!r}. No heading or other sections. "
                     f"Keep the revised section within {budget['words']} words. "
                     "Preserve approved evidence and avoid unsupported commitments. "
@@ -635,7 +636,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     "word_budget": budget["words"],
                 }, max_output_tokens=budget["tokens"])
                 return name, await validated_section_body(
-                    base, correction.content, name, source_stage="global-revision"
+                    section_base, correction.content, name, source_stage="global-revision"
                 )
 
             drafts.update(await asyncio.gather(
