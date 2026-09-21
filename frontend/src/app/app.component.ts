@@ -68,6 +68,11 @@ export class AppComponent {
   downloadMaterialized(document:MaterializedDocument){const offer=this.selected();if(offer&&document.status==='READY')this.svc.downloadDocument(offer.id,document);}
   regenerateDocuments(){const offer=this.selected();if(offer)this.svc.materializeDocuments(offer.id);}
   formatTokens(value:number){return new Intl.NumberFormat('es-ES').format(value||0);}
+  formatCost(value:number|undefined){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:3,maximumFractionDigits:3}).format(value||0);}
+  proposalSteps(agent:AgentExecutionTelemetry){return agent.telemetry?.proposal_step_usage||[];}
+  proposalConsumed(agent:AgentExecutionTelemetry){return agent.telemetry?.proposal_consumed;}
+  proposalBudget(agent:AgentExecutionTelemetry){return agent.telemetry?.proposal_budget;}
+  proposalStepLabel(stage:string){const labels:Record<string,string>={'proposal.section.drafted':'Draft','proposal.section.reviewed':'Review','proposal.section.corrected':'Correction','proposal.section.revised':'Global correction','proposal.global.reviewed':'Global review','proposal.section.format.repaired':'Format repair'};return labels[stage]||stage;}
   friendlyErrorCause(raw:string|undefined):string {
     if(!raw?.trim())return 'Se produjo un error inesperado durante la ejecución del agente.';
     const value=raw.toLowerCase();
