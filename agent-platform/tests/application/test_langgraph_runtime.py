@@ -857,3 +857,30 @@ async def test_generic_resilient_single_retries_truncation_for_future_skill():
     failures=[e for e in events if e["event_type"]=="execution.model.attempt.failed"]
     assert len(failures)==2
     assert all(e["payload"]["truncated"] is True for e in failures)
+
+
+def test_presentation_outline_oversized_section_is_split_deterministically():
+    from agent_platform.application.presentation_plan_graph import _validate_outline
+
+    value={
+        "title":"SSIR",
+        "sections":[{
+            "title":"Solución y delivery",
+            "slides":[
+                {"title":f"Slide {i}","purpose":f"Purpose {i}"}
+                for i in range(1,8)
+            ],
+        }],
+    }
+
+    title, sections=_validate_outline(value)
+
+    assert title=="SSIR"
+    assert [section["id"] for section in sections]==["SECTION-1","SECTION-2"]
+    assert len(sections[0]["slides"])==5
+    assert len(sections[1]["slides"])==2
+    assert [slide["id"] for slide in sections[0]["slides"]]==[
+        "SLIDE-1","SLIDE-2","SLIDE-3","SLIDE-4","SLIDE-5"
+    ]
+    assert [slide["id"] for slide in sections[1]["slides"]]==["SLIDE-6","SLIDE-7"]
+    assert sections[1]["title"].startswith("Solución y delivery")
