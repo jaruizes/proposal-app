@@ -16,8 +16,18 @@ class AnthropicModelProvider:
         self._client=AsyncAnthropic(**kwargs)
     async def generate(self,request:ModelRequest)->ModelResult:
         model=request.model or self._settings.anthropic_default_model;max_tokens=request.max_output_tokens or self._settings.anthropic_default_max_output_tokens
-        payload={"model":model,"max_tokens":max_tokens,"messages":[{"role":m.role.value,"content":m.content} for m in request.messages]}
-        if request.system_prompt:payload["system"]=request.system_prompt
+        messages=[]
+        for index,m in enumerate(request.messages):
+            if index==0 and request.cacheable_context:
+                messages.append({"role":m.role.value,"content":[
+                    {"type":"text","text":request.cacheable_context,"cache_control":{"type":"ephemeral"}},
+                    {"type":"text","text":m.content},
+                ]})
+            else:
+                messages.append({"role":m.role.value,"content":m.content})
+        payload={"model":model,"max_tokens":max_tokens,"messages":messages}
+        if request.system_prompt:
+            payload["system"]=[{"type":"text","text":request.system_prompt,"cache_control":{"type":"ephemeral"}}] if request.cache_system_prompt else request.system_prompt
         if request.temperature is not None:payload["temperature"]=request.temperature
         attempts=max(1,self._settings.anthropic_max_retries+1);last_exc=None
         for attempt in range(attempts):
