@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.context.event.EventListener;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -115,7 +116,7 @@ public class OfferWorkflowService {
         validateConfiguration(offer.presentationLanguage(),offer.inputDriveFolder(),offer.outputDriveFolder(),offer.presentationName(),offer.generatePresentation(),offer.aiProvider(),offer.models(),offer.proposalGuidance(),offer.presentationGuidance());
         phases.save(new PhaseExecution(phase.id(),offerId,phaseType,ExecutionStatus.RUNNING,phase.version()+1,null,Instant.now(),null,phase.refinement()));
         offers.save(copyOffer(offer,phaseType,ExecutionStatus.RUNNING));
-        submitPhase(offerId,phaseType,null);
+        submitPhase(offerId,phaseType,phase.refinement());
     }
 
     @Transactional
@@ -185,6 +186,16 @@ public class OfferWorkflowService {
         var phase=phases.find(execution.offerId(),execution.phase()).orElse(null);
         if(phase==null||phase.status()!=ExecutionStatus.RUNNING)return;
         submitPhase(execution.offerId(),execution.phase(),phase.refinement());
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void resumeRunningPhasesAfterRestart(){
+        for(var offer:offers.findAll()){
+            for(var phase:phases.findByOfferId(offer.id())){
+                if(phase.status()==ExecutionStatus.RUNNING)
+                    submitPhase(offer.id(),phase.phase(),phase.refinement());
+            }
+        }
     }
 
     private void runAnalysis(Offer offer,String refinement){
@@ -398,12 +409,19 @@ public class OfferWorkflowService {
             var results=new ArrayList<LlmResult>();
             try(var executor=java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()){
                 var futures=requested.stream().map(task->java.util.concurrent.CompletableFuture.supplyAsync(()->agents.execute(task,model(offer,"specialistValidation"),context,attachments),executor)).toList();
-                results.addAll(futures.stream().map(java.util.concurrent.CompletableFuture::join).toList());
+                for(var future:futures){
+                    try{results.add(future.join());}
+                    catch(java.util.concurrent.CompletionException ex){
+                        if(ex.getCause() instanceof AgentExecutionDeferredException deferred)throw deferred;
+                        throw ex;
+                    }
+                }
             }
             var b=new StringBuilder("\n\n# OPTIONAL SPECIALIST CONSULTATIONS\n");
             for(int i=0;i<results.size();i++) b.append("\n## Consultation ").append(i+1).append("\n").append(results.get(i).content());
             return b.toString();
-        }catch(Exception e){return "\n\n# OPTIONAL SPECIALIST CONSULTATIONS\nCould not parse optional consultation plan; continuing without fan-out.";}
+        }catch(AgentExecutionDeferredException deferred){throw deferred;}
+        catch(Exception e){return "\n\n# OPTIONAL SPECIALIST CONSULTATIONS\nCould not parse optional consultation plan; continuing without fan-out.";}
     }
 
     private void runProposal(Offer offer,String refinement){
