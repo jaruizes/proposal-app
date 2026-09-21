@@ -1,5 +1,6 @@
 package io.github.jaruizes.proposal.infrastructure.client.platform;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jaruizes.proposal.domain.exceptions.DomainException;
@@ -144,6 +145,11 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
                 && hasArtifact;
         var content = hasArtifact ? artifacts.get(0).path("content").asText() : null;
         var usage = payload.path("usage");
+        Map<String,Object> telemetry=Map.of();
+        if(hasArtifact){
+            var modelMetadata=artifacts.get(0).path("metadata").path("model_metadata");
+            if(modelMetadata.isObject()) telemetry=mapper.convertValue(modelMetadata,new TypeReference<Map<String,Object>>(){});
+        }
         var error = completed ? null
                 : ("execution.failed".equals(eventType)
                     ? payload.path("error").path("message").asText("Agent Platform execution failed")
@@ -159,7 +165,8 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
                 usage.path("input_tokens").asLong(0),
                 usage.path("output_tokens").asLong(0),
                 nullIfBlank(payload.path("provider_request_id").asText()),
-                error
+                error,
+                telemetry
         ));
     }
 
