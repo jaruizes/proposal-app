@@ -784,12 +784,79 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         await add_event("proposal.assembled", {"sections": len(state["proposal_sections"])})
         return {"proposal_content": content}
 
+    def final_model_result(
+        state: dict,
+        proposal: str,
+        *,
+        model: str | None = None,
+        provider_request_id: str | None = None,
+        normalized_issues: list[dict[str, str]] | None = None,
+        global_review_skipped: bool = False,
+        skip_reason: str | None = None,
+        corrected_sections: list[str] | None = None,
+        skipped_corrections: list[str] | None = None,
+    ) -> ModelResult:
+        issues = normalized_issues or []
+        usage = ModelUsage(
+            input_tokens=sum(call.usage.input_tokens for call in calls),
+            output_tokens=sum(call.usage.output_tokens for call in calls),
+            cache_read_tokens=sum(call.usage.cache_read_tokens for call in calls),
+            cache_write_tokens=sum(call.usage.cache_write_tokens for call in calls),
+        )
+        reference_map = state.get("proposal_references", {})
+        return ModelResult(
+            content=proposal,
+            model=model or (calls[-1].model if calls else "unknown"),
+            usage=usage,
+            provider_request_id=provider_request_id or (calls[-1].provider_request_id if calls else None),
+            metadata={
+                "proposal_sections": len(state.get("proposal_sections", [])),
+                "model_calls": len(calls),
+                "reference_hits": sum(len(items) for items in reference_map.values()),
+                "reference_sections": {name: len(items) for name, items in reference_map.items()},
+                "global_review_issues": len(issues),
+                "global_review_blocking_issues": sum(1 for item in issues if item.get("severity") == "BLOCKING"),
+                "global_review_advisory_improvements": sum(1 for item in issues if item.get("severity") == "IMPROVEMENT"),
+                "global_review_skipped": global_review_skipped,
+                "global_review_skip_reason": skip_reason,
+                "global_review_corrected": bool(corrected_sections),
+                "global_review_corrected_sections": corrected_sections or [],
+                "global_review_skipped_corrections": skipped_corrections or [],
+                "proposal_step_usage": step_usage,
+                "proposal_budget": {
+                    "input_tokens": settings.proposal_input_token_budget,
+                    "output_tokens": settings.proposal_output_token_budget,
+                    "cost_usd": settings.proposal_cost_budget_usd,
+                    "output_budget_mode": "soft",
+                },
+                "proposal_consumed": {
+                    "input_tokens": consumed["input"],
+                    "output_tokens": consumed["output"],
+                    "cache_read_tokens": consumed["cache_read"],
+                    "cache_write_tokens": consumed["cache_write"],
+                    "estimated_cost_usd": round(consumed["cost_usd"], 6),
+                },
+            },
+        )
     async def global_review(state: dict) -> dict:
         base = await base_request(state)
         sections = state["proposal_sections"]
         drafts = dict(state["proposal_drafts"])
         title = state["proposal_content"].splitlines()[0][2:]
         proposal = _assemble(title, sections, drafts)
+
+        if await note_soft_budget("proposal.global.reviewed", reserve_tokens=1800):
+            await add_event("proposal.global.review.skipped", {
+                "reason": "soft_output_budget",
+                "output_tokens": consumed["output"],
+            })
+            final = final_model_result(
+                state,
+                proposal,
+                global_review_skipped=True,
+                skip_reason="soft_output_budget",
+            )
+            return {"model_result": final.model_dump(mode="json")}
 
         result = await generate(base, (
             "Review the complete proposal once for material cross-section quality issues. "
@@ -828,7 +895,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         if normalized:
             grouped: dict[str, list[str]] = {}
             for issue in normalized:
-                if issue["instruction"]:
+                if issue["severity"] == "BLOCKING" and issue["instruction"]:
                     grouped.setdefault(issue["section"], []).append(
                         f"[{issue['severity']}] {issue['instruction']}"
                     )
@@ -853,7 +920,13 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 )
 
             revisions = []
+            skipped_for_budget = []
             for name, instructions in grouped.items():
+                section = next(item for item in sections if item["name"] == name)
+                reserve = _section_budget(section["depth"])["tokens"]
+                if await note_soft_budget("proposal.section.revised", reserve_tokens=reserve):
+                    skipped_for_budget.append(name)
+                    continue
                 revisions.append(await revise(name, instructions))
             drafts.update(revisions)
             proposal = _assemble(title, sections, drafts)
@@ -861,45 +934,18 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "issues": len(normalized),
                 "blocking": sum(1 for item in normalized if item["severity"] == "BLOCKING"),
                 "improvements": sum(1 for item in normalized if item["severity"] == "IMPROVEMENT"),
-                "sections_corrected": sorted(grouped),
+                "sections_corrected": sorted(name for name, _ in revisions),
+                "sections_skipped_for_budget": sorted(skipped_for_budget),
             })
 
-        usage = ModelUsage(
-            input_tokens=sum(c.usage.input_tokens for c in calls),
-            output_tokens=sum(c.usage.output_tokens for c in calls),
-            cache_read_tokens=sum(c.usage.cache_read_tokens for c in calls),
-            cache_write_tokens=sum(c.usage.cache_write_tokens for c in calls),
-        )
-        reference_map = state.get("proposal_references", {})
-        final = ModelResult(
-            content=proposal,
+        final = final_model_result(
+            state,
+            proposal,
             model=result.model,
-            usage=usage,
             provider_request_id=result.provider_request_id,
-            metadata={
-                "proposal_sections": len(sections),
-                "model_calls": len(calls),
-                "reference_hits": sum(len(items) for items in reference_map.values()),
-                "reference_sections": {name: len(items) for name, items in reference_map.items()},
-                "global_review_issues": len(normalized),
-                "global_review_blocking_issues": sum(
-                    1 for item in normalized if item["severity"] == "BLOCKING"
-                ),
-                "global_review_corrected": bool(normalized),
-                "proposal_step_usage": step_usage,
-                "proposal_budget": {
-                    "input_tokens": settings.proposal_input_token_budget,
-                    "output_tokens": settings.proposal_output_token_budget,
-                    "cost_usd": settings.proposal_cost_budget_usd,
-                },
-                "proposal_consumed": {
-                    "input_tokens": consumed["input"],
-                    "output_tokens": consumed["output"],
-                    "cache_read_tokens": consumed["cache_read"],
-                    "cache_write_tokens": consumed["cache_write"],
-                    "estimated_cost_usd": round(consumed["cost_usd"], 6),
-                },
-            },
+            normalized_issues=normalized,
+            corrected_sections=[name for name, _ in revisions] if normalized else [],
+            skipped_corrections=skipped_for_budget if normalized else [],
         )
         return {"model_result": final.model_dump(mode="json")}
 
