@@ -380,57 +380,105 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         base = await base_request(state)
         sections = state["proposal_sections"]
         drafts = dict(state["proposal_drafts"])
-        for pass_number in range(2):
-            proposal = _assemble(state["proposal_content"].splitlines()[0][2:], sections, drafts)
-            result = await generate(base, (
-                "Review the complete proposal for cross-section contradictions, missing required coverage, "
-                "unsupported claims, repetition and inconsistent terminology. Do not rewrite the document. "
-                "Return ONLY JSON: {\"issues\":[{\"section\":\"exact configured section name\",\"instruction\":\"specific correction\"}]}. "
-                "Return an empty issues array when acceptable. Maximum five actionable issues.\n\n"
-                f"# Candidate proposal\n{proposal}"
-            ), "proposal.global.reviewed", {"pass": pass_number + 1}, max_output_tokens=1800)
-            issues = _json_response(result.content)["issues"]
-            if not issues:
-                usage = ModelUsage(
-                    input_tokens=sum(c.usage.input_tokens for c in calls),
-                    output_tokens=sum(c.usage.output_tokens for c in calls),
-                    cache_read_tokens=sum(c.usage.cache_read_tokens for c in calls),
-                    cache_write_tokens=sum(c.usage.cache_write_tokens for c in calls),
-                )
-                reference_map = state.get("proposal_references", {})
-                final = ModelResult(content=proposal, model=result.model, usage=usage,
-                                    provider_request_id=result.provider_request_id,
-                                    metadata={
-                                        "proposal_sections": len(sections),
-                                        "model_calls": len(calls),
-                                        "reference_hits": sum(len(items) for items in reference_map.values()),
-                                        "reference_sections": {name: len(items) for name, items in reference_map.items()},
-                                    })
-                return {"model_result": final.model_dump(mode="json")}
-            if pass_number == 1:
-                raise ProposalPlanError("Global proposal review found unresolved issues")
+        title = state["proposal_content"].splitlines()[0][2:]
+        proposal = _assemble(title, sections, drafts)
+
+        result = await generate(base, (
+            "Review the complete proposal once for material cross-section quality issues. "
+            "Focus only on factual contradictions, unsupported commitments, missing required coverage, "
+            "or terminology inconsistencies that would materially mislead the customer. "
+            "Do NOT report stylistic preferences, optional improvements or minor repetition. "
+            "Do not rewrite the document. "
+            "Return ONLY JSON: "
+            "{\"issues\":[{\"section\":\"exact configured section name\","
+            "\"severity\":\"BLOCKING|IMPROVEMENT\","
+            "\"instruction\":\"specific correction\"}]}. "
+            "Use BLOCKING only for issues that make the proposal materially incorrect or incomplete. "
+            "Return an empty issues array when acceptable. Maximum five actionable issues.\n\n"
+            f"# Candidate proposal\n{proposal}"
+        ), "proposal.global.reviewed", {"pass": 1}, max_output_tokens=1800)
+
+        issues = _json_response(result.content)["issues"]
+        valid = {section["name"] for section in sections}
+        normalized: list[dict[str, str]] = []
+        for issue in issues:
+            if (
+                not isinstance(issue, dict)
+                or issue.get("section") not in valid
+                or not isinstance(issue.get("instruction"), str)
+            ):
+                raise ProposalPlanError("Global review referenced an invalid section")
+            severity = str(issue.get("severity") or "IMPROVEMENT").upper()
+            if severity not in {"BLOCKING", "IMPROVEMENT"}:
+                severity = "IMPROVEMENT"
+            normalized.append({
+                "section": issue["section"],
+                "severity": severity,
+                "instruction": issue["instruction"].strip(),
+            })
+
+        if normalized:
             grouped: dict[str, list[str]] = {}
-            valid = {section["name"] for section in sections}
-            for issue in issues:
-                if not isinstance(issue, dict) or issue.get("section") not in valid or not isinstance(issue.get("instruction"), str):
-                    raise ProposalPlanError("Global review referenced an invalid section")
-                grouped.setdefault(issue["section"], []).append(issue["instruction"])
+            for issue in normalized:
+                if issue["instruction"]:
+                    grouped.setdefault(issue["section"], []).append(
+                        f"[{issue['severity']}] {issue['instruction']}"
+                    )
+
             async def revise(name: str, instructions: list[str]) -> tuple[str, str]:
                 section = next(item for item in sections if item["name"] == name)
                 budget = _section_budget(section["depth"])
                 correction = await generate(base, (
                     f"Revise ONLY the body of section {name!r}. No heading or other sections. "
                     f"Keep the revised section within {budget['words']} words. "
-                    "Preserve approved evidence and avoid unsupported commitments. Correct these global review findings:\n"
+                    "Preserve approved evidence and avoid unsupported commitments. "
+                    "Apply the following global review findings exactly; do not introduce unrelated changes:\n"
                     + "\n".join(f"- {item}" for item in instructions)
                     + "\n\n# Current body\n" + drafts[name]
                 ), "proposal.section.revised", {
                     "section": name,
                     "word_budget": budget["words"],
                 }, max_output_tokens=budget["tokens"])
-                return name, await validated_section_body(base, correction.content, name, source_stage="global-revision")
-            drafts.update(await asyncio.gather(*(revise(name, instructions) for name, instructions in grouped.items())))
-        raise AssertionError("Unreachable")
+                return name, await validated_section_body(
+                    base, correction.content, name, source_stage="global-revision"
+                )
+
+            drafts.update(await asyncio.gather(
+                *(revise(name, instructions) for name, instructions in grouped.items())
+            ))
+            proposal = _assemble(title, sections, drafts)
+            await add_event("proposal.global.review.corrected", {
+                "issues": len(normalized),
+                "blocking": sum(1 for item in normalized if item["severity"] == "BLOCKING"),
+                "improvements": sum(1 for item in normalized if item["severity"] == "IMPROVEMENT"),
+                "sections_corrected": sorted(grouped),
+            })
+
+        usage = ModelUsage(
+            input_tokens=sum(c.usage.input_tokens for c in calls),
+            output_tokens=sum(c.usage.output_tokens for c in calls),
+            cache_read_tokens=sum(c.usage.cache_read_tokens for c in calls),
+            cache_write_tokens=sum(c.usage.cache_write_tokens for c in calls),
+        )
+        reference_map = state.get("proposal_references", {})
+        final = ModelResult(
+            content=proposal,
+            model=result.model,
+            usage=usage,
+            provider_request_id=result.provider_request_id,
+            metadata={
+                "proposal_sections": len(sections),
+                "model_calls": len(calls),
+                "reference_hits": sum(len(items) for items in reference_map.values()),
+                "reference_sections": {name: len(items) for name, items in reference_map.items()},
+                "global_review_issues": len(normalized),
+                "global_review_blocking_issues": sum(
+                    1 for item in normalized if item["severity"] == "BLOCKING"
+                ),
+                "global_review_corrected": bool(normalized),
+            },
+        )
+        return {"model_result": final.model_dump(mode="json")}
 
     builder.add_node("plan_proposal", plan)
     builder.add_node("retrieve_references", retrieve_references)
