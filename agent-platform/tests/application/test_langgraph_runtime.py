@@ -349,9 +349,9 @@ def test_proposal_section_budgets_are_bounded_below_agent_global_limit():
     standard = _section_budget("STANDARD")
     detailed = _section_budget("DETAILED")
 
-    assert summary == {"words": 700, "tokens": 2200}
-    assert standard == {"words": 1200, "tokens": 3600}
-    assert detailed == {"words": 1800, "tokens": 5600}
+    assert summary == {"words": 450, "tokens": 1400}
+    assert standard == {"words": 800, "tokens": 2400}
+    assert detailed == {"words": 1200, "tokens": 3600}
     assert summary["tokens"] < standard["tokens"] < detailed["tokens"] < 16000
 
 
@@ -604,7 +604,7 @@ async def test_proposal_soft_output_budget_returns_valid_assembled_document(monk
     assert "## Technical approach" in result.artifacts[0].content
     events=await er.list_events(result.execution_id)
     assert any(event["event_type"]=="proposal.global.review.skipped" for event in events)
-    assert result.artifacts[0].metadata["model_metadata"]["global_review_skipped"] is True
+    assert result.artifacts[0].metadata["global_review_skipped"] is True
 
 
 @pytest.mark.asyncio
