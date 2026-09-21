@@ -760,6 +760,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "global_review_corrected": bool(issues) and not quality_degraded,
                 "quality_degraded": quality_degraded,
                 "skipped_quality_steps": skipped_quality_steps or [],
+                "global_review_skipped": "global_review" in (skipped_quality_steps or []),
                 "proposal_step_usage": step_usage,
                 "proposal_budget": {
                     "input_tokens": settings.proposal_input_token_budget,
