@@ -35,7 +35,7 @@
       "output_schema": {},
       "constraints": {
         "execution": {
-          "graph": "resilient-single",
+          "graph": "source-ingestion",
           "truncation": {
             "max_attempts": 3,
             "shrink_factors": [
@@ -226,6 +226,7 @@
       "key": "business-analyst",
       "source": "agents/business-analyst.md",
       "capabilities": [
+        "source-ingestion",
         "opportunity-analysis",
         "qualification",
         "response-strategy",
@@ -234,6 +235,7 @@
         "presentation-materialization"
       ],
       "skills": [
+        "ingest-sources",
         "qualify-opportunity",
         "compose-proposal",
         "design-presentation",
