@@ -888,60 +888,6 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         await add_event("proposal.assembled", {"sections": len(state["proposal_sections"])})
         return {"proposal_content": content}
 
-    def final_model_result(
-        state: dict,
-        proposal: str,
-        *,
-        model: str | None = None,
-        provider_request_id: str | None = None,
-        normalized_issues: list[dict[str, str]] | None = None,
-        global_review_skipped: bool = False,
-        skip_reason: str | None = None,
-        corrected_sections: list[str] | None = None,
-        skipped_corrections: list[str] | None = None,
-    ) -> ModelResult:
-        issues = normalized_issues or []
-        usage = ModelUsage(
-            input_tokens=sum(call.usage.input_tokens for call in calls),
-            output_tokens=sum(call.usage.output_tokens for call in calls),
-            cache_read_tokens=sum(call.usage.cache_read_tokens for call in calls),
-            cache_write_tokens=sum(call.usage.cache_write_tokens for call in calls),
-        )
-        reference_map = state.get("proposal_references", {})
-        return ModelResult(
-            content=proposal,
-            model=model or (calls[-1].model if calls else "unknown"),
-            usage=usage,
-            provider_request_id=provider_request_id or (calls[-1].provider_request_id if calls else None),
-            metadata={
-                "proposal_sections": len(state.get("proposal_sections", [])),
-                "model_calls": len(calls),
-                "reference_hits": sum(len(items) for items in reference_map.values()),
-                "reference_sections": {name: len(items) for name, items in reference_map.items()},
-                "global_review_issues": len(issues),
-                "global_review_blocking_issues": sum(1 for item in issues if item.get("severity") == "BLOCKING"),
-                "global_review_advisory_improvements": sum(1 for item in issues if item.get("severity") == "IMPROVEMENT"),
-                "global_review_skipped": global_review_skipped,
-                "global_review_skip_reason": skip_reason,
-                "global_review_corrected": bool(corrected_sections),
-                "global_review_corrected_sections": corrected_sections or [],
-                "global_review_skipped_corrections": skipped_corrections or [],
-                "proposal_step_usage": step_usage,
-                "proposal_budget": {
-                    "input_tokens": settings.proposal_input_token_budget,
-                    "output_tokens": settings.proposal_output_token_budget,
-                    "cost_usd": settings.proposal_cost_budget_usd,
-                    "output_budget_mode": "soft",
-                },
-                "proposal_consumed": {
-                    "input_tokens": consumed["input"],
-                    "output_tokens": consumed["output"],
-                    "cache_read_tokens": consumed["cache_read"],
-                    "cache_write_tokens": consumed["cache_write"],
-                    "estimated_cost_usd": round(consumed["cost_usd"], 6),
-                },
-            },
-        )
     async def global_review(state: dict) -> dict:
         base = await base_request(state)
         sections = state["proposal_sections"]
@@ -1009,7 +955,9 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
 
         grouped: dict[str, list[str]] = {}
         for issue in normalized:
-            if issue["instruction"]:
+            # Improvements are advisory for the human approval gate. Only BLOCKING
+            # findings justify another model call and full section rewrite.
+            if issue["severity"] == "BLOCKING" and issue["instruction"]:
                 grouped.setdefault(issue["section"], []).append(
                     f"[{issue['severity']}] {issue['instruction']}"
                 )
