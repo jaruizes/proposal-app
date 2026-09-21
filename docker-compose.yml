@@ -137,8 +137,6 @@ services:
       DB_PASSWORD: proposal
       AGENT_PLATFORM_TRANSPORT: nats
       AGENT_PLATFORM_URL: http://agent-platform:8000
-      AGENT_PLATFORM_EXECUTION_TIMEOUT: 10m
-      AGENT_PLATFORM_PROPOSAL_EXECUTION_TIMEOUT: 30m
       NATS_URL: nats://nats:4222
       GOOGLE_OAUTH_CREDENTIALS: /app/.secrets/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /app/.secrets/google-token.json
