@@ -8,7 +8,6 @@ import io.github.jaruizes.proposal.domain.model.*;
 import io.github.jaruizes.proposal.domain.ports.OfferRepositoryPort;
 import io.github.jaruizes.proposal.domain.ports.PresentationPort;
 import io.github.jaruizes.proposal.domain.ports.ToolGatewayPort;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -29,12 +28,10 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     private final OfferRepositoryPort offers;
     private final ObjectMapper json = new ObjectMapper();
     private final TemplateSettingsService templateSettings;
-    private final int maxQaIterations;
 
     public McpGoogleSlidesPresentationAdapter(ToolGatewayPort tools, AgentRuntimeService agents, OfferRepositoryPort offers,
-            TemplateSettingsService templateSettings,
-            @Value("${presentation.visual-qa.max-fix-iterations:3}") int maxQaIterations) {
-        this.tools=tools; this.agents=agents; this.offers=offers; this.templateSettings=templateSettings; this.maxQaIterations=maxQaIterations;
+            TemplateSettingsService templateSettings) {
+        this.tools=tools; this.agents=agents; this.offers=offers; this.templateSettings=templateSettings;
     }
 
     @Override
@@ -95,8 +92,8 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
             if(presentationId.isBlank()) throw new IllegalStateException("Presentation creation returned no id: "+created);
             int initialOperations=0;
             for(var operationPlan:operationPlans) initialOperations+=applyOperations(presentationId,operationPlan);
-            int qaOperations=runStructuralQa(offer,slidesPlan,presentationId);
             var structure=text(tools.execute("slides_get_presentation",Map.of("presentationId",presentationId)));
+            var structuralQa=structuralQaReport(slidesPlan,structure);
             var url="https://docs.google.com/presentation/d/"+presentationId+"/edit";
             var report="""
                     # Presentation build report
@@ -105,8 +102,8 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                     - Generated presentation ID: %s
                     - Template immutability: original copied before edits
                     - Initial materialization MCP operations: %d
-                    - Structural-QA correction operations: %d
-                    - Structural-QA max iterations: %d
+                    - Structural-QA mode: deterministic post-build inspection
+                    - Structural-QA result: %s
                     - Final presentation structure fetched: yes
                     - Narrative authority: approved slides-plan.md
                     - Structural hierarchy authority: approved slides-plan.md
@@ -115,39 +112,37 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                     ```json
                     %s
                     ```
-                    """.formatted(hasTemplate?templateId:"none",hasTemplate?"corporate-template":"blank",presentationId,initialOperations,qaOperations,maxQaIterations,structure);
+                    """.formatted(hasTemplate?templateId:"none",hasTemplate?"corporate-template":"blank",presentationId,initialOperations,structuralQa,structure);
             return new PresentationResult(presentationId,url,report);
         } catch(Exception e){ throw new IllegalStateException("Could not materialize Google Slides presentation",e); }
     }
 
-    private int runStructuralQa(Offer offer,String slidesPlan,String presentationId) {
-        int corrections=0;
-        for(int iteration=1;iteration<=maxQaIterations;iteration++) {
-            var structure=text(tools.execute("slides_get_presentation",Map.of("presentationId",presentationId)));
-            if(structure==null||structure.isBlank()) break;
-            var qa=agents.execute(
-                    AgentTask.of(offer.id(),PhaseType.PRESENTATION,"business-analyst","generate-presentation",
-                            "Structural QA iteration "+iteration,"""
-                            Review the REAL current deck structure against the frozen slides-plan.
-                            Check slide order, exact titles, missing/extra slides, template leftovers, incorrect language,
-                            unapproved cliente/customer wording and obviously excessive text density from the textual structure.
-                            Do NOT claim to inspect clipping, overlap or visual rendering because no thumbnails are supplied.
-                            Do NOT rewrite approved narrative copy.
-                            Return ONLY JSON: {"status":"OK|FIX","operations":[...]}. If status is FIX, operations may only use
-                            the allowed Slides tools and $PRESENTATION_ID placeholder. If no safe structural correction
-                            remains, return status OK with no operations and an optional "note".
-                            """).withOutputFormat("json"),
-                    model(offer),
-                    "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# CURRENT DECK STRUCTURE\n"+compactDeckStructure(structure)).content();
-            try {
-                var root=json.readTree(qa);
-                if("OK".equalsIgnoreCase(root.path("status").asText())) break;
-                var count=applyOperations(presentationId,qa);
-                corrections+=count;
-                if(count==0) break;
-            } catch(Exception e) { break; }
+    private String structuralQaReport(String slidesPlan,String structure){
+        try{
+            var expected=slidesPlan==null?0:(int)Arrays.stream(slidesPlan.split("\\R"))
+                    .filter(line->line.startsWith("## SLIDE-")).count();
+            var root=json.readTree(structure==null?"{}":structure);
+            var actual=root.path("slides").isArray()?root.path("slides").size():0;
+            var leftovers=new ArrayList<String>();
+            if(root.path("slides").isArray()){
+                for(var slide:root.path("slides")){
+                    for(var element:slide.path("pageElements")){
+                        if(!element.has("shape"))continue;
+                        var text=compactText(element.path("shape").path("text"));
+                        var lower=text.toLowerCase(Locale.ROOT);
+                        if(lower.contains("lorem ipsum")||lower.contains("placeholder")||lower.contains("insert text"))
+                            leftovers.add(text);
+                    }
+                }
+            }
+            if(actual!=expected)
+                return "WARN expectedSlides="+expected+", actualSlides="+actual+", templateLeftovers="+leftovers.size();
+            if(!leftovers.isEmpty())
+                return "WARN templateLeftovers="+leftovers.size();
+            return "OK expectedSlides="+expected+", actualSlides="+actual;
+        }catch(Exception e){
+            return "WARN structural inspection unavailable: "+e.getMessage();
         }
-        return corrections;
     }
 
     private String compactDeckStructure(String raw){
