@@ -9,16 +9,17 @@ public record NatsAgentPlatformProperties(
         String url,
         String commandSubject,
         String eventsSubject,
-        String eventsDurable,
-        Duration executionTimeout) {
+        String eventsDurable) {
+
+    /** Compatibility constructor for tests/configuration created before event-driven NATS. */
+    public NatsAgentPlatformProperties(String url,String commandSubject,String eventsSubject,String eventsDurable,Duration ignoredExecutionTimeout) {
+        this(url,commandSubject,eventsSubject,eventsDurable);
+    }
 
     public NatsAgentPlatformProperties {
         if (url == null || url.isBlank()) url = "nats://localhost:4222";
         if (commandSubject == null || commandSubject.isBlank()) commandSubject = "agent-platform.commands.execution.requested";
         if (eventsSubject == null || eventsSubject.isBlank()) eventsSubject = "agent-platform.events.execution.*";
         if (eventsDurable == null || eventsDurable.isBlank()) eventsDurable = "proposal-backend-events";
-        // Retained only for configuration compatibility with older deployments.
-        // The NATS transport does not use an execution timeout: completion is event-driven.
-        if (executionTimeout == null) executionTimeout = Duration.ofMinutes(10);
     }
 }
