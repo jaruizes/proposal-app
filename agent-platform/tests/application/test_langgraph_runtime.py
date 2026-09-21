@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from agent_platform.application.cache import CacheService, InMemoryCacheProvider
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
-from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget
+from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget, _proposal_context_pack, _section_context
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.domain import AgentDefinition, AgentExecution, AgentExecutionRequest, ExecutionStatus, SkillDefinition
@@ -376,3 +376,43 @@ async def test_proposal_substeps_are_reused_across_new_execution_ids():
     assert second.usage.output_tokens==0
     events=await er.list_events(second.execution_id)
     assert any(event["event_type"]=="proposal.step.reused" for event in events)
+
+
+def test_proposal_context_pack_selects_section_specific_slices():
+    pack = {
+        "customerAndOpportunity": {"customer": "ACME"},
+        "mandatoryRequirements": ["R1"],
+        "goalsAndScope": ["G1"],
+        "strategy": ["S1"],
+        "solutionHighlights": ["H1"],
+        "architectureAndIntegrations": ["A1"],
+        "securityAndOperations": ["SEC1"],
+        "deliveryApproach": ["D1"],
+        "risksAssumptionsAndTbds": ["RISK1"],
+        "differentiators": ["DIFF1"],
+        "evidenceIndex": {"E1": "DOC-001 p.2"},
+    }
+    architecture = _section_context(pack, {"name": "Arquitectura e integraciones", "guidance": "Detalle técnico"})
+    delivery = _section_context(pack, {"name": "Enfoque de ejecución", "guidance": "Workstreams y metodología"})
+
+    assert "architectureAndIntegrations" in architecture
+    assert "securityAndOperations" in architecture
+    assert "deliveryApproach" not in architecture
+    assert "deliveryApproach" in delivery
+    assert "architectureAndIntegrations" not in delivery
+    assert "mandatoryRequirements" in architecture
+    assert "evidenceIndex" in delivery
+
+
+def test_proposal_context_pack_is_parsed_without_guidance_tail():
+    request = AgentExecutionRequest(
+        agent_key="ba",
+        objective="Compose",
+        context={"business_context":
+            "Offer name: Example\n\n"
+            "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
+            "{\"customerAndOpportunity\":{\"customer\":\"ACME\"}}\n\n"
+            "# PROPOSAL GUIDANCE JSON\n{\"sections\":[]}"
+        },
+    )
+    assert _proposal_context_pack(request)["customerAndOpportunity"]["customer"] == "ACME"
