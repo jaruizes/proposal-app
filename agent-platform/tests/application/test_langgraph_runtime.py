@@ -384,7 +384,7 @@ def test_proposal_context_pack_selects_section_specific_slices():
         "customerAndOpportunity": {"customer": "ACME"},
         "mandatoryRequirements": ["R1"],
         "goalsAndScope": ["G1"],
-        "strategy": ["S1"],
+        "responseStrategy": ["S1"],
         "solutionHighlights": ["H1"],
         "architectureAndIntegrations": ["A1"],
         "securityAndOperations": ["SEC1"],
