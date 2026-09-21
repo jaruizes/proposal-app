@@ -49,7 +49,7 @@ export class AppComponent {
   chooseArtifact(index:number){this.selectedArtifactIndex.set(index);this.showRawMarkdown.set(false);}
   canExportSelectedArtifactPdf(){
     const artifact=this.selectedArtifact();
-    return !!artifact&&artifact.type!=='DOCUMENT'&&['OPPORTUNITY_BRIEF','QUESTIONS','TECHNOLOGY','STRATEGY','SOLUTION','DELIVERY_PLAN','PROPOSAL','SLIDES_PLAN'].includes(artifact.type);
+    return !!artifact&&artifact.type!=='DOCUMENT'&&['OPPORTUNITY_BRIEF','QUESTIONS','TECHNOLOGY','SOLUTION','DELIVERY_PLAN','PROPOSAL','SLIDES_PLAN'].includes(artifact.type);
   }
   exportSelectedArtifactPdf(){
     const offer=this.selected(),artifact=this.selectedArtifact();
@@ -62,7 +62,7 @@ export class AppComponent {
   agentStatusClass(status:string){return status==='RUNNING'?'running':status==='COMPLETED'?'completed':status==='FAILED'?'failed':'pending';}
   agentStatusLabel(status:string){return status==='RUNNING'?'Trabajando':status==='COMPLETED'?'Completado':status==='FAILED'?'Error':status;}
   agentDuration(agent:AgentExecutionTelemetry){const start=agent.startedAt?new Date(agent.startedAt).getTime():0;if(!start)return '—';const end=agent.completedAt?new Date(agent.completedAt).getTime():Date.now();const seconds=Math.max(0,Math.round((end-start)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
-  agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Entendimiento y cualificación',STRATEGY:'Estrategia de respuesta',SOLUTION:'Propuesta de solución y plan de delivery',PROPOSAL:'Documento de oferta detallado',SLIDE_PLAN:'Propuesta de presentación',PRESENTATION:'Generación de presentación corporativa'};return labels[phase]||phase;}
+  agentPhaseLabel(phase:string){const labels:Record<string,string>={ANALYSIS:'Entendimiento y cualificación',SOLUTION:'Propuesta de solución y plan de delivery',PROPOSAL:'Documento de oferta detallado',SLIDE_PLAN:'Propuesta de presentación',PRESENTATION:'Generación de presentación corporativa'};return labels[phase]||phase;}
   proposalApproved(exec:OfferExecution){return exec.phases.some(p=>p.key==='proposal'&&p.status==='approved');}
   materializedStatusLabel(status:string){return status==='READY'?'Disponible':status==='FAILED'?'Error':'Generando';}
   downloadMaterialized(document:MaterializedDocument){const offer=this.selected();if(offer&&document.status==='READY')this.svc.downloadDocument(offer.id,document);}
@@ -149,7 +149,6 @@ export class AppComponent {
       OPPORTUNITY_BRIEF:'opportunity-brief.md',
       QUESTIONS:'questions.md',
       TECHNOLOGY:'technology.md',
-      STRATEGY:'strategy.md',
       SOLUTION:'solution.md',
       DELIVERY_PLAN:'delivery-plan.md',
       PROPOSAL:'proposal.md',
@@ -162,5 +161,5 @@ export class AppComponent {
   private tableCells(line:string){return line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());}
   private inlineMarkdown(value:string){let s=this.escapeHtml(value);s=s.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>');return s;}
   private escapeHtml(value:string){return value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
-  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',generatePresentation:false,provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',strategy:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',proposal:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},proposalSections:structuredClone(this.svc.defaultProposalSections) as ProposalSectionConfig[],sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
+  private newDraft(){return{name:'',customer:'',presentationLanguage:'Español',inputDriveFolder:'',outputDriveFolder:'',presentationName:'',generatePresentation:false,provider:'ANTHROPIC',models:{analysis:'claude-sonnet-4-6',solution:'claude-sonnet-4-6',proposal:'claude-sonnet-4-6',slides:'claude-sonnet-4-6'},proposalSections:structuredClone(this.svc.defaultProposalSections) as ProposalSectionConfig[],sections:structuredClone(this.svc.defaultSections) as SectionConfig[]};}
 }
