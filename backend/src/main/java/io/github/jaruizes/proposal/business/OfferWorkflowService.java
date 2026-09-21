@@ -33,6 +33,7 @@ public class OfferWorkflowService {
     private final TaskExecutor documentTaskExecutor;
     private final ProposalDocumentMaterializationService proposalDocuments;
     private final ObjectMapper json = new ObjectMapper();
+    private final java.util.concurrent.ConcurrentMap<String,java.util.concurrent.locks.ReentrantLock> phaseLocks = new java.util.concurrent.ConcurrentHashMap<>();
 
     public OfferWorkflowService(OfferRepositoryPort offers, PhaseRepositoryPort phases,
                                 ArtifactRepositoryPort artifacts, AgentExecutionRepositoryPort agentExecutions,
@@ -157,21 +158,29 @@ public class OfferWorkflowService {
     }
 
     private void runPhase(UUID offerId,PhaseType phaseType,String refinement){
+        var lockKey=offerId+":"+phaseType.name();
+        var lock=phaseLocks.computeIfAbsent(lockKey,ignored->new java.util.concurrent.locks.ReentrantLock());
+        if(!lock.tryLock())return;
         try{
-            var offer=find(offerId);
-            switch(phaseType){
-                case ANALYSIS->runAnalysis(offer,refinement);
-                case STRATEGY->runStrategy(offer,refinement);
-                case SOLUTION->runSolution(offer,refinement);
-                case PROPOSAL->runProposal(offer,refinement);
-                case SLIDE_PLAN->runSlidePlan(offer,refinement);
-                case PRESENTATION->runPresentation(offer,refinement);
-            }
-            markWaiting(offerId,phaseType);
-        }catch(AgentExecutionDeferredException deferred){
-            // Expected for the NATS command/event transport. The phase remains RUNNING;
-            // the terminal event will resume the durable phase from its persisted checkpoints.
-        }catch(Exception e){markFailed(offerId,phaseType,e);}
+            try{
+                var offer=find(offerId);
+                switch(phaseType){
+                    case ANALYSIS->runAnalysis(offer,refinement);
+                    case STRATEGY->runStrategy(offer,refinement);
+                    case SOLUTION->runSolution(offer,refinement);
+                    case PROPOSAL->runProposal(offer,refinement);
+                    case SLIDE_PLAN->runSlidePlan(offer,refinement);
+                    case PRESENTATION->runPresentation(offer,refinement);
+                }
+                markWaiting(offerId,phaseType);
+            }catch(AgentExecutionDeferredException deferred){
+                // Expected for the NATS command/event transport. The phase remains RUNNING;
+                // the terminal event will resume the durable phase from its persisted checkpoints.
+            }catch(Exception e){markFailed(offerId,phaseType,e);}
+        }finally{
+            lock.unlock();
+            if(!lock.hasQueuedThreads())phaseLocks.remove(lockKey,lock);
+        }
     }
 
     @EventListener
