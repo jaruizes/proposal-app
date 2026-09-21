@@ -136,15 +136,18 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
         var executionIdText = event.path("execution_id").asText();
         if (executionIdText == null || executionIdText.isBlank()) return;
         var payload = event.path("payload");
-        var completed = "execution.completed".equals(eventType)
-                && !"FAILED".equals(payload.path("status").asText());
         var artifacts = payload.path("artifacts");
-        var content = artifacts.isArray() && !artifacts.isEmpty()
-                ? artifacts.get(0).path("content").asText(null)
-                : null;
+        var hasArtifact = artifacts.isArray() && !artifacts.isEmpty()
+                && !artifacts.get(0).path("content").asText("").isBlank();
+        var completed = "execution.completed".equals(eventType)
+                && !"FAILED".equals(payload.path("status").asText())
+                && hasArtifact;
+        var content = hasArtifact ? artifacts.get(0).path("content").asText() : null;
         var usage = payload.path("usage");
-        var error = completed ? null : payload.path("error").path("message")
-                .asText("Agent Platform execution failed");
+        var error = completed ? null
+                : (hasArtifact
+                    ? payload.path("error").path("message").asText("Agent Platform execution failed")
+                    : "Agent Platform completed without a usable artifact");
 
         events.publishEvent(new AgentPlatformExecutionEvent(
                 UUID.fromString(executionIdText),
