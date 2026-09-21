@@ -41,7 +41,7 @@ Do not create one independent agent execution per section in normal-size proposa
 
 ## Large-volume mode: SPLIT
 
-Only when context volume is too large for a safe coherent single generation, the runtime may:
+Only when context volume is too large for a safe coherent single generation, the SAME Business Analyst AgentExecution may use multiple internal model substeps:
 
 1. compact approved artifacts once;
 2. retrieve relevant reference patterns;
@@ -51,7 +51,7 @@ Only when context volume is too large for a safe coherent single generation, the
 6. assemble the canonical proposal;
 7. perform one bounded global consistency review.
 
-Successful substeps are checkpointed and reusable across retries.
+Successful internal substeps are checkpointed and reusable across retries. No extra Business Analyst AgentExecution is created merely to compact or split the proposal.
 
 Even in split mode, the result must read as one authored document, not a Frankenstein concatenation.
 
