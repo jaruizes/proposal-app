@@ -420,7 +420,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         request = AgentExecutionRequest.model_validate(state["request"])
         base = await base_request(state)
         business_context = request.context.get("business_context", "")
-        guidance = _proposal_guidance(request)
+        guidance = configured_sections(request)
 
         references = []
         if runtime._proposal_retrieval_service is not None:
