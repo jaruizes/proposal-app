@@ -720,14 +720,91 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             results.append(await one(section))
         return {"proposal_drafts": dict(results)}
 
+    def final_result(
+        *,
+        proposal: str,
+        model: str,
+        provider_request_id: str | None,
+        sections: list[dict[str, str]],
+        reference_map: dict[str, list[dict]],
+        normalized: list[dict[str, str]] | None = None,
+        quality_degraded: bool = False,
+        skipped_quality_steps: list[str] | None = None,
+    ) -> ModelResult:
+        issues = normalized or []
+        usage = ModelUsage(
+            input_tokens=sum(call.usage.input_tokens for call in calls),
+            output_tokens=sum(call.usage.output_tokens for call in calls),
+            cache_read_tokens=sum(call.usage.cache_read_tokens for call in calls),
+            cache_write_tokens=sum(call.usage.cache_write_tokens for call in calls),
+        )
+        return ModelResult(
+            content=proposal,
+            model=model,
+            usage=usage,
+            provider_request_id=provider_request_id,
+            metadata={
+                "proposal_sections": len(sections),
+                "model_calls": len(calls),
+                "reference_hits": sum(len(items) for items in reference_map.values()),
+                "reference_sections": {name: len(items) for name, items in reference_map.items()},
+                "global_review_issues": len(issues),
+                "global_review_blocking_issues": sum(
+                    1 for item in issues if item.get("severity") == "BLOCKING"
+                ),
+                "global_review_corrected": bool(issues) and not quality_degraded,
+                "quality_degraded": quality_degraded,
+                "skipped_quality_steps": skipped_quality_steps or [],
+                "proposal_step_usage": step_usage,
+                "proposal_budget": {
+                    "input_tokens": settings.proposal_input_token_budget,
+                    "output_tokens": settings.proposal_output_token_budget,
+                    "cost_usd": settings.proposal_cost_budget_usd,
+                },
+                "proposal_consumed": {
+                    "input_tokens": consumed["input"],
+                    "output_tokens": consumed["output"],
+                    "cache_read_tokens": consumed["cache_read"],
+                    "cache_write_tokens": consumed["cache_write"],
+                    "estimated_cost_usd": round(consumed["cost_usd"], 6),
+                },
+            },
+        )
+
     async def review_sections(state: dict) -> dict:
-        async def one(section: dict) -> tuple[str, str]:
+        sections = state["proposal_sections"]
+        drafts = dict(state["proposal_drafts"])
+        skipped: list[str] = []
+
+        # Reviews are quality enhancement, not required to produce a usable proposal.
+        # Keep enough output headroom for one global review/finalization. If the drafts
+        # already consumed most of the soft budget, preserve them instead of failing.
+        if await note_soft_budget("proposal.section.reviewed", reserve_tokens=6000):
+            skipped.append("section_reviews")
+            await add_event("proposal.quality.degraded", {
+                "reason": "output_budget",
+                "skipped": skipped,
+                "output_tokens": consumed["output"],
+            })
+            return {
+                "proposal_drafts": drafts,
+                "proposal_quality_degraded": True,
+                "proposal_skipped_quality_steps": skipped,
+            }
+
+        for section in sections:
+            # Re-check before every review because a previous review/correction may have
+            # consumed the remaining soft budget.
+            if await note_soft_budget("proposal.section.reviewed", reserve_tokens=4500):
+                skipped.append(f"review:{section['name']}")
+                continue
+
             base = await base_request(state, section)
             name = section["name"]
-            current = state["proposal_drafts"][name]
+            current = drafts[name]
             budget = _section_budget(section["depth"])
 
-            review = await generate(base, (
+            review_result = await generate(base, (
                 f"Review ONLY section {name!r}. Do not rewrite it. "
                 f"Required depth: {section['depth']}. Human instructions: {section['guidance']}\n"
                 "Check only material factual support, missing required coverage, inconsistent terminology, "
@@ -738,9 +815,9 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             ), "proposal.section.reviewed", {
                 "section": name,
                 "review_mode": "issues-only",
-            }, max_output_tokens=1000)
+            }, max_output_tokens=700)
 
-            issues = _json_response(review.content)["issues"]
+            issues = _json_response(review_result.content)["issues"]
             clean_issues = [
                 str(item).strip()
                 for item in issues
@@ -751,7 +828,19 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     "section": name,
                     "reused_draft": True,
                 })
-                return name, current
+                continue
+
+            # Correction is optional once the soft budget is close. The human approval
+            # gate is the final authority, so keep the evidence-backed draft rather than
+            # failing the entire business phase.
+            if await note_soft_budget("proposal.section.corrected", reserve_tokens=3500):
+                skipped.append(f"correction:{name}")
+                await add_event("proposal.section.correction.skipped", {
+                    "section": name,
+                    "issues": clean_issues,
+                    "reason": "output_budget",
+                })
+                continue
 
             correction = await generate(base, (
                 f"Revise ONLY the body of section {name!r}. Return its complete revised body, with no heading. "
@@ -763,15 +852,23 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "section": name,
                 "issues": clean_issues,
                 "word_budget": budget["words"],
-            }, max_output_tokens=budget["tokens"])
-            return name, await validated_section_body(
+            }, max_output_tokens=min(budget["tokens"], 3200))
+            drafts[name] = await validated_section_body(
                 base, correction.content, name, source_stage="section-review"
             )
 
-        results = []
-        for section in state["proposal_sections"]:
-            results.append(await one(section))
-        return {"proposal_drafts": dict(results)}
+        degraded = bool(skipped)
+        if degraded:
+            await add_event("proposal.quality.degraded", {
+                "reason": "output_budget",
+                "skipped": skipped,
+                "output_tokens": consumed["output"],
+            })
+        return {
+            "proposal_drafts": drafts,
+            "proposal_quality_degraded": degraded,
+            "proposal_skipped_quality_steps": skipped,
+        }
 
     async def assemble(state: dict) -> dict:
         request = AgentExecutionRequest.model_validate(state["request"])
@@ -844,17 +941,28 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         drafts = dict(state["proposal_drafts"])
         title = state["proposal_content"].splitlines()[0][2:]
         proposal = _assemble(title, sections, drafts)
+        reference_map = state.get("proposal_references", {})
+        skipped = list(state.get("proposal_skipped_quality_steps", []))
+        already_degraded = bool(state.get("proposal_quality_degraded"))
 
-        if await note_soft_budget("proposal.global.reviewed", reserve_tokens=1800):
+        # The proposal is already complete and structurally valid here. Global review is
+        # therefore optional. Never throw away the document because there is no remaining
+        # soft output budget for another quality pass.
+        if await note_soft_budget("proposal.global.reviewed", reserve_tokens=2500):
+            skipped.append("global_review")
             await add_event("proposal.global.review.skipped", {
-                "reason": "soft_output_budget",
+                "reason": "output_budget",
                 "output_tokens": consumed["output"],
             })
-            final = final_model_result(
-                state,
-                proposal,
-                global_review_skipped=True,
-                skip_reason="soft_output_budget",
+            last = calls[-1] if calls else None
+            final = final_result(
+                proposal=proposal,
+                model=last.model if last else (base.model or "unknown"),
+                provider_request_id=last.provider_request_id if last else None,
+                sections=sections,
+                reference_map=reference_map,
+                quality_degraded=True,
+                skipped_quality_steps=skipped,
             )
             return {"model_result": final.model_dump(mode="json")}
 
@@ -871,7 +979,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             "Use BLOCKING only for issues that make the proposal materially incorrect or incomplete. "
             "Return an empty issues array when acceptable. Maximum five actionable issues.\n\n"
             f"# Candidate proposal\n{proposal}"
-        ), "proposal.global.reviewed", {"pass": 1}, max_output_tokens=1800)
+        ), "proposal.global.reviewed", {"pass": 1}, max_output_tokens=1200)
 
         issues = _json_response(result.content)["issues"]
         valid = {section["name"] for section in sections}
@@ -882,7 +990,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 or issue.get("section") not in valid
                 or not isinstance(issue.get("instruction"), str)
             ):
-                raise ProposalPlanError("Global review referenced an invalid section")
+                continue
             severity = str(issue.get("severity") or "IMPROVEMENT").upper()
             if severity not in {"BLOCKING", "IMPROVEMENT"}:
                 severity = "IMPROVEMENT"
@@ -892,60 +1000,76 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "instruction": issue["instruction"].strip(),
             })
 
-        if normalized:
-            grouped: dict[str, list[str]] = {}
-            for issue in normalized:
-                if issue["severity"] == "BLOCKING" and issue["instruction"]:
-                    grouped.setdefault(issue["section"], []).append(
-                        f"[{issue['severity']}] {issue['instruction']}"
-                    )
-
-            async def revise(name: str, instructions: list[str]) -> tuple[str, str]:
-                section = next(item for item in sections if item["name"] == name)
-                section_base = await base_request(state, section)
-                budget = _section_budget(section["depth"])
-                correction = await generate(section_base, (
-                    f"Revise ONLY the body of section {name!r}. No heading or other sections. "
-                    f"Keep the revised section within {budget['words']} words. "
-                    "Preserve approved evidence and avoid unsupported commitments. "
-                    "Apply the following global review findings exactly; do not introduce unrelated changes:\n"
-                    + "\n".join(f"- {item}" for item in instructions)
-                    + "\n\n# Current body\n" + drafts[name]
-                ), "proposal.section.revised", {
-                    "section": name,
-                    "word_budget": budget["words"],
-                }, max_output_tokens=budget["tokens"])
-                return name, await validated_section_body(
-                    section_base, correction.content, name, source_stage="global-revision"
+        grouped: dict[str, list[str]] = {}
+        for issue in normalized:
+            if issue["instruction"]:
+                grouped.setdefault(issue["section"], []).append(
+                    f"[{issue['severity']}] {issue['instruction']}"
                 )
 
-            revisions = []
-            skipped_for_budget = []
-            for name, instructions in grouped.items():
-                section = next(item for item in sections if item["name"] == name)
-                reserve = _section_budget(section["depth"])["tokens"]
-                if await note_soft_budget("proposal.section.revised", reserve_tokens=reserve):
-                    skipped_for_budget.append(name)
-                    continue
-                revisions.append(await revise(name, instructions))
-            drafts.update(revisions)
+        corrected_sections: list[str] = []
+        for name, instructions in grouped.items():
+            # Improvements are never worth failing the phase. Blocking findings may be
+            # corrected while budget remains; otherwise surface them to the human reviewer.
+            severities = {item["severity"] for item in normalized if item["section"] == name}
+            if await note_soft_budget("proposal.section.revised", reserve_tokens=1800):
+                skipped.append(f"global_correction:{name}")
+                await add_event("proposal.global.correction.skipped", {
+                    "section": name,
+                    "severities": sorted(severities),
+                    "reason": "output_budget",
+                })
+                continue
+
+            section = next(item for item in sections if item["name"] == name)
+            section_base = await base_request(state, section)
+            budget = _section_budget(section["depth"])
+            correction = await generate(section_base, (
+                f"Revise ONLY the body of section {name!r}. No heading or other sections. "
+                f"Keep the revised section within {min(budget['words'], 1000)} words. "
+                "Preserve approved evidence and avoid unsupported commitments. "
+                "Apply only the following material findings:\n"
+                + "\n".join(f"- {item}" for item in instructions)
+                + "\n\n# Current body\n" + drafts[name]
+            ), "proposal.section.revised", {
+                "section": name,
+                "word_budget": min(budget["words"], 1000),
+            }, max_output_tokens=min(budget["tokens"], 2600))
+
+            drafts[name] = await validated_section_body(
+                section_base, correction.content, name, source_stage="global-revision"
+            )
+            corrected_sections.append(name)
+
+        if corrected_sections:
             proposal = _assemble(title, sections, drafts)
             await add_event("proposal.global.review.corrected", {
                 "issues": len(normalized),
                 "blocking": sum(1 for item in normalized if item["severity"] == "BLOCKING"),
                 "improvements": sum(1 for item in normalized if item["severity"] == "IMPROVEMENT"),
-                "sections_corrected": sorted(name for name, _ in revisions),
-                "sections_skipped_for_budget": sorted(skipped_for_budget),
+                "sections_corrected": corrected_sections,
             })
 
-        final = final_model_result(
-            state,
-            proposal,
+        degraded = already_degraded or bool(skipped)
+        if degraded:
+            await add_event("proposal.quality.degraded", {
+                "reason": "soft_budget_or_skipped_quality_work",
+                "skipped": skipped,
+                "unresolved_issues": [
+                    item for item in normalized
+                    if f"global_correction:{item['section']}" in skipped
+                ],
+            })
+
+        final = final_result(
+            proposal=proposal,
             model=result.model,
             provider_request_id=result.provider_request_id,
-            normalized_issues=normalized,
-            corrected_sections=[name for name, _ in revisions] if normalized else [],
-            skipped_corrections=skipped_for_budget if normalized else [],
+            sections=sections,
+            reference_map=reference_map,
+            normalized=normalized,
+            quality_degraded=degraded,
+            skipped_quality_steps=skipped,
         )
         return {"model_result": final.model_dump(mode="json")}
 
