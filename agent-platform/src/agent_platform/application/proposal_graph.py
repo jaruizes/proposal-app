@@ -275,6 +275,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     "stage": event,
                     "checkpoint_key": checkpoint_key,
                 })
+                await record_step(event, payload, result, reused=True)
                 return result
 
         model_request = base.model_copy(update={
@@ -284,7 +285,15 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "Respect the requested size budget; never expand beyond it.",
             "messages": [ModelMessage(role=ModelRole.USER, content=prompt)],
             "max_output_tokens": effective_max,
+            "cache_system_prompt": True,
+            "cacheable_context": base.cacheable_context,
         })
+        estimated_input = max(1, (
+            len(model_request.system_prompt or "")
+            + len(model_request.cacheable_context or "")
+            + len(prompt)
+        ) // 4)
+        await assert_budget(event, estimated_input)
         async with semaphore:
             for attempt in range(2):
                 try:
@@ -303,6 +312,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     with timed_span("langgraph.proposal.model", stage=event, model=base.model or "default"):
                         result = await runtime._model_provider.generate(request_for_attempt)
                     calls.append(result)
+                    await record_step(event, payload, result)
                     if runtime._cache is not None:
                         await runtime._cache.set_json(
                             "proposal-step",
