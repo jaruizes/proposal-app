@@ -80,14 +80,13 @@ def current_runtime():
 @pytest.mark.parametrize(
     ("agent_key", "skill_key"),
     [
-        ("business-analyst", "analyze-opportunity"),
-        ("business-analyst", "build-strategy"),
-        ("business-analyst", "define-solution"),
-        ("business-analyst", "design-proposal"),
-        ("solution-architect", "define-solution"),
-        ("delivery-manager", "define-solution"),
-        ("security-specialist", "define-solution"),
-        ("presentation-builder", "generate-presentation"),
+        ("business-analyst", "qualify-opportunity"),
+        ("business-analyst", "compose-proposal"),
+        ("business-analyst", "design-presentation"),
+        ("business-analyst", "generate-presentation"),
+        ("solution-architect", "design-solution"),
+        ("delivery-manager", "plan-delivery"),
+        ("security-specialist", "design-solution"),
         ("corporate-slide-designer", "generate-presentation"),
     ],
 )
@@ -150,7 +149,7 @@ async def test_non_assigned_skill_is_rejected_before_model_invocation() -> None:
         await runtime.execute(
             AgentExecutionRequest(
                 agent_key="solution-architect",
-                skill_key="build-strategy",
+                skill_key="plan-delivery",
                 objective="This pair must not run",
             )
         )
