@@ -10,6 +10,7 @@ from agent_platform.application.models import ModelProviderError, ModelRequest, 
 from agent_platform.application.observability import EXECUTIONS, EXECUTION_LATENCY, TOKENS, timed_span
 from agent_platform.application.output_contract import normalize_output, output_media_type
 from agent_platform.application.runtime import AgentRuntime
+from agent_platform.config import get_settings
 from agent_platform.domain import AgentArtifact, AgentExecutionRequest, AgentExecutionResult, AgentUsage, CognitiveContext, ExecutionStatus
 
 
@@ -86,6 +87,21 @@ class LangGraphAgentRuntime(AgentRuntime):
                 if value:
                     TOKENS.labels(agent.key, skill_label, token_type).inc(value)
 
+            pricing = get_settings()
+            estimated_cost_usd = (
+                usage.input_tokens * pricing.anthropic_input_cost_per_million_usd
+                + usage.output_tokens * pricing.anthropic_output_cost_per_million_usd
+                + usage.cache_read_tokens * pricing.anthropic_cache_read_cost_per_million_usd
+                + usage.cache_write_tokens * pricing.anthropic_cache_write_cost_per_million_usd
+            ) / 1_000_000.0
+            execution_usage_metadata = {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cache_read_tokens": usage.cache_read_tokens,
+                "cache_write_tokens": usage.cache_write_tokens,
+                "estimated_cost_usd": round(estimated_cost_usd, 6),
+            }
+
             artifact = AgentArtifact(
                 type="AGENT_OUTPUT",
                 content=model_result.content,
@@ -101,7 +117,10 @@ class LangGraphAgentRuntime(AgentRuntime):
                     "trace_id": running.trace_id,
                     "runtime": "langgraph-v1",
                     "langgraph_thread_id": str(running.id),
-                    "model_metadata": model_result.metadata,
+                    "model_metadata": {
+                        **model_result.metadata,
+                        "execution_usage": execution_usage_metadata,
+                    },
                 },
             )
             completed = running.model_copy(
