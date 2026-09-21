@@ -566,41 +566,26 @@ public class OfferWorkflowService {
                 ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
         var guidance=proposalGuidanceJson(offer.proposalGuidance());
 
-        // Default path: one Business Analyst execution owns the complete proposal so the narrative
-        // stays coherent. Only large contexts are compacted/split by the Agent Platform.
-        var singlePass=(approved.length()+guidance.length())<=SINGLE_PASS_PROPOSAL_CONTEXT_CHARS;
-        String proposalContext;
-        if(singlePass){
-            proposalContext=offerContext(offer)
-                    +"\n\n# PROPOSAL MODE\nSINGLE"
-                    +"\n\n# APPROVED OFFER ARTIFACTS\n"+approved;
-        }else{
-            var contextPack=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst",null,
-                    "Compactar contexto para una oferta de gran volumen","""
-                    Build an INTERNAL compact proposal context pack because the approved offer artifacts
-                    are too large for a coherent single-pass proposal generation.
-                    Return ONLY compact JSON with: customerAndOpportunity, mandatoryRequirements,
-                    goalsAndScope, responseStrategy, solutionHighlights, architectureAndIntegrations,
-                    securityAndOperations, deliveryApproach, risksAssumptionsAndTbds, differentiators,
-                    evidenceIndex. Preserve material FACT/DECISION/ASSUMPTION distinctions and evidence
-                    locators. Deduplicate aggressively. Do not invent or strengthen claims.
-                    Keep the JSON below roughly 24,000 characters.
-                    """).withOutputFormat("json").withCheckpoint("proposal.large-context-pack"),
-                    model(offer,"proposal"),offerContext(offer)+approved+refinement(refinement));
+        // One Business Analyst AgentExecution always owns proposal authoring.
+        // Normal volume -> one model generation.
+        // Large volume -> bounded internal LangGraph substeps in the SAME execution.
+        var mode=(approved.length()+guidance.length())<=SINGLE_PASS_PROPOSAL_CONTEXT_CHARS?"SINGLE":"SPLIT";
+        var proposalContext=offerContext(offer)
+                +"\n\n# PROPOSAL MODE\n"+mode
+                +"\n\n# APPROVED OFFER ARTIFACTS\n"+approved;
 
-            proposalContext=offerContext(offer)
-                    +"\n\n# PROPOSAL MODE\nSPLIT"
-                    +"\n\n# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"+contextPack.content();
-        }
+        var result=agents.execute(
+                AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst","compose-proposal",
+                        "Redactar documento de oferta","""
+                        Execute compose-proposal exactly and produce the canonical proposal.md.
+                        Maintain one coherent narrative voice and storyline from customer context through solution
+                        and delivery. Do not expose internal orchestration or context-pack terminology.
+                        Never invent prices, numeric effort/staffing/duration, contractual commitments or customer facts.
+                        """+refinement(refinement))
+                        .withCheckpoint("proposal.document"),
+                model(offer,"proposal"),
+                proposalContext+"\n\n# PROPOSAL GUIDANCE JSON\n"+guidance);
 
-        var result=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst","compose-proposal",
-                "Redactar documento de oferta","""
-                Execute compose-proposal exactly and produce the canonical proposal.md.
-                Maintain one coherent narrative voice and storyline from customer context through solution
-                and delivery. Do not expose internal orchestration or context-pack terminology.
-                Never invent prices, numeric effort/staffing/duration, contractual commitments or customer facts.
-                """+refinement(refinement)).withCheckpoint("proposal.document"),
-                model(offer,"proposal"),proposalContext+"\n\n# PROPOSAL GUIDANCE JSON\n"+guidance);
         saveArtifact(offer.id(),PhaseType.PROPOSAL,ArtifactType.PROPOSAL,result.content());
     }
 
