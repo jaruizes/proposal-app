@@ -12,10 +12,6 @@ public record AgentPlatformProperties(
         Duration executionTimeout,
         Duration proposalExecutionTimeout) {
 
-    public AgentPlatformProperties(String baseUrl,String apiKey,Duration pollInterval,Duration executionTimeout) {
-        this(baseUrl,apiKey,pollInterval,executionTimeout,Duration.ofMinutes(30));
-    }
-
     public AgentPlatformProperties {
         if (baseUrl == null || baseUrl.isBlank()) baseUrl = "http://localhost:8000";
         if (pollInterval == null) pollInterval = Duration.ofSeconds(1);
