@@ -37,7 +37,20 @@
         "approved-qualification",
         "source-manifest"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "knowledge_sources": [
+        "architecture-references",
+        "corporate-capabilities",
+        "accelerators"
+      ],
+      "constraints": {
+        "retrieval": {
+          "mode": "hybrid",
+          "top_k": 6,
+          "candidate_k": 18,
+          "min_score": 0.2
+        }
+      }
     },
     {
       "key": "plan-delivery",
@@ -78,7 +91,18 @@
         "approved-proposal",
         "presentation-guidance"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "knowledge_sources": [
+        "reference-offers"
+      ],
+      "constraints": {
+        "retrieval": {
+          "mode": "hybrid",
+          "top_k": 4,
+          "candidate_k": 12,
+          "min_score": 0.2
+        }
+      }
     },
     {
       "key": "generate-presentation",
