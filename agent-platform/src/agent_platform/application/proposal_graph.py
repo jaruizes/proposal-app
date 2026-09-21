@@ -388,23 +388,48 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         async def one(section: dict) -> tuple[str, str]:
             name = section["name"]
             current = state["proposal_drafts"][name]
-            references = state.get("proposal_references", {}).get(name, [])
             budget = _section_budget(section["depth"])
-            result = await generate(base, (
-                f"Review and correct ONLY section {name!r}. Return its complete revised body, with no heading. "
+
+            review = await generate(base, (
+                f"Review ONLY section {name!r}. Do not rewrite it. "
                 f"Required depth: {section['depth']}. Human instructions: {section['guidance']}\n"
-                f"Hard size budget: maximum {budget['words']} words. Do not expand the section unnecessarily. "
-                "Check factual support, omissions, terminology and prohibited invented commitments. "
-                "Current-offer evidence remains authoritative. Historical references are NON-FACTUAL patterns only. "
-                "Keep unsupported items explicit as gaps. No level-one or level-two headings.\n\n"
+                "Check only material factual support, missing required coverage, inconsistent terminology, "
+                "unsupported commitments and explicit gaps. Ignore stylistic preferences and minor repetition. "
+                "Return ONLY JSON: {\"issues\":[\"specific correction\"]}. "
+                "Return {\"issues\":[]} when the section is acceptable. Maximum four issues.\n\n"
                 f"# Candidate section\n{current}"
-                + reference_prompt(references)
             ), "proposal.section.reviewed", {
                 "section": name,
-                "reference_hits": len(references),
+                "review_mode": "issues-only",
+            }, max_output_tokens=1000)
+
+            issues = _json_response(review.content)["issues"]
+            clean_issues = [
+                str(item).strip()
+                for item in issues
+                if isinstance(item, str) and str(item).strip()
+            ]
+            if not clean_issues:
+                await add_event("proposal.section.accepted", {
+                    "section": name,
+                    "reused_draft": True,
+                })
+                return name, current
+
+            correction = await generate(base, (
+                f"Revise ONLY the body of section {name!r}. Return its complete revised body, with no heading. "
+                f"Keep it within {budget['words']} words. "
+                "Preserve supported content and make only changes required by these review findings:\n"
+                + "\n".join(f"- {item}" for item in clean_issues)
+                + "\n\n# Current body\n" + current
+            ), "proposal.section.corrected", {
+                "section": name,
+                "issues": clean_issues,
                 "word_budget": budget["words"],
             }, max_output_tokens=budget["tokens"])
-            return name, await validated_section_body(base, result.content, name, source_stage="review")
+            return name, await validated_section_body(
+                base, correction.content, name, source_stage="section-review"
+            )
 
         results = await asyncio.gather(*(one(section) for section in state["proposal_sections"]))
         return {"proposal_drafts": dict(results)}
