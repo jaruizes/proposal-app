@@ -74,7 +74,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
             if(!hasTemplate&&!folder.isBlank()) tools.execute("drive_move_file",Map.of("fileId",presentationId,"destinationFolderId",folder));
             if(presentationId.isBlank()) throw new IllegalStateException("Presentation creation returned no id: "+created);
             int initialOperations=applyOperations(presentationId,operationPlan);
-            int qaOperations=runVisualQa(offer,slidesPlan,presentationId);
+            int qaOperations=runStructuralQa(offer,slidesPlan,presentationId);
             var structure=text(tools.execute("slides_get_presentation",Map.of("presentationId",presentationId)));
             var url="https://docs.google.com/presentation/d/"+presentationId+"/edit";
             var report="""
@@ -84,8 +84,8 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                     - Generated presentation ID: %s
                     - Template immutability: original copied before edits
                     - Initial materialization MCP operations: %d
-                    - Visual-QA correction operations: %d
-                    - Visual-QA max iterations: %d
+                    - Structural-QA correction operations: %d
+                    - Structural-QA max iterations: %d
                     - Final presentation structure fetched: yes
                     - Narrative authority: approved slides-plan.md
                     - Structural hierarchy authority: approved slides-plan.md
@@ -99,20 +99,25 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
         } catch(Exception e){ throw new IllegalStateException("Could not materialize Google Slides presentation",e); }
     }
 
-    private int runVisualQa(Offer offer,String slidesPlan,String presentationId) {
+    private int runStructuralQa(Offer offer,String slidesPlan,String presentationId) {
         int corrections=0;
         for(int iteration=1;iteration<=maxQaIterations;iteration++) {
-            var inspection=inspectGenerated(presentationId);
-            if(inspection.thumbnails().isEmpty()) break;
+            var structure=text(tools.execute("slides_get_presentation",Map.of("presentationId",presentationId)));
+            if(structure==null||structure.isBlank()) break;
             var qa=agents.execute(
                     AgentTask.of(offer.id(),PhaseType.PRESENTATION,"business-analyst","generate-presentation",
-                            "Visual QA iteration "+iteration,"""
-                            Inspect the real slide thumbnails against the frozen slides-plan and current deck structure. Check clipping, overlap, awkward word/syllable wrapping, unreadably dense text, template leftovers, incorrect language and unapproved cliente/customer wording. Do NOT rewrite approved narrative copy.
-                            Return ONLY JSON: {"status":"OK|FIX","operations":[...]}. If status is FIX, operations may only use the allowed Slides tools and $PRESENTATION_ID placeholder. Prefer: natural line breaks → textbox geometry → bounded font reduction → alternate corporate pattern. If no safe visual correction remains, return status OK with no operations and describe the unresolved issue in an optional "note" field.
+                            "Structural QA iteration "+iteration,"""
+                            Review the REAL current deck structure against the frozen slides-plan.
+                            Check slide order, exact titles, missing/extra slides, template leftovers, incorrect language,
+                            unapproved cliente/customer wording and obviously excessive text density from the textual structure.
+                            Do NOT claim to inspect clipping, overlap or visual rendering because no thumbnails are supplied.
+                            Do NOT rewrite approved narrative copy.
+                            Return ONLY JSON: {"status":"OK|FIX","operations":[...]}. If status is FIX, operations may only use
+                            the allowed Slides tools and $PRESENTATION_ID placeholder. If no safe structural correction
+                            remains, return status OK with no operations and an optional "note".
                             """).withOutputFormat("json"),
                     model(offer),
-                    "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# CURRENT DECK STRUCTURE\n"+inspection.structure(),
-                    inspection.thumbnails()).content();
+                    "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# CURRENT DECK STRUCTURE\n"+compactDeckStructure(structure)).content();
             try {
                 var root=json.readTree(qa);
                 if("OK".equalsIgnoreCase(root.path("status").asText())) break;
@@ -124,22 +129,29 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
         return corrections;
     }
 
-    private Inspection inspectGenerated(String presentationId) {
-        var structure=text(tools.execute("slides_get_presentation",Map.of("presentationId",presentationId)));
-        var attachments=new ArrayList<LlmRequest.Attachment>();
-        try {
-            var root=json.readTree(structure); int count=0;
-            for(var slide:root.path("slides")) {
-                if(count++>=50) break;
-                var slideId=slide.path("objectId").asText(); if(slideId.isBlank())continue;
-                var result=tools.execute("slides_get_thumbnail",Map.of("presentationId",presentationId,"slideObjectId",slideId,"size","MEDIUM"));
-                @SuppressWarnings("unchecked") var images=(List<Map<String,String>>)result.getOrDefault("images",List.of());
-                for(var image:images) {
-                    var data=image.get("data"); if(data!=null&&!data.isBlank()) attachments.add(new LlmRequest.Attachment(image.getOrDefault("mimeType","image/png"),data,"slide-"+count+".png"));
+    private String compactDeckStructure(String raw){
+        if(raw==null||raw.isBlank())return "{}";
+        try{
+            var root=json.readTree(raw);
+            var out=json.createObjectNode();
+            var slidesOut=out.putArray("slides");
+            int count=0;
+            for(var slide:root.path("slides")){
+                if(count++>=50)break;
+                var s=slidesOut.addObject();
+                s.put("objectId",slide.path("objectId").asText(""));
+                var texts=s.putArray("texts");
+                for(var element:slide.path("pageElements")){
+                    if(!element.has("shape"))continue;
+                    var text=compactText(element.path("shape").path("text"));
+                    if(!text.isBlank())texts.add(text);
                 }
             }
-        } catch(Exception e){ throw new IllegalStateException("Could not collect slide thumbnails for visual QA",e); }
-        return new Inspection(structure,attachments);
+            out.put("slideCount",root.path("slides").size());
+            return json.writeValueAsString(out);
+        }catch(Exception e){
+            throw new IllegalStateException("Could not compact generated deck structure for QA",e);
+        }
     }
 
     private int applyOperations(String presentationId,String operationPlan) {
