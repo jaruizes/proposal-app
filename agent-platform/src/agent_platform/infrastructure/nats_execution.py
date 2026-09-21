@@ -18,7 +18,7 @@ from agent_platform.application.registries import AgentRegistry,SkillRegistry
 from agent_platform.application.retrieval import KnowledgeRetrievalService
 from agent_platform.application.runtime import AgentRuntime
 from agent_platform.config import get_settings
-from agent_platform.domain import AgentExecutionRequest,ExecutionStatus
+from agent_platform.domain import AgentExecutionCommandEnvelope,AgentExecutionEventEnvelope,AgentExecutionRequest,ExecutionStatus
 from agent_platform.persistence.database import SessionFactory
 from agent_platform.persistence.memory import PostgresMemoryRepository
 from agent_platform.persistence.ontology import PostgresOntologyRepository
@@ -35,9 +35,20 @@ class NatsExecutionEventPublisher:
         if event_type=="execution.running":subject_event="started"
         elif event_type=="execution.result":subject_event="completed"
         elif event_type=="execution.failed":subject_event="failed"
-        envelope={"schema_version":"1","execution_id":str(execution_id),"event_type":f"execution.{subject_event}","source_event_type":event_type,"payload":payload}
+        envelope=AgentExecutionEventEnvelope(
+            schema_version="1",
+            message_type="agent.execution.event",
+            execution_id=execution_id,
+            event_type=f"execution.{subject_event}",
+            source_event_type=event_type,
+            payload=payload,
+        )
         message_id=f"{execution_id}:{event_type}:{payload.get('provider_request_id') or payload.get('status') or ''}"
-        await self._js.publish(f"agent-platform.events.execution.{subject_event}",json.dumps(envelope,separators=(",",":"),default=str).encode(),headers={"Nats-Msg-Id":message_id})
+        await self._js.publish(
+            f"agent-platform.events.execution.{subject_event}",
+            json.dumps(envelope.model_dump(mode="json"),separators=(",",":"),default=str).encode(),
+            headers={"Nats-Msg-Id":message_id},
+        )
 
 
 class EventPublishingExecutionRepository:
@@ -85,18 +96,16 @@ class NatsExecutionTransport:
             for message in messages:
                 stop=asyncio.Event();heartbeat=asyncio.create_task(self._heartbeat(message,stop))
                 try:
-                    envelope=json.loads(message.data.decode())
-                    request_data=dict(envelope["request"])
-                    request_data["execution_id"]=envelope["execution_id"]
-                    request=AgentExecutionRequest.model_validate(request_data)
+                    envelope=AgentExecutionCommandEnvelope.model_validate_json(message.data)
+                    request=envelope.request.model_copy(update={"execution_id":envelope.execution_id})
                     await self._execute(request)
                     await message.ack()
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     if self._publisher is not None:
-                        execution_id=envelope.get("execution_id","unknown") if "envelope" in locals() else "unknown"
-                        if execution_id!="unknown":
+                        execution_id=getattr(envelope,"execution_id",None) if "envelope" in locals() else None
+                        if execution_id is not None:
                             await self._publisher.publish(execution_id,"execution.failed",{"status":"FAILED","error":{"code":"NATS_COMMAND_ERROR","message":str(exc),"retryable":True}})
                     await message.nak()
                 finally:
