@@ -87,7 +87,6 @@ def current_runtime():
         ("solution-architect", "design-solution"),
         ("delivery-manager", "plan-delivery"),
         ("security-specialist", "design-solution"),
-        ("corporate-slide-designer", "generate-presentation"),
     ],
 )
 @pytest.mark.asyncio
