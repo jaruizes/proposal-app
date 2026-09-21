@@ -8,7 +8,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from agent_platform.application.cache import CacheService, InMemoryCacheProvider
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
 from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget, _approved_artifacts, _section_context, _proposal_mode
-from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
+from agent_platform.application.models import ModelProviderError, ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.config import Settings
 from agent_platform.domain import AgentDefinition, AgentExecution, AgentExecutionRequest, ExecutionStatus, SkillDefinition
@@ -645,3 +645,147 @@ async def test_proposal_soft_output_budget_degrades_quality_but_completes(monkey
     assert "global_review" in metadata["skipped_quality_steps"]
     events=await er.list_events(result.execution_id)
     assert any(event["event_type"]=="proposal.quality.degraded" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_design_presentation_small_plan_completes_in_single_pass():
+    class SlideProvider:
+        def __init__(self): self.calls=0
+        async def generate(self, request: ModelRequest):
+            self.calls += 1
+            return ModelResult(
+                content=(
+                    "# SSIR\n\n"
+                    "# SECTION-1 — Propuesta\n\n"
+                    "## SLIDE-1\n\n"
+                    "### Título de slide\nArquitectura propuesta\n\n"
+                    "### Propósito / mensaje principal\nMostrar la solución objetivo.\n\n"
+                    "### Contenido\n- Componentes principales\n- Integraciones clave\n\n"
+                    "### Intención visual\nDiagrama lógico simplificado.\n\n"
+                    "### Fuentes / trazabilidad\nproposal.md"
+                ),
+                model="test-model",
+                usage=ModelUsage(input_tokens=30,output_tokens=40),
+            )
+
+    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    provider=SlideProvider();er=ExecutionRepo()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Planificar narrativa",
+        constraints={"output_format":"markdown"},
+        context={"business_context":"Offer name: SSIR\n\n# PROPOSAL\nShort approved proposal."},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert provider.calls == 1
+    assert "# SECTION-1 — Propuesta" in result.artifacts[0].content
+    assert "### Título de slide" in result.artifacts[0].content
+
+
+@pytest.mark.asyncio
+async def test_design_presentation_truncated_single_pass_falls_back_to_bounded_split():
+    class AdaptiveSlideProvider:
+        def __init__(self): self.calls=[]
+        async def generate(self, request: ModelRequest):
+            prompt=request.messages[0].content
+            self.calls.append(prompt)
+            if prompt.startswith("Create the complete canonical slides-plan.md"):
+                raise ModelProviderError(
+                    "ANTHROPIC_OUTPUT_TRUNCATED",
+                    "Model output reached max_tokens",
+                    partial_content="# SSIR\n\n# SECTION-1",
+                    usage=ModelUsage(input_tokens=100,output_tokens=8000),
+                    model="test-model",
+                )
+            if prompt.startswith("Design ONLY the presentation storyline"):
+                return ModelResult(
+                    content='{"title":"SSIR","sections":[{"title":"Propuesta","slides":[{"title":"Arquitectura objetivo","purpose":"Explicar la solución"},{"title":"Plan de ejecución","purpose":"Explicar el delivery"}]}]}',
+                    model="test-model",
+                    usage=ModelUsage(input_tokens=50,output_tokens=80),
+                )
+            if prompt.startswith("Complete ONLY the slide details"):
+                return ModelResult(
+                    content='{"slides":[{"id":"SLIDE-1","title":"Arquitectura objetivo","purpose":"Explicar la solución","content":"Componentes e integraciones principales.","visual":"Diagrama lógico.","sources":"proposal.md"},{"id":"SLIDE-2","title":"Plan de ejecución","purpose":"Explicar el delivery","content":"Workstreams, hitos y gobierno.","visual":"Roadmap por líneas de trabajo.","sources":"proposal.md"}]}',
+                    model="test-model",
+                    usage=ModelUsage(input_tokens=60,output_tokens=120),
+                )
+            raise AssertionError("Unexpected presentation-plan prompt")
+
+    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    provider=AdaptiveSlideProvider();er=ExecutionRepo()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Planificar narrativa",
+        constraints={"output_format":"markdown"},
+        context={"business_context":"Offer name: SSIR\n\n# PROPOSAL\nShort approved proposal."},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert "## SLIDE-1" in result.artifacts[0].content
+    assert "## SLIDE-2" in result.artifacts[0].content
+    assert len(provider.calls) == 3
+    events=await er.list_events(result.execution_id)
+    assert any(event["event_type"]=="presentation.plan.single.fallback" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_design_presentation_large_proposal_routes_directly_to_split():
+    class SplitSlideProvider:
+        def __init__(self): self.prompts=[]
+        async def generate(self, request: ModelRequest):
+            prompt=request.messages[0].content
+            self.prompts.append(prompt)
+            if prompt.startswith("Design ONLY the presentation storyline"):
+                return ModelResult(
+                    content='{"title":"SSIR","sections":[{"title":"Síntesis","slides":[{"title":"Propuesta de valor","purpose":"Sintetizar el enfoque"}]}]}',
+                    model="test-model",
+                    usage=ModelUsage(input_tokens=100,output_tokens=50),
+                )
+            if prompt.startswith("Complete ONLY the slide details"):
+                return ModelResult(
+                    content='{"slides":[{"id":"SLIDE-1","title":"Propuesta de valor","purpose":"Sintetizar el enfoque","content":"Síntesis de solución y delivery.","visual":"Tres mensajes clave.","sources":"proposal.md"}]}',
+                    model="test-model",
+                    usage=ModelUsage(input_tokens=100,output_tokens=70),
+                )
+            raise AssertionError("Large proposal should not use single-pass slide generation")
+
+    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    provider=SplitSlideProvider();er=ExecutionRepo()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Planificar narrativa",
+        constraints={"output_format":"markdown"},
+        context={"business_context":"Offer name: SSIR\n\n# PROPOSAL\n"+("A"*50_000)},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert len(provider.prompts) == 2
+    assert provider.prompts[0].startswith("Design ONLY the presentation storyline")
