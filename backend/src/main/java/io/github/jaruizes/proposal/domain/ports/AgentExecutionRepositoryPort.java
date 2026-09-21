@@ -9,4 +9,6 @@ public interface AgentExecutionRepositoryPort {
     AgentExecution save(AgentExecution execution);
 
     List<AgentExecution> findByOfferId(UUID offerId);
+
+    java.util.Optional<AgentExecution> findById(UUID id);
 }
