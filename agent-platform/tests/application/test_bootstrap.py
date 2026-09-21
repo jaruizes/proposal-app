@@ -90,7 +90,7 @@ async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default(
     assert len(first["agents"]["created"]) == 5
 
     original = skill_repository.values["qualify-opportunity"]
-    skill_repository.values["build-strategy"] = original.model_copy(update={"description": "Runtime edited description"})
+    skill_repository.values["qualify-opportunity"] = original.model_copy(update={"description": "Runtime edited description"})
 
     second = await importer.import_all()
     assert len(second["skills"]["created"]) == 0
