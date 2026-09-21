@@ -14,7 +14,7 @@ from langgraph.graph import END, StateGraph
 
 from agent_platform.application.cache import stable_cache_key
 from agent_platform.application.models import ModelMessage, ModelRequest, ModelResult, ModelRole, ModelUsage
-from agent_platform.application.observability import timed_span
+from agent_platform.application.observability import PROPOSAL_STEP_COST, PROPOSAL_STEP_TOKENS, timed_span
 from agent_platform.application.proposal_retrieval import ProposalReferenceRetriever
 from agent_platform.config import get_settings
 from agent_platform.domain import AgentExecutionRequest, CognitiveContext
@@ -225,6 +225,17 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             }
             step_usage.append(item)
         await add_event("proposal.step.usage", item)
+        if not reused:
+            for token_type, value in (
+                ("input", usage.input_tokens),
+                ("output", usage.output_tokens),
+                ("cache_read", usage.cache_read_tokens),
+                ("cache_write", usage.cache_write_tokens),
+            ):
+                if value:
+                    PROPOSAL_STEP_TOKENS.labels(stage, token_type).inc(value)
+            if cost:
+                PROPOSAL_STEP_COST.labels(stage).inc(cost)
         if not reused:
             await assert_budget(stage)
 
