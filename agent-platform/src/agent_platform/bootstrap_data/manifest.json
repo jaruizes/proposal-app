@@ -207,7 +207,7 @@
       "output_schema": {},
       "constraints": {
         "execution": {
-          "graph": "resilient-single",
+          "graph": "presentation-materialization",
           "truncation": {
             "max_attempts": 3,
             "shrink_factors": [
