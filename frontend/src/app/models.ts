@@ -8,6 +8,7 @@ export interface AgentExecutionTelemetry{
   objective?:string;output?:string;model?:string;inputTokens:number;outputTokens:number;
   providerRequestId?:string;startedAt?:Date|string;completedAt?:Date|string;errorMessage?:string;checkpointKey?:string;inputFingerprint?:string;reusedFromExecutionId?:string;
   telemetry?:{
+    execution_usage?:{input_tokens:number;output_tokens:number;cache_read_tokens:number;cache_write_tokens:number;estimated_cost_usd:number};
     proposal_step_usage?:Array<{stage:string;section?:string;reused?:boolean;input_tokens:number;output_tokens:number;cache_read_tokens:number;cache_write_tokens:number;estimated_cost_usd:number;cumulative_cost_usd:number}>;
     proposal_consumed?:{input_tokens:number;output_tokens:number;cache_read_tokens:number;cache_write_tokens:number;estimated_cost_usd:number};
     proposal_budget?:{input_tokens:number;output_tokens:number;cost_usd:number};
