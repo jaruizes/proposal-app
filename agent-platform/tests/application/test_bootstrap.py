@@ -58,26 +58,27 @@ def test_bootstrap_catalog_replicates_current_proposal_copilot_definitions() -> 
     assert {skill.key for skill in skills} == {
         "create-offer",
         "ingest-sources",
-        "analyze-opportunity",
-        "build-strategy",
-        "define-solution",
+        "qualify-opportunity",
+        "design-solution",
+        "plan-delivery",
         "compose-proposal",
-        "design-proposal",
+        "design-presentation",
         "generate-presentation",
     }
     assert {agent.key for agent in agents} == {
         "business-analyst",
         "solution-architect",
         "delivery-manager",
-        "presentation-builder",
         "security-specialist",
         "corporate-slide-designer",
     }
     business_analyst = next(agent for agent in agents if agent.key == "business-analyst")
     assert "Business Analyst / Offer Owner" in business_analyst.role
-    assert "define-solution" in business_analyst.skills
-    define_solution = next(skill for skill in skills if skill.key == "define-solution")
-    assert "Fase 3" in define_solution.instructions
+    assert "qualify-opportunity" in business_analyst.skills
+    assert "compose-proposal" in business_analyst.skills
+    assert "design-presentation" in business_analyst.skills
+    design_solution = next(skill for skill in skills if skill.key == "design-solution")
+    assert "Design Solution" in design_solution.instructions
 
 
 async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default() -> None:
@@ -86,16 +87,16 @@ async def test_bootstrap_import_is_idempotent_and_preserves_db_edits_by_default(
 
     first = await importer.import_all()
     assert len(first["skills"]["created"]) == 8
-    assert len(first["agents"]["created"]) == 6
+    assert len(first["agents"]["created"]) == 5
 
-    original = skill_repository.values["build-strategy"]
+    original = skill_repository.values["qualify-opportunity"]
     skill_repository.values["build-strategy"] = original.model_copy(update={"description": "Runtime edited description"})
 
     second = await importer.import_all()
     assert len(second["skills"]["created"]) == 0
-    assert "build-strategy" in second["skills"]["skipped"]
+    assert "qualify-opportunity" in second["skills"]["skipped"]
     assert skill_repository.values["build-strategy"].description == "Runtime edited description"
-    assert len(agent_repository.values) == 6
+    assert len(agent_repository.values) == 5
 
 
 async def test_bootstrap_sync_updates_changed_definitions_and_versions_them() -> None:
@@ -108,7 +109,7 @@ async def test_bootstrap_sync_updates_changed_definitions_and_versions_them() ->
 
     report = await importer.import_all(sync=True)
 
-    assert "build-strategy" in report["skills"]["updated"]
+    assert "qualify-opportunity" in report["skills"]["updated"]
     synced = skill_repository.values["build-strategy"]
     assert synced.description != "Runtime edited description"
     assert synced.version == 2
