@@ -366,7 +366,7 @@ Only when the input context is too large for a safe single-pass generation does 
 ```text
 large approved context
         ↓
-compact context pack
+deterministic section-specific context
         ↓
 section-aware reference retrieval
         ↓
@@ -381,7 +381,7 @@ one global consistency review
 proposal.md
 ```
 
-Successful internal substeps are persisted in Valkey and reused across retries. Large-volume mode does not create a separate Business Analyst AgentExecution per section or for context compaction.
+Successful internal substeps are persisted in Valkey and reused across retries. Large-volume mode does not create a separate Business Analyst AgentExecution per section or for context selection.
 
 The system does **not** regenerate already successful sections after a late failure when their input fingerprint is unchanged.
 
