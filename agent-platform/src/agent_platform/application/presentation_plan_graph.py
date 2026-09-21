@@ -83,39 +83,58 @@ def _validate_outline(value: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]
     raw_sections = value.get("sections")
     if not isinstance(raw_sections, list) or not raw_sections:
         raise PresentationPlanError("Presentation storyline must contain sections")
-    sections: list[dict[str, Any]] = []
+
+    prepared: list[tuple[str, list[dict[str, str]]]] = []
     total = 0
-    for si, raw in enumerate(raw_sections, start=1):
+
+    for raw in raw_sections:
         if not isinstance(raw, dict):
             raise PresentationPlanError("Invalid presentation section")
-        section_id = f"SECTION-{si}"
         section_title = str(raw.get("title") or "").strip()
-        slides = raw.get("slides")
-        if not section_title or not isinstance(slides, list) or not slides:
-            raise PresentationPlanError(f"Invalid presentation section {section_id}")
-        if len(slides) > _MAX_SLIDES_PER_SECTION:
-            raise PresentationPlanError(
-                f"{section_id} exceeds {_MAX_SLIDES_PER_SECTION} slides; split the storyline into more sections"
-            )
-        normalized_slides = []
-        for raw_slide in slides:
+        raw_slides = raw.get("slides")
+        if not section_title or not isinstance(raw_slides, list) or not raw_slides:
+            raise PresentationPlanError("Invalid presentation section")
+
+        normalized_slides: list[dict[str, str]] = []
+        for raw_slide in raw_slides:
             if not isinstance(raw_slide, dict):
-                raise PresentationPlanError(f"Invalid slide in {section_id}")
+                raise PresentationPlanError(f"Invalid slide in section {section_title!r}")
             title_value = str(raw_slide.get("title") or "").strip()
             purpose = str(raw_slide.get("purpose") or "").strip()
             if not title_value or not purpose:
-                raise PresentationPlanError(f"Slide in {section_id} is missing title or purpose")
+                raise PresentationPlanError(
+                    f"Slide in section {section_title!r} is missing title or purpose"
+                )
             if len(title_value.split()) > 12:
-                raise PresentationPlanError(f"Slide title exceeds 12 words: {title_value}")
+                # Keep the plan usable instead of failing on a stylistic overflow.
+                title_value = " ".join(title_value.split()[:12])
             total += 1
             normalized_slides.append({
                 "id": f"SLIDE-{total}",
                 "title": title_value,
                 "purpose": purpose,
             })
-        sections.append({"id": section_id, "title": section_title, "slides": normalized_slides})
+
+        # A section-size limit is a layout normalization concern, not a fatal
+        # semantic validation error. Split oversized sections deterministically
+        # without another model call and preserve slide order.
+        for offset in range(0, len(normalized_slides), _MAX_SLIDES_PER_SECTION):
+            chunk = normalized_slides[offset:offset + _MAX_SLIDES_PER_SECTION]
+            suffix = "" if offset == 0 else f" (continuación {offset // _MAX_SLIDES_PER_SECTION + 1})"
+            prepared.append((section_title + suffix, chunk))
+
     if total > _MAX_SLIDES:
-        raise PresentationPlanError(f"Presentation storyline exceeds {_MAX_SLIDES} slides")
+        raise PresentationPlanError(
+            f"Presentation storyline exceeds the absolute maximum of {_MAX_SLIDES} slides"
+        )
+
+    sections: list[dict[str, Any]] = []
+    for index, (section_title, slides) in enumerate(prepared, start=1):
+        sections.append({
+            "id": f"SECTION-{index}",
+            "title": section_title,
+            "slides": slides,
+        })
     return title, sections
 
 
