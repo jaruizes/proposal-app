@@ -6,7 +6,8 @@ from typing import TypedDict
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 
-from agent_platform.application.models import ModelProviderError, ModelRequest, ModelResult, ModelUsage
+from agent_platform.application.graph_registry import GraphRegistry
+from agent_platform.application.models import ModelMessage, ModelProviderError, ModelRequest, ModelResult, ModelRole, ModelUsage
 from agent_platform.application.observability import EXECUTIONS, EXECUTION_LATENCY, TOKENS, timed_span
 from agent_platform.application.output_contract import normalize_output, output_media_type
 from agent_platform.application.runtime import AgentRuntime
@@ -181,13 +182,14 @@ class LangGraphAgentRuntime(AgentRuntime):
             return await self._fail(running, "LANGGRAPH_RUNTIME_ERROR", str(exc) or type(exc).__name__)
 
     async def _invoke_graph(self, execution, request: AgentExecutionRequest, checkpointer):
-        graph = self._build_graph(execution)
+        skill = await self._skills.get(request.skill_key) if request.skill_key else None
+        graph = self._build_graph(execution, skill)
         compiled = graph.compile(checkpointer=checkpointer, name="agent-platform-execution")
         config = {"configurable": {"thread_id": str(execution.id)}}
         initial: LangGraphState = {"request": request.model_dump(mode="json")}
         return await compiled.ainvoke(initial, config=config)
 
-    def _build_graph(self, execution):
+    def _build_graph(self, execution, skill_definition=None):
         async def build_context(state: LangGraphState):
             request = AgentExecutionRequest.model_validate(state["request"])
             agent = await self._agents.get(request.agent_key)
@@ -230,8 +232,53 @@ class LangGraphAgentRuntime(AgentRuntime):
                     await self._executions.add_event(execution.id, "execution.cache.miss", {"key": cache_key})
 
             if model_result is None:
-                with timed_span("langgraph.model", model=model_request.model or "default"):
-                    model_result = await self._model_provider.generate(model_request)
+                execution_policy = skill.constraints.get("execution", {}) if skill and isinstance(skill.constraints, dict) else {}
+                truncation = execution_policy.get("truncation", {}) if isinstance(execution_policy, dict) else {}
+                max_attempts = max(1, int(truncation.get("max_attempts", 3)))
+                factors = truncation.get("shrink_factors", [1.0, 0.65, 0.40])
+                if not isinstance(factors, list) or not factors:
+                    factors = [1.0, 0.65, 0.40]
+                min_output_tokens = max(256, int(truncation.get("min_output_tokens", 700)))
+                base_max = model_request.max_output_tokens or 16000
+
+                for attempt in range(max_attempts):
+                    factor = float(factors[min(attempt, len(factors) - 1)])
+                    attempt_max = max(min_output_tokens, int(base_max * factor))
+                    if attempt == 0:
+                        attempt_request = model_request.model_copy(update={"max_output_tokens": attempt_max})
+                    else:
+                        retry_prompt = (
+                            model_request.messages[0].content
+                            + "\n\n# RETRY AFTER OUTPUT LIMIT\n"
+                            + f"The previous response exceeded the output budget. Regenerate from scratch in at most "
+                              f"{max(200, int(attempt_max * 0.32))} words/tokens-equivalent of concise content. "
+                              "Preserve all mandatory information and the exact output contract. "
+                              "Use compact tables/bullets where appropriate. Do not add commentary or repeat context."
+                        )
+                        attempt_request = model_request.model_copy(update={
+                            "messages": [ModelMessage(role=ModelRole.USER, content=retry_prompt)],
+                            "max_output_tokens": attempt_max,
+                        })
+                    try:
+                        with timed_span("langgraph.model", model=attempt_request.model or "default", attempt=attempt + 1):
+                            model_result = await self._model_provider.generate(attempt_request)
+                        await self._executions.add_event(execution.id, "execution.model.attempt.completed", {
+                            "attempt": attempt + 1,
+                            "max_output_tokens": attempt_max,
+                        })
+                        break
+                    except ModelProviderError as exc:
+                        truncated = exc.code == "ANTHROPIC_OUTPUT_TRUNCATED"
+                        await self._executions.add_event(execution.id, "execution.model.attempt.failed", {
+                            "attempt": attempt + 1,
+                            "max_output_tokens": attempt_max,
+                            "code": exc.code,
+                            "truncated": truncated,
+                        })
+                        if not truncated or attempt == max_attempts - 1:
+                            raise
+                if model_result is None:
+                    raise RuntimeError("Model execution produced no result")
                 model_result = model_result.model_copy(update={"content": normalize_output(request, model_result.content)})
                 if self._cache is not None and cache_config["enabled"] and cache_key:
                     await self._cache.set_json(
@@ -261,15 +308,12 @@ class LangGraphAgentRuntime(AgentRuntime):
         builder.add_node("build_context", build_context)
         builder.add_node("invoke_model", invoke_model)
         builder.add_edge(START, "build_context")
-        if execution.skill_key == "compose-proposal":
-            from agent_platform.application.proposal_graph import add_proposal_nodes
-            add_proposal_nodes(builder, self, execution)
-        elif execution.skill_key == "design-presentation":
-            from agent_platform.application.presentation_plan_graph import add_presentation_plan_nodes
-            add_presentation_plan_nodes(builder, self, execution)
-        else:
-            builder.add_edge("build_context", "invoke_model")
-            builder.add_edge("invoke_model", END)
+        GraphRegistry.attach(
+            GraphRegistry.graph_key(skill_definition),
+            builder,
+            self,
+            execution,
+        )
         return builder
 
 
