@@ -59,3 +59,14 @@ One execution produces three logical outputs:
 3. `technology.md` — optional; use `NONE` if no relevant technology/architecture constraints are stated.
 
 `opportunity-brief.md` also contains the former standalone response-strategy content: scope, exclusions, objectives, assumptions, initial risks, response positioning and value-add opportunities.
+
+
+## Output size discipline
+
+The first phase should be complete but concise:
+
+- `opportunity-brief.md`: target <= 3,500 words;
+- `questions.md`: maximum 30 material questions;
+- `technology.md`: maximum 30 material technology/architecture entries.
+
+Deduplicate repeated customer wording. Prefer tables/bullets for inventories and concise prose for reasoning. Do not expand merely to restate source documents.
