@@ -29,9 +29,9 @@ class ProposalBudgetExceeded(ProposalPlanError):
 
 
 _SECTION_BUDGETS = {
-    "SUMMARY": {"words": 700, "tokens": 2200},
-    "STANDARD": {"words": 1200, "tokens": 3600},
-    "DETAILED": {"words": 1800, "tokens": 5600},
+    "SUMMARY": {"words": 450, "tokens": 1400},
+    "STANDARD": {"words": 800, "tokens": 2400},
+    "DETAILED": {"words": 1200, "tokens": 3600},
 }
 
 
@@ -229,17 +229,16 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             + usage.cache_write_tokens * settings.anthropic_cache_write_cost_per_million_usd
         ) / million
 
+    def output_budget_exhausted(reserve_tokens: int = 0) -> bool:
+        return consumed["output"] + reserve_tokens >= settings.proposal_output_token_budget
+
     async def assert_budget(stage: str, estimated_input_tokens: int = 0) -> None:
+        """Hard guardrails only; output-token budget is a soft degradation threshold."""
         async with budget_lock:
             if consumed["input"] + estimated_input_tokens > settings.proposal_input_token_budget:
                 raise ProposalBudgetExceeded(
                     f"Proposal input token budget would be exceeded before {stage}: "
                     f"{consumed['input']} used, {settings.proposal_input_token_budget} allowed"
-                )
-            if consumed["output"] >= settings.proposal_output_token_budget:
-                raise ProposalBudgetExceeded(
-                    f"Proposal output token budget exceeded before {stage}: "
-                    f"{consumed['output']} used, {settings.proposal_output_token_budget} allowed"
                 )
             if consumed["cost_usd"] >= settings.proposal_cost_budget_usd:
                 raise ProposalBudgetExceeded(
@@ -247,6 +246,17 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     f"${consumed['cost_usd']:.4f} used, ${settings.proposal_cost_budget_usd:.2f} allowed"
                 )
 
+    async def note_soft_budget(stage: str, *, reserve_tokens: int = 0) -> bool:
+        exhausted = output_budget_exhausted(reserve_tokens)
+        if exhausted:
+            await add_event("proposal.budget.soft_limit", {
+                "stage": stage,
+                "output_tokens": consumed["output"],
+                "soft_limit": settings.proposal_output_token_budget,
+                "reserve_tokens": reserve_tokens,
+                "action": "skip_optional_work",
+            })
+        return exhausted
     async def record_step(stage: str, payload: dict, result: ModelResult, *, reused: bool = False) -> None:
         usage = result.usage
         cost = 0.0 if reused else estimated_cost(usage)
@@ -915,7 +925,6 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
     builder.add_edge("compact_proposal_context", "plan_proposal")
     builder.add_edge("plan_proposal", "retrieve_references")
     builder.add_edge("retrieve_references", "draft_sections")
-    builder.add_edge("draft_sections", "review_sections")
-    builder.add_edge("review_sections", "assemble_proposal")
+    builder.add_edge("draft_sections", "assemble_proposal")
     builder.add_edge("assemble_proposal", "review_proposal")
     builder.add_edge("review_proposal", END)
