@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now() -> datetime:
@@ -65,10 +65,19 @@ class AgentExecutionRequest(BaseModel):
 
 class AgentArtifact(BaseModel):
     model_config = ConfigDict(frozen=True)
+
     type: str = Field(min_length=1)
-    content: str
+    name: str | None = None
     media_type: str = "text/markdown"
+    content: str | None = None
+    uri: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_content_or_uri(self):
+        if not (self.content and self.content.strip()) and not (self.uri and self.uri.strip()):
+            raise ValueError("AgentArtifact requires content or uri")
+        return self
 
 
 class AgentUsage(BaseModel):
