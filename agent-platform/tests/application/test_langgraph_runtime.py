@@ -464,7 +464,7 @@ async def test_proposal_cost_budget_stops_additional_generation(monkeypatch):
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
-    assert "budget" in result.error.message.lower()
+    assert "safety limit" in result.error.message.lower()
     assert len(provider.calls) == 1
 
 
@@ -635,15 +635,7 @@ async def test_proposal_soft_output_budget_degrades_quality_but_completes(monkey
         agent_key=agent.key,
         skill_key=skill.key,
         objective="Compose",
-        context={"business_context":
-            "Offer name: Example\n\n"
-            "# PROPOSAL MODE\nSPLIT\n\n"
-            "# APPROVED OFFER ARTIFACTS\n"
-            "## opportunity-brief.md\nBrief\n\n"
-            "## solution.md\nSolution\n\n"
-            "## delivery-plan.md\nDelivery\n\n"
-            "# PROPOSAL GUIDANCE JSON\n"+guidance
-        },
+        context={"business_context": proposal_business_context(guidance, mode="SPLIT")},
     ))
 
     assert result.status is ExecutionStatus.COMPLETED
