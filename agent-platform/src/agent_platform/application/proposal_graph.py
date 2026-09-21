@@ -13,7 +13,7 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 
 from agent_platform.application.cache import stable_cache_key
-from agent_platform.application.models import ModelMessage, ModelRequest, ModelResult, ModelRole, ModelUsage
+from agent_platform.application.models import ModelMessage, ModelProviderError, ModelRequest, ModelResult, ModelRole, ModelUsage
 from agent_platform.application.observability import PROPOSAL_STEP_COST, PROPOSAL_STEP_TOKENS, timed_span
 from agent_platform.application.proposal_retrieval import ProposalReferenceRetriever
 from agent_platform.config import get_settings
@@ -77,6 +77,17 @@ def _section_context(pack: dict[str, Any], section: dict[str, str]) -> dict[str,
     if len(keys) <= 3:
         keys.update({"goalsAndScope", "strategy", "solutionHighlights", "risksAssumptionsAndTbds"})
     return {key: pack[key] for key in keys if key in pack}
+
+
+
+def _proposal_mode(request: AgentExecutionRequest) -> str:
+    context = request.context.get("business_context", "")
+    if isinstance(context, str):
+        match = re.search(r"^# PROPOSAL MODE\s*\n(SINGLE|SPLIT)\s*$", context, re.MULTILINE)
+        if match:
+            return match.group(1)
+    return "SPLIT"
+
 
 
 def configured_sections(request: AgentExecutionRequest) -> list[dict[str, str]]:
@@ -405,6 +416,63 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             )
             return _section_body(repaired.content, name)
 
+    async def direct_proposal(state: dict) -> dict:
+        request = AgentExecutionRequest.model_validate(state["request"])
+        base = await base_request(state)
+        business_context = request.context.get("business_context", "")
+        guidance = _proposal_guidance(request)
+
+        references = []
+        if runtime._proposal_retrieval_service is not None:
+            retriever = ProposalReferenceRetriever(runtime._proposal_retrieval_service)
+            async with db_lock:
+                _, references, _ = await retriever.retrieve(
+                    section_name="Documento de oferta",
+                    guidance=" ".join(section.get("guidance", "") for section in guidance),
+                    objective=request.objective,
+                    top_k=3,
+                )
+
+        reference_text = ""
+        if references:
+            reference_text = (
+                "\n\n# NON-FACTUAL REFERENCE PATTERNS\n"
+                "Use these excerpts only for structure, tone and depth. Never copy customer facts or commitments.\n"
+                + "\n\n".join(f"## {r.title}\n{r.content}" for r in references)
+            )
+
+        instruction = (
+            "Write the complete canonical proposal.md in one coherent narrative voice. "
+            "Return raw Markdown only, with one H1 title and the configured H2 sections in the given order. "
+            "Use the APPROVED OFFER ARTIFACTS in context as factual authority. "
+            "Do not expose internal workflow terms. Do not invent prices, numeric effort/staffing/duration, "
+            "contractual commitments or customer facts. Maintain strong transitions between sections so the "
+            "document reads as one authored proposal, not concatenated fragments.\n\n"
+            "# Required proposal sections\n"
+            + "\n".join(
+                f"- {section['name']} ({section['depth']}): {section['guidance']}"
+                for section in guidance
+            )
+            + reference_text
+        )
+        try:
+            result = await generate(
+                base,
+                instruction,
+                "proposal.single_pass",
+                {"mode": "single", "sections": len(guidance)},
+                max_output_tokens=12000,
+            )
+            return {"model_result": result.model_dump(mode="json"), "proposal_force_split": False}
+        except ModelProviderError as exc:
+            if getattr(exc, "code", None) == "ANTHROPIC_OUTPUT_TRUNCATED":
+                await add_event("proposal.single_pass.fallback", {"reason": "output_truncated"})
+                return {"proposal_force_split": True}
+            raise
+
+    def after_direct(state: dict) -> str:
+        return "split" if state.get("proposal_force_split") else "done"
+
     async def plan(state: dict) -> dict:
         request = AgentExecutionRequest.model_validate(state["request"])
         sections = configured_sections(request)
@@ -701,13 +769,24 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         )
         return {"model_result": final.model_dump(mode="json")}
 
+    builder.add_node("direct_proposal", direct_proposal)
     builder.add_node("plan_proposal", plan)
     builder.add_node("retrieve_references", retrieve_references)
     builder.add_node("draft_sections", draft)
     builder.add_node("review_sections", review_sections)
     builder.add_node("assemble_proposal", assemble)
     builder.add_node("review_proposal", global_review)
-    builder.add_edge("build_context", "plan_proposal")
+
+    builder.add_conditional_edges(
+        "build_context",
+        lambda state: "single" if _proposal_mode(AgentExecutionRequest.model_validate(state["request"])) == "SINGLE" else "split",
+        {"single": "direct_proposal", "split": "plan_proposal"},
+    )
+    builder.add_conditional_edges(
+        "direct_proposal",
+        after_direct,
+        {"done": END, "split": "plan_proposal"},
+    )
     builder.add_edge("plan_proposal", "retrieve_references")
     builder.add_edge("retrieve_references", "draft_sections")
     builder.add_edge("draft_sections", "review_sections")
