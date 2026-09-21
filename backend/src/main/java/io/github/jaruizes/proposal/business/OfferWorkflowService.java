@@ -596,7 +596,7 @@ public class OfferWorkflowService {
     private void runSlidePlan(Offer offer,String refinement){
         var context=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.PROPOSAL));
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.SLIDE_PLAN,"business-analyst","design-presentation",
-                "Planificar narrativa de presentación","Execute design-presentation exactly. Produce ONLY the canonical slides-plan.md. Human presentation guidance follows in context."+refinement(refinement)).withCheckpoint("slides.plan"),
+                "Planificar narrativa de presentación","Execute design-presentation exactly. Produce ONLY the canonical slides-plan.md. Human presentation guidance follows in context."+refinement(refinement)).withOutputFormat("markdown").withCheckpoint("slides.plan"),
                 model(offer,"slidePlanning"),context+"\n\n# PRESENTATION GUIDANCE\n"+Objects.toString(offer.presentationGuidance(),"none"));
         slidePlanValidator.validate(result.content());
         saveArtifact(offer.id(),PhaseType.SLIDE_PLAN,ArtifactType.SLIDES_PLAN,result.content());
