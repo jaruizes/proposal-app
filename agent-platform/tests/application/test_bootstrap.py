@@ -104,12 +104,12 @@ async def test_bootstrap_sync_updates_changed_definitions_and_versions_them() ->
     importer = BootstrapImporter(skills, agents)
     await importer.import_all()
 
-    original = skill_repository.values["build-strategy"]
-    skill_repository.values["build-strategy"] = original.model_copy(update={"description": "Runtime edited description"})
+    original = skill_repository.values["qualify-opportunity"]
+    skill_repository.values["qualify-opportunity"] = original.model_copy(update={"description": "Runtime edited description"})
 
     report = await importer.import_all(sync=True)
 
     assert "qualify-opportunity" in report["skills"]["updated"]
-    synced = skill_repository.values["build-strategy"]
+    synced = skill_repository.values["qualify-opportunity"]
     assert synced.description != "Runtime edited description"
     assert synced.version == 2
