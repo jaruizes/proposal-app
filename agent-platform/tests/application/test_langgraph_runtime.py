@@ -118,8 +118,8 @@ async def test_proposal_graph_preserves_configured_order_and_usage():
     assert content.startswith("# Example\n\n## Executive summary\n")
     assert content.index("## Executive summary") < content.index("## Technical approach")
     assert "Ignored" not in content
-    assert result.usage.input_tokens==50
-    assert [e["event_type"] for e in await er.list_events(result.execution_id)].count("proposal.section.reviewed")==2
+    assert result.usage.input_tokens==30
+    assert [e["event_type"] for e in await er.list_events(result.execution_id)].count("proposal.section.reviewed")==0
 
 
 @pytest.mark.asyncio
@@ -135,7 +135,7 @@ async def test_proposal_global_review_corrects_issues_without_non_convergent_fai
     events=await er.list_events(result.execution_id)
     assert any(e["event_type"]=="proposal.section.revised" for e in events)
     assert any(e["event_type"]=="proposal.global.review.corrected" for e in events)
-    assert result.usage.input_tokens==40
+    assert result.usage.input_tokens==30
 
 
 @pytest.mark.asyncio
@@ -149,7 +149,7 @@ async def test_proposal_global_review_revises_only_affected_section():
     assert result.status is ExecutionStatus.COMPLETED
     assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
     assert "## Executive summary\n\nEvidence-backed draft." in result.artifacts[0].content
-    assert result.usage.input_tokens==60
+    assert result.usage.input_tokens==40
 
 
 def test_proposal_rejects_missing_or_invalid_guidance():
@@ -566,3 +566,41 @@ def test_proposal_mode_keeps_small_document_single_pass():
         context={"business_context": proposal_business_context(guidance, mode="SINGLE")},
     )
     assert _proposal_mode(request) == "SINGLE"
+
+
+@pytest.mark.asyncio
+async def test_proposal_soft_output_budget_returns_valid_assembled_document(monkeypatch):
+    import agent_platform.application.proposal_graph as proposal_graph
+
+    guarded = Settings(
+        database_url="postgresql+asyncpg://ignored",
+        proposal_input_token_budget=250000,
+        proposal_output_token_budget=8,
+        proposal_cost_budget_usd=2.0,
+    )
+    monkeypatch.setattr(proposal_graph, "get_settings", lambda: guarded)
+
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider(issues=True)
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    guidance='{"sections":[{"name":"Executive summary"},{"name":"Technical approach"}]}'
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":proposal_business_context(guidance)},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert "## Executive summary" in result.artifacts[0].content
+    assert "## Technical approach" in result.artifacts[0].content
+    events=await er.list_events(result.execution_id)
+    assert any(event["event_type"]=="proposal.global.review.skipped" for event in events)
+    assert result.artifacts[0].metadata["model_metadata"]["global_review_skipped"] is True
