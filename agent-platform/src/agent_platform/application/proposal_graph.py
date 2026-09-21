@@ -312,7 +312,6 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     with timed_span("langgraph.proposal.model", stage=event, model=base.model or "default"):
                         result = await runtime._model_provider.generate(request_for_attempt)
                     calls.append(result)
-                    await record_step(event, payload, result)
                     if runtime._cache is not None:
                         await runtime._cache.set_json(
                             "proposal-step",
@@ -320,6 +319,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                             result.model_dump(mode="json"),
                             ttl_seconds=checkpoint_ttl,
                         )
+                    await record_step(event, payload, result)
                     await add_event(event, {
                         **payload,
                         "attempt": attempt + 1,
