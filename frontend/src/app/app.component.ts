@@ -15,8 +15,9 @@ export class AppComponent {
   selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
   selectedArtifact=computed(()=>this.selectedArtifacts()[this.selectedArtifactIndex()]||this.selectedArtifacts()[0]);
   stats=computed(()=>{const items=this.svc.executions();return{total:items.length,working:items.filter(x=>x.overallStatus==='Trabajando').length,waiting:items.filter(x=>x.overallStatus==='Esperando aprobación').length};});
-  agentStats=computed(()=>{const items=this.svc.agentExecutions();return{running:items.filter(x=>x.status==='RUNNING').length,failed:items.filter(x=>x.status==='FAILED').length,input:items.reduce((sum,x)=>sum+(x.inputTokens||0),0),output:items.reduce((sum,x)=>sum+(x.outputTokens||0),0),cost:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.estimated_cost_usd||0),0),cacheRead:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.cache_read_tokens||0),0),cacheWrite:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.cache_write_tokens||0),0)};});
-  latestFailedAgent=computed(()=>this.svc.agentExecutions().find(x=>x.status==='FAILED'));
+  visibleAgentExecutions=computed(()=>this.svc.agentExecutions().filter(x=>!x.reusedFromExecutionId));
+  agentStats=computed(()=>{const items=this.visibleAgentExecutions();return{running:items.filter(x=>x.status==='RUNNING').length,failed:items.filter(x=>x.status==='FAILED').length,input:items.reduce((sum,x)=>sum+(x.inputTokens||0),0),output:items.reduce((sum,x)=>sum+(x.outputTokens||0),0),cost:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.estimated_cost_usd||0),0),cacheRead:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.cache_read_tokens||0),0),cacheWrite:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.cache_write_tokens||0),0)};});
+  latestFailedAgent=computed(()=>this.visibleAgentExecutions().find(x=>x.status==='FAILED'));
   failedPhase=computed(()=>this.selected()?.phases.find(p=>p.status==='failed'));
   offerErrorMessage=computed(()=>this.latestFailedAgent()?.errorMessage||this.failedPhase()?.errorMessage||'');
   openCreate(){this.draft=this.newDraft();this.createOpen.set(true);} closeCreate(){this.createOpen.set(false);} saveCreate(){this.svc.create(this.draft);this.createOpen.set(false);}
