@@ -8,7 +8,7 @@ import nats
 from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.errors import NotFoundError
 
-from agent_platform.api.dependencies import get_cache_service
+from agent_platform.api.dependencies import get_cache_service,get_tool_registry
 from agent_platform.application.cache import CachedEmbeddingProvider
 from agent_platform.application.cognitive import ApplicationContextContributor,AttachmentContextContributor,CognitiveContextBuilder,KnowledgeRetrievalContributor,MemoryContextContributor
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
@@ -121,7 +121,7 @@ class NatsExecutionTransport:
                 except Exception:return
 
     async def _execute(self,request):
-        settings=get_settings();cache=get_cache_service()
+        settings=get_settings();cache=get_cache_service();tools=get_tool_registry()
         async with SessionFactory() as session:
             agent_repo=PostgresAgentRepository(session);skill_repo=PostgresSkillRepository(session)
             base_execution_repo=PostgresExecutionRepository(session)
@@ -138,7 +138,7 @@ class NatsExecutionTransport:
             embeddings=CachedEmbeddingProvider(HashEmbeddingProvider(dimensions=settings.embedding_dimensions,model=settings.embedding_model),cache,ttl_seconds=settings.embedding_cache_ttl_seconds)
             retrieval=KnowledgeRetrievalService(PostgresKnowledgeSearchBackend(session),embeddings,cache,ontology,cache_ttl_seconds=settings.retrieval_cache_ttl_seconds)
             context=CognitiveContextBuilder(contributors=[ApplicationContextContributor(),AttachmentContextContributor(),MemoryContextContributor(memory),KnowledgeRetrievalContributor(retrieval,cache,cache_ttl_seconds=settings.cognitive_cache_ttl_seconds)])
-            common=dict(agents=AgentRegistry(agent_repo,skill_repo),skills=SkillRegistry(skill_repo),executions=execution_repo,model_provider=AnthropicModelProvider(),cognitive_context_builder=context,memory_service=memory,cache=cache)
+            common=dict(agents=AgentRegistry(agent_repo,skill_repo),skills=SkillRegistry(skill_repo),executions=execution_repo,model_provider=AnthropicModelProvider(),cognitive_context_builder=context,memory_service=memory,cache=cache,tool_registry=tools)
             if settings.agent_runtime.lower()=="langgraph":
                 runtime=LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url,proposal_retrieval_service=retrieval)
             else:
