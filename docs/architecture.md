@@ -162,3 +162,26 @@ Docker Compose is the local reference topology. Boundaries are designed to trans
 - stateless horizontal scaling for service components.
 
 See [ADRs.md](ADRs.md) for the reasoning and alternatives behind these choices.
+
+
+## Declarative cognitive graph resolution
+
+The business workflow engine never selects LangGraph nodes directly. Agent Platform resolves the internal graph from the persisted Skill definition:
+
+```text
+AgentExecutionRequest
+        ↓
+SkillRegistry
+        ↓
+constraints.execution.graph
+        ↓
+GraphRegistry
+        ├── resilient-single
+        ├── proposal
+        ├── presentation-plan
+        └── future registered graphs
+```
+
+`resilient-single` is the default and provides bounded truncation recovery for any skill, including newly added business processes. Specialized graphs are justified only when the task has a meaningful semantic decomposition that cannot be recovered safely by concise retry alone.
+
+This keeps the platform open for workflows such as investment discovery, vendor assessment or architecture review without adding skill-specific conditionals to the central runtime.
