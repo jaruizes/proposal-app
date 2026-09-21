@@ -10,7 +10,8 @@ public record NatsAgentPlatformProperties(
         String commandSubject,
         String eventsSubject,
         String eventsDurable,
-        Duration executionTimeout) {
+        Duration executionTimeout,
+        Duration proposalExecutionTimeout) {
 
     public NatsAgentPlatformProperties {
         if (url == null || url.isBlank()) url = "nats://localhost:4222";
@@ -18,5 +19,6 @@ public record NatsAgentPlatformProperties(
         if (eventsSubject == null || eventsSubject.isBlank()) eventsSubject = "agent-platform.events.execution.*";
         if (eventsDurable == null || eventsDurable.isBlank()) eventsDurable = "proposal-backend-events";
         if (executionTimeout == null) executionTimeout = Duration.ofMinutes(10);
+        if (proposalExecutionTimeout == null) proposalExecutionTimeout = Duration.ofMinutes(30);
     }
 }
