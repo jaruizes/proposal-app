@@ -42,7 +42,8 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
         var offer=offers.findById(offerId).orElseThrow(() -> new IllegalStateException("Offer not found"));
         var templateId=presentationId(templateSettings.get().presentationTemplateId());
         var hasTemplate=templateId!=null&&!templateId.isBlank();
-        var templateStructure=hasTemplate?text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId))):"{\"slides\":[],\"layouts\":[],\"masters\":[]}";
+        var rawTemplateStructure=hasTemplate?text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId))):"{\"slides\":[],\"layouts\":[],\"masters\":[]}";
+        var templateStructure=compactTemplateStructure(rawTemplateStructure);
 
         // Business Analyst materialization step maps the frozen slide-plan onto the live corporate template.
         var operationPlan=agents.execute(
@@ -50,10 +51,13 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
                         "Plan presentation materialization","""
                         Produce ONLY JSON with this shape: {"operations":[{"tool":"slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|slides_replace_element_text|slides_batch_update","arguments":{...}}]}.
                         Use $PRESENTATION_ID as the presentationId placeholder. Materialize the approved slides-plan exactly: hierarchy, order and exact titles are frozen. Do not rewrite approved narrative copy.
-                        If a corporate template structure is present, reuse/adapt its patterns. If the structure is empty, build a clean presentation from scratch using slides_batch_update createSlide/createShape/insertText requests.
+                        The corporate template input is a COMPACT TEMPLATE INVENTORY, not the raw Google Slides API response.
+                        Reuse/adapt the listed slide/layout patterns and element identifiers. Do not require omitted style metadata.
+                        If the inventory is empty, build a clean presentation from scratch using slides_batch_update createSlide/createShape/insertText requests.
+                        Keep operations compact: prefer one slides_batch_update operation with multiple requests over many equivalent operations.
                         """).withOutputFormat("json"),
                 model(offer),
-                "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# CORPORATE TEMPLATE STRUCTURE\n"+templateStructure).content();
+                "# APPROVED SLIDES PLAN\n"+slidesPlan+"\n\n# COMPACT CORPORATE TEMPLATE INVENTORY\n"+templateStructure).content();
 
         var folder=driveId(outputFolder);
         String created;
@@ -153,6 +157,91 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
             tools.execute(tool,args); count++;
         }
         return count;
+    }
+
+    String compactTemplateStructure(String raw) {
+        if(raw==null||raw.isBlank()) return "{\"slides\":[],\"layouts\":[],\"masters\":[]}";
+        try {
+            var root=json.readTree(raw);
+            var out=json.createObjectNode();
+            out.put("presentationId",root.path("presentationId").asText(""));
+            out.put("title",root.path("title").asText(""));
+
+            var slidesOut=out.putArray("slides");
+            int slideCount=0;
+            for(var slide:root.path("slides")){
+                if(slideCount++>=40) break;
+                var s=slidesOut.addObject();
+                s.put("objectId",slide.path("objectId").asText(""));
+                s.put("layoutObjectId",slide.path("slideProperties").path("layoutObjectId").asText(""));
+                var elements=s.putArray("elements");
+                int elementCount=0;
+                for(var element:slide.path("pageElements")){
+                    if(elementCount++>=60) break;
+                    var e=elements.addObject();
+                    e.put("objectId",element.path("objectId").asText(""));
+                    if(element.has("shape")){
+                        e.put("kind","shape");
+                        e.put("shapeType",element.path("shape").path("shapeType").asText(""));
+                        e.put("text",compactText(element.path("shape").path("text")));
+                    } else if(element.has("image")) {
+                        e.put("kind","image");
+                    } else if(element.has("table")) {
+                        e.put("kind","table");
+                    } else if(element.has("line")) {
+                        e.put("kind","line");
+                    } else {
+                        e.put("kind","other");
+                    }
+                }
+            }
+            out.put("slideCount",root.path("slides").size());
+
+            var layoutsOut=out.putArray("layouts");
+            int layoutCount=0;
+            for(var layout:root.path("layouts")){
+                if(layoutCount++>=30) break;
+                var l=layoutsOut.addObject();
+                l.put("objectId",layout.path("objectId").asText(""));
+                l.put("name",layout.path("layoutProperties").path("name").asText(""));
+                l.put("masterObjectId",layout.path("layoutProperties").path("masterObjectId").asText(""));
+            }
+            out.put("layoutCount",root.path("layouts").size());
+
+            var mastersOut=out.putArray("masters");
+            int masterCount=0;
+            for(var master:root.path("masters")){
+                if(masterCount++>=10) break;
+                var m=mastersOut.addObject();
+                m.put("objectId",master.path("objectId").asText(""));
+            }
+            out.put("masterCount",root.path("masters").size());
+
+            var value=json.writeValueAsString(out);
+            // Defensive upper bound: template inventory must remain transport/context metadata,
+            // never become a raw document dump. Keep the beginning valid and useful by
+            // dropping element detail if an unusually complex template still exceeds 200 KB.
+            if(value.length()>200_000){
+                for(var slide:slidesOut) ((com.fasterxml.jackson.databind.node.ObjectNode)slide).remove("elements");
+                out.put("elementsOmittedForSize",true);
+                value=json.writeValueAsString(out);
+            }
+            return value;
+        } catch(Exception e){
+            throw new IllegalStateException("Could not compact corporate presentation template structure",e);
+        }
+    }
+
+    private static String compactText(JsonNode textNode){
+        if(textNode==null||textNode.isMissingNode())return "";
+        var b=new StringBuilder();
+        for(var element:textNode.path("textElements")){
+            var value=element.path("textRun").path("content").asText("");
+            if(!value.isBlank()) b.append(value);
+            if(b.length()>=500)break;
+        }
+        var text=b.toString().replaceAll("\\s+"," ").trim();
+        return text.length()>500?text.substring(0,500):text;
     }
 
     private String model(Offer offer){return offer.models().getOrDefault("presentation",offer.models().getOrDefault("presentationGeneration","claude-sonnet-4-6"));}
