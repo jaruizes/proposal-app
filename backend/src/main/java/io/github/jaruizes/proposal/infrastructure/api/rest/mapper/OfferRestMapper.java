@@ -26,7 +26,7 @@ public final class OfferRestMapper {
         return new OfferResponse(o.id(),o.name(),o.customer(),o.presentationLanguage(),o.inputDriveFolder(),o.outputDriveFolder(),
                 o.presentationName(),o.generatePresentation(),o.aiProvider(),o.models(),o.proposalGuidance(),o.presentationGuidance(),o.currentPhase().label(),overall(o.status()),o.createdAt(),prs);
     }
-    private static String key(PhaseType p){return switch(p){case ANALYSIS->"analysis";case STRATEGY->"strategy";case SOLUTION->"solution";case PROPOSAL->"proposal";case SLIDE_PLAN->"slide-plan";case PRESENTATION->"presentation";};}
+    private static String key(PhaseType p){return switch(p){case ANALYSIS->"analysis";case SOLUTION->"solution";case PROPOSAL->"proposal";case SLIDE_PLAN->"slide-plan";case PRESENTATION->"presentation";};}
     private static String phaseStatus(ExecutionStatus s){return switch(s){case RUNNING->"working";case WAITING_FOR_HUMAN->"waiting_approval";case APPROVED->"approved";case CANCELLED->"cancelled";case FAILED->"failed";case STALE,INVALIDATED->"stale";default->"pending";};}
     private static String overall(ExecutionStatus s){return switch(s){case RUNNING->"Trabajando";case WAITING_FOR_HUMAN->"Esperando aprobación";case CANCELLED->"Cancelado";case APPROVED->"Completado";case FAILED->"Error";default->"Pendiente";};}
 }
