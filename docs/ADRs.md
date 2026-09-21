@@ -127,40 +127,40 @@ The application carries explicit workflow state and must coordinate async agent 
 
 ---
 
-## ADR-005 — Keep a fixed semantic workflow with optional presentation phases
+## ADR-005 — Use five business phases with a human GO/NO-GO gate and optional presentation
 
 **Status:** Accepted
 
 ### Problem / motivation
 
-The detailed document is now the primary deliverable; presentations are useful but not required for every opportunity.
+The earlier six-phase flow separated opportunity understanding and response strategy even though both are normally owned by the same Business Analyst over the same evidence. That duplicated context and model calls.
 
 ### Decision
 
-Keep the phase order:
+Use this fixed semantic workflow:
 
-1. Entendimiento y cualificación
-2. Estrategia de respuesta
-3. Propuesta de solución y plan
-4. Documento de oferta detallado
-5. Propuesta de presentación
-6. Generación de presentación corporativa
+1. Entendimiento y calificación
+2. Propuesta de solución y plan de delivery
+3. Documento de oferta
+4. Hilo de presentación
+5. Generación de presentación
 
-Phases 5 and 6 are optional per offer. If disabled, phase 4 approval completes the offer.
+Phase 1 includes response strategy and produces decision support for a **human** GO/NO-GO gate. Phases 4 and 5 are optional. If presentation generation is disabled, approval of phase 3 completes the offer.
 
 ### Alternatives considered
 
+- Keep understanding and response strategy as separate phases.
+- Fully autonomous GO/NO-GO.
 - Always generate slides.
-- Remove slides from the workflow entirely.
 - Allow arbitrary user-defined phase order.
 
 ### Why this option
 
-It preserves the validated workflow while aligning the main deliverable with real proposal work and avoiding unnecessary model/tool cost.
+It matches real proposal ownership, removes repeated Business Analyst reads of the same source corpus and keeps commercial decisions under human control.
 
 ### Consequences
 
-Skipped phases remain visible as optional/omitted rather than disappearing from the model.
+There is no standalone `strategy.md`. Strategy is part of `opportunity-brief.md`. A clean database creates only the five current phases.
 
 ---
 
@@ -529,31 +529,31 @@ Retrieval context must clearly label provenance/authority.
 
 ---
 
-## ADR-019 — Retrieve proposal references section by section
+## ADR-019 — Retrieve proposal references selectively in large-volume proposal mode
 
 **Status:** Accepted
 
 ### Problem / motivation
 
-A generic whole-proposal reference search returns less focused examples and wastes tokens.
+Historical proposal examples can improve structure and depth, but retrieving references for every section is unnecessary when one coherent proposal call is sufficient.
 
 ### Decision
 
-Classify each proposal section (architecture, security, delivery, governance, etc.) and retrieve relevant `reference-offers` chunks for that section before drafting/reviewing it.
+Normal-size proposals use one Business Analyst generation and at most a small whole-proposal reference lookup. Section-by-section `reference-offers` retrieval is activated only in large-volume bounded generation.
 
 ### Alternatives considered
 
-- One retrieval call for the entire proposal.
+- Always perform section-level retrieval.
 - Feed complete historical proposals.
-- No RAG in proposal composition.
+- Never use proposal references.
 
 ### Why this option
 
-The examples are better aligned to the section being written and context stays bounded.
+It preserves narrative coherence and lowers retrieval/context overhead for normal proposals while retaining targeted examples for large documents.
 
 ### Consequences
 
-Proposal execution emits more retrieval operations/events.
+Retrieval diagnostics differ by mode; historical references remain explicitly non-factual in both modes.
 
 ---
 
@@ -612,31 +612,36 @@ Advanced semantic metadata may need future model-assisted enrichment.
 
 ---
 
-## ADR-022 — Use a dedicated LangGraph graph for detailed proposal composition
+## ADR-022 — Prefer one coherent proposal generation and fall back to bounded LangGraph generation only for large volume
 
 **Status:** Accepted
 
 ### Problem / motivation
 
-A detailed proposal generated in one huge model call is hard to control, can truncate and provides poor section-level retrieval/review.
+Always splitting a proposal into many model calls increases token cost and can produce a fragmented narrative. A single very large call, however, can truncate on large opportunities.
 
 ### Decision
 
-Use a graph with proposal planning, section-aware retrieval, section drafting, section review, assembly and global review. Section work has bounded concurrency.
+`compose-proposal` always has one Business Analyst AgentExecution.
+
+- **SINGLE mode:** one model generation writes the complete proposal when approved context fits the configured threshold.
+- **SPLIT mode:** for large context, or when the single pass is structurally incomplete/truncated, the same AgentExecution compacts context once and uses bounded internal LangGraph substeps.
+
+Split mode uses section-specific context, reference retrieval, issues-only review, targeted correction, deterministic assembly and one global review. Successful internal substeps are checkpointed in Valkey.
 
 ### Alternatives considered
 
-- Single large proposal-generation call.
-- Generate every section as independent uncoordinated agents.
-- Deterministic templates only.
+- Always one huge generation.
+- Always generate every section independently.
+- Separate Business Analyst AgentExecutions for compaction and each section.
 
 ### Why this option
 
-It improves section depth/control while retaining one canonical final artifact.
+It makes narrative coherence and low execution count the default while retaining a safe escape hatch for very large documents.
 
 ### Consequences
 
-More calls can cost more than a single call; observability and bounded concurrency are essential.
+The runtime must route dynamically by volume, validate single-pass completeness and maintain durable internal checkpoints for split mode.
 
 ---
 
