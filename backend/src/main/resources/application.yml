@@ -33,7 +33,6 @@ agent-platform:
     events-subject: ${AGENT_PLATFORM_EVENTS_SUBJECT:agent-platform.events.execution.*}
     events-durable: ${AGENT_PLATFORM_EVENTS_DURABLE:proposal-backend-events}
     execution-timeout: ${AGENT_PLATFORM_EXECUTION_TIMEOUT:10m}
-    proposal-execution-timeout: ${AGENT_PLATFORM_PROPOSAL_EXECUTION_TIMEOUT:30m}
 
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}
