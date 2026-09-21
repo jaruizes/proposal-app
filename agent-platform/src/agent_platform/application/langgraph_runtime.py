@@ -29,6 +29,10 @@ class LangGraphState(TypedDict, total=False):
     proposal_context_pack: dict
     proposal_quality_degraded: bool
     proposal_skipped_quality_steps: list[str]
+    presentation_plan_mode: str
+    presentation_plan_force_split: bool
+    presentation_plan_title: str
+    presentation_plan_sections: list[dict]
 
 
 class LangGraphAgentRuntime(AgentRuntime):
@@ -260,6 +264,9 @@ class LangGraphAgentRuntime(AgentRuntime):
         if execution.skill_key == "compose-proposal":
             from agent_platform.application.proposal_graph import add_proposal_nodes
             add_proposal_nodes(builder, self, execution)
+        elif execution.skill_key == "design-presentation":
+            from agent_platform.application.presentation_plan_graph import add_presentation_plan_nodes
+            add_presentation_plan_nodes(builder, self, execution)
         else:
             builder.add_edge("build_context", "invoke_model")
             builder.add_edge("invoke_model", END)
