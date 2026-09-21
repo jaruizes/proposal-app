@@ -241,19 +241,27 @@ class LangGraphAgentRuntime(AgentRuntime):
                 min_output_tokens = max(256, int(truncation.get("min_output_tokens", 700)))
                 base_max = model_request.max_output_tokens or 16000
 
+                last_retry_code = None
                 for attempt in range(max_attempts):
                     factor = float(factors[min(attempt, len(factors) - 1)])
                     attempt_max = max(min_output_tokens, int(base_max * factor))
                     if attempt == 0:
                         attempt_request = model_request.model_copy(update={"max_output_tokens": attempt_max})
                     else:
+                        format_name = str(request.constraints.get("output_format", "text"))
+                        contract_hint = {
+                            "json": "Return ONLY one complete valid JSON object. No code fences, prose, comments or trailing text.",
+                            "markdown": "Return ONLY the complete raw Markdown document, starting with its # heading. No outer code fence.",
+                            "optional_markdown": "Return ONLY NONE or the complete raw Markdown document. No outer code fence.",
+                            "text": "Return only the requested final text with no preamble.",
+                        }.get(format_name, "Respect the declared output contract exactly.")
                         retry_prompt = (
                             model_request.messages[0].content
-                            + "\n\n# RETRY AFTER OUTPUT LIMIT\n"
-                            + f"The previous response exceeded the output budget. Regenerate from scratch in at most "
-                              f"{max(200, int(attempt_max * 0.32))} words/tokens-equivalent of concise content. "
-                              "Preserve all mandatory information and the exact output contract. "
-                              "Use compact tables/bullets where appropriate. Do not add commentary or repeat context."
+                            + "\n\n# RETRY AFTER RECOVERABLE OUTPUT FAILURE\n"
+                            + f"The previous attempt failed the execution output contract ({last_retry_code or 'unknown'}). "
+                              f"Regenerate from scratch in at most {max(200, int(attempt_max * 0.32))} words/tokens-equivalent. "
+                              + contract_hint + " Preserve all mandatory information. "
+                              "Use compact structures where appropriate and stop immediately after the required output is complete."
                         )
                         attempt_request = model_request.model_copy(update={
                             "messages": [ModelMessage(role=ModelRole.USER, content=retry_prompt)],
@@ -261,25 +269,31 @@ class LangGraphAgentRuntime(AgentRuntime):
                         })
                     try:
                         with timed_span("langgraph.model", model=attempt_request.model or "default", attempt=attempt + 1):
-                            model_result = await self._model_provider.generate(attempt_request)
+                            candidate = await self._model_provider.generate(attempt_request)
+                        # Output-contract validation belongs to the common execution runtime.
+                        # A syntactically incomplete JSON/Markdown response is recoverable in
+                        # exactly the same way as provider-level max_tokens truncation.
+                        normalized = normalize_output(request, candidate.content)
+                        model_result = candidate.model_copy(update={"content": normalized})
                         await self._executions.add_event(execution.id, "execution.model.attempt.completed", {
                             "attempt": attempt + 1,
                             "max_output_tokens": attempt_max,
+                            "output_format": request.constraints.get("output_format", "text"),
                         })
                         break
                     except ModelProviderError as exc:
-                        truncated = exc.code == "ANTHROPIC_OUTPUT_TRUNCATED"
+                        recoverable = exc.code in {"ANTHROPIC_OUTPUT_TRUNCATED", "INVALID_AGENT_OUTPUT"}
+                        last_retry_code = exc.code
                         await self._executions.add_event(execution.id, "execution.model.attempt.failed", {
                             "attempt": attempt + 1,
                             "max_output_tokens": attempt_max,
                             "code": exc.code,
-                            "truncated": truncated,
+                            "recoverable_output_failure": recoverable,
                         })
-                        if not truncated or attempt == max_attempts - 1:
+                        if not recoverable or attempt == max_attempts - 1:
                             raise
                 if model_result is None:
                     raise RuntimeError("Model execution produced no result")
-                model_result = model_result.model_copy(update={"content": normalize_output(request, model_result.content)})
                 if self._cache is not None and cache_config["enabled"] and cache_key:
                     await self._cache.set_json(
                         "execution",
