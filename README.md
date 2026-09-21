@@ -1,421 +1,764 @@
-# ProposalFlow / Proposal Agent Platform
+# ProposalFlow
 
-ProposalFlow is an end-to-end proposal-generation application built on top of an independent agent platform. It combines deterministic workflow orchestration, human approval gates, multimodal source ingestion, AI agents, reusable knowledge/RAG, document rendering, Google Workspace tooling and observability.
+ProposalFlow is an end-to-end proposal-generation application built on top of an independent Agent Platform.
 
-The project is deliberately split into two responsibilities:
+The system is designed around a small number of **business phases and accountable roles**, not around one agent invocation per artifact. The Spring Boot application owns the deterministic workflow and human gates; the Agent Platform owns cognitive execution, RAG, skills, checkpoints, caching and model-provider integration.
 
-- **ProposalFlow application (Angular + Spring Boot)** owns the business workflow, offer state, approvals, artifacts, source ingestion, document materialization and Google Workspace integration.
-- **Agent Platform (FastAPI + LangGraph)** owns cognitive execution, agents, skills, memory, knowledge/RAG, ontology-aware retrieval, caching and model-provider integration.
+The main deliverable is a customer-facing proposal document. Presentation generation is optional.
 
-The main deliverable is a detailed proposal document. Presentation generation is optional.
+---
 
-## Current workflow
+## Business workflow
 
-The workflow order is fixed and every cognitive phase is human-gated:
+ProposalFlow implements five business phases:
 
 ```text
-1. Entendimiento y cualificación
-        ↓ approval
-2. Estrategia de respuesta
-        ↓ approval
-3. Propuesta de solución y plan
-        ↓ approval
-4. Documento de oferta detallado
-        ↓ approval
-        ├─ proposal.docx
-        ├─ proposal.pdf
-        └─ finish if presentation is disabled
-
-5. Propuesta de presentación              (optional)
-        ↓ approval
-6. Generación de presentación corporativa (optional)
+1. Entendimiento y calificación
+   Business Analyst
+      │
+      ├── opportunity-brief.md
+      ├── questions.md       optional
+      └── technology.md      optional
+      │
+      ▼
+   HUMAN GO / NO-GO
+      │
+      └── GO
+          ▼
+2. Propuesta de solución y plan de delivery
+   Solution Architect + Delivery Manager
+      │
+      ├── optional bounded specialists
+      ├── solution.md
+      └── delivery-plan.md
+      │
+      ▼
+   HUMAN APPROVAL
+      │
+      ▼
+3. Documento de oferta
+   Business Analyst
+      │
+      ├── proposal.md
+      ├── proposal.docx
+      └── proposal.pdf
+      │
+      ▼
+   HUMAN APPROVAL
+      │
+      ├── FIN
+      │
+      └── optional presentation
+          ▼
+4. Hilo de presentación
+   Business Analyst
+      │
+      └── slides-plan.md
+      │
+      ▼
+   HUMAN APPROVAL
+      │
+      ▼
+5. Generación de presentación
+   Business Analyst + deterministic materialization
+      │
+      └── corporate Google Slides / PPTX-equivalent deck
 ```
 
-The last two phases can be disabled per offer. When disabled, approving phase 4 completes the workflow after the DOCX/PDF materialization has been triggered.
+Phases 4 and 5 are optional. If presentation generation is disabled, approval of phase 3 completes the workflow.
 
-### Canonical artifacts
+### Human decision ownership
 
-The application keeps cognitive outputs as versioned Markdown artifacts. Typical files are:
+AI produces analysis and decision support. It does **not** make the commercial GO/NO-GO decision.
+
+The first human gate is therefore:
+
+```text
+Entendimiento y calificación
+          ↓
+       GO / NO-GO
+```
+
+A human business owner decides whether the organization should continue investing in the response.
+
+---
+
+# 1. Entendimiento y calificación
+
+**Owner:** Business Analyst / Offer Owner  
+**Skill:** `qualify-opportunity`
+
+This phase merges the previous “Entendimiento y cualificación” and “Estrategia de respuesta” phases.
+
+The Business Analyst performs **one primary reasoning pass** over the customer input corpus. The goal is to understand and qualify the opportunity before any technical solution is designed.
+
+The analysis should answer, whenever the customer evidence supports it:
+
+- What does the customer want?
+- Why does the customer want it?
+- What business/technical outcomes are expected?
+- What is in scope?
+- What is explicitly or implicitly outside scope?
+- Which dates relate to the bid process?
+- Which dates/timing constraints relate to project execution?
+- Which dependencies and acceptance conditions are already known?
+- Which technologies/products/architectures are mandated, preferred or simply mentioned?
+- Which questions remain open?
+- Which initial execution risks are already visible?
+- Which assumptions can reasonably be made while questions remain open?
+- What response strategy/positioning should guide the proposal?
+- Which evidence-backed value-add ideas complement the requested scope?
+
+The phase also provides decision support for the human GO/NO-GO gate.
+
+## Outputs
+
+One Business Analyst execution produces up to three canonical artifacts:
+
+### `opportunity-brief.md`
+
+Required. It contains the complete approved understanding of the opportunity, including:
+
+- executive opportunity summary;
+- customer needs and drivers;
+- expected objectives/outcomes;
+- scope IN;
+- scope OUT;
+- known constraints/dependencies;
+- bid/process timing;
+- known project timing;
+- assumptions;
+- initial risks;
+- response strategy/positioning;
+- potential value-add;
+- explicit gaps;
+- evidence/source locators;
+- GO/NO-GO decision-support factors.
+
+The former standalone `strategy.md` no longer exists. Response strategy belongs in the opportunity brief.
+
+### `questions.md`
+
+Optional.
+
+Contains only material questions that need customer/human clarification. If there are no real open questions, the artifact is not created.
+
+### `technology.md`
+
+Optional.
+
+Contains technologies, products, architectural constraints or technology-related requirements explicitly stated by the customer. It is **not** the proposed solution.
+
+## Efficiency rule
+
+The same Business Analyst does not reread the same source corpus three times to create three files.
+
+```text
+customer evidence
+       ↓
+one BA reasoning execution
+       ↓
+structured result
+   ┌───┼──────────────┐
+   ▼   ▼              ▼
+brief questions? technology?
+```
+
+---
+
+# 2. Propuesta de solución y plan de delivery
+
+This phase contains two clearly separated responsibilities.
+
+## 2.1 Solution design
+
+**Owner:** Solution Architect  
+**Skill:** `design-solution`
+
+Primary inputs:
+
+- approved `opportunity-brief.md`;
+- optional `questions.md`;
+- optional `technology.md`;
+- relevant original customer evidence;
+- relevant RAG architecture/reference knowledge;
+- bounded specialist answers when genuinely needed.
+
+The Solution Architect owns `solution.md`.
+
+### `solution.md` content
+
+The canonical solution document covers:
+
+1. solution summary;
+2. principles, design drivers and assumptions;
+3. conceptual architecture;
+4. logical architecture;
+5. physical/deployment architecture;
+6. components and proposed technologies;
+7. integrations and data;
+8. security, resilience, observability and operations;
+9. alternatives considered;
+10. pros/cons and explicit trade-offs;
+11. technical risks;
+12. validation points such as spikes, benchmarks or PoCs;
+13. implementation tasks;
+14. evidence/TBD traceability.
+
+For each implementation task the solution must include:
+
+- task;
+- expected outcome/deliverable;
+- qualitative complexity;
+- dependencies, when present;
+- recommended profile type;
+- capability/workstream.
+
+Allowed qualitative complexity:
+
+```text
+LOW
+MEDIUM
+HIGH
+VERY_HIGH
+```
+
+Numeric estimation is forbidden at this stage:
+
+```text
+NO person-days
+NO hours
+NO story points
+NO team-size/FTE quantities
+NO numeric duration
+NO cost / price
+```
+
+### Original evidence and RAG
+
+Approved artifacts are the normal working context.
+
+Original customer sources remain factual authority and are reopened only when they materially affect solution correctness.
+
+RAG sources such as architecture references are advisory/reference material. They never override current-customer facts.
+
+### Optional specialists
+
+The Solution Architect may request a **small bounded number** of specialist consultations when normal solution-architecture expertise is insufficient.
+
+For example:
+
+- security/cryptography;
+- a concrete data/migration question;
+- a provider-specific platform constraint.
+
+Specialists answer bounded questions. They do not own the canonical solution.
+
+### Adaptive generation
+
+Normal-size solutions are generated by one Solution Architect execution.
+
+Large contexts may use:
+
+```text
+selected evidence
+      ↓
+compact architect blueprint
+      ↓
+3 bounded blocks
+      ↓
+deterministic assembly
+      ↓
+solution.md
+```
+
+This prevents `max_tokens` failures without turning every solution into many independent agents.
+
+---
+
+## 2.2 Delivery planning
+
+**Owner:** Delivery Manager  
+**Skill:** `plan-delivery`
+
+The Delivery Manager starts primarily from:
+
+- approved `opportunity-brief.md`;
+- approved `solution.md`, including implementation tasks, complexity, dependencies and profile types.
+
+The Delivery Manager should not reread the complete RFP by default.
+
+### `delivery-plan.md` content
+
+The Delivery Manager defines:
+
+- recommended delivery methodology/lifecycle;
+- rationale;
+- optional inception/discovery/landing phase;
+- workstreams / lines of work;
+- sequencing and dependencies;
+- milestones;
+- decision gates;
+- integrated validation/acceptance;
+- release/cutover;
+- transition/handover;
+- customer participation;
+- third-party participation;
+- governance model;
+- governance roles;
+- governance forums/ceremonies;
+- delivery risks;
+- TBDs.
+
+The Delivery Manager does not redefine the technical solution and does not create numeric estimates.
+
+The normal path is **one Delivery Manager execution**.
+
+---
+
+# 3. Documento de oferta
+
+**Owner:** Business Analyst / Offer Owner  
+**Skill:** `compose-proposal`
+
+The Business Analyst does not solve the opportunity again in this phase.
+
+The authoritative inputs already exist:
 
 ```text
 opportunity-brief.md
-questions.md
-technology.md
-strategy.md
 solution.md
 delivery-plan.md
-proposal.md
-slides-plan.md
 ```
 
-Markdown remains the canonical, inspectable representation. Users can export any generated Markdown artifact to PDF from the artifact viewer.
+Optional `questions.md` and `technology.md` remain available when relevant.
 
-The final proposal is additionally materialized as:
+RAG reference offers may be used for:
 
-```text
-proposal.md
-    ↓ deterministic renderer
-proposal.docx
-    ↓ LibreOffice headless
-proposal.pdf
-```
+- structure;
+- tone;
+- terminology;
+- depth;
+- proven narrative patterns.
 
-DOCX/PDF rendering never calls an LLM.
+Historical/reference offers are never factual authority for the current customer.
 
-## Architecture
+## Default mode: one agent execution
 
-```text
-┌───────────────────────────────────────────────────────────────────────┐
-│ Angular UI                                                            │
-│ offers · approvals · artifacts · knowledge · templates · observability│
-└───────────────────────────────┬───────────────────────────────────────┘
-                                │ REST + SSE
-                                ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│ Spring Boot backend                                                   │
-│                                                                       │
-│ deterministic workflow owner                                         │
-│ human gates · offer state · versioned artifacts                       │
-│ source ingestion · source triage · Google Workspace MCP               │
-│ proposal materialization · template settings                          │
-└──────────────┬──────────────────────────┬─────────────────────────────┘
-               │ NATS JetStream           │ HTTP
-               │ cognitive execution      │ rendering
-               ▼                          ▼
-┌───────────────────────────────┐  ┌───────────────────────────────────┐
-│ Agent Platform                │  │ Document Renderer                 │
-│ FastAPI + LangGraph           │  │ Python + python-docx              │
-│                               │  │ LibreOffice headless              │
-│ Agents / Skills               │  │ Markdown → DOCX → PDF             │
-│ RAG / Memory / Ontology       │  └───────────────────────────────────┘
-│ Cache / Model providers       │
-└──────────────┬────────────────┘
-               │
-               ├─ PostgreSQL + pgvector
-               ├─ Valkey
-               └─ Anthropic
-
-Spring backend
-    ├─ PostgreSQL (workflow/application state)
-    ├─ Google Workspace MCP over stdio
-    └─ NATS JetStream
-
-Observability
-    └─ OpenTelemetry → Collector → Tempo / Jaeger + Prometheus / Grafana
-```
-
-More detail is available in [docs/architecture.md](docs/architecture.md). Architectural decisions and their trade-offs are documented in [docs/ADRs.md](docs/ADRs.md).
-
-## Main components
-
-### Frontend
-
-- Angular 20.
-- Offer dashboard and workflow visualization.
-- Human approval and refinement UI.
-- Per-agent execution telemetry and token usage.
-- Markdown preview/raw view.
-- On-demand Markdown → PDF export.
-- Final proposal DOCX/PDF status and download.
-- Knowledge/RAG administration from the main application.
-- Global corporate-template configuration.
-
-### Spring Boot backend
-
-- Java 21 / Spring Boot 3.5.
-- Hexagonal dependency direction: `infrastructure → business → domain`.
-- PostgreSQL + Flyway.
-- Deterministic workflow and human gates.
-- Source ingestion and multimodal preparation.
-- NATS execution adapter to Agent Platform.
-- Google Workspace MCP client.
-- Final-document versioning/idempotency.
-- REST API and SSE updates.
-
-### Agent Platform
-
-- Python/FastAPI.
-- LangGraph runtime behind a stable platform API.
-- Agent Registry and Skill Registry.
-- Anthropic provider.
-- PostgreSQL LangGraph checkpoints.
-- PostgreSQL/pgvector knowledge store.
-- Hybrid retrieval: vector + keyword + graph/ontology signals.
-- Retrieval relevance gating.
-- Memory and cache support.
-- Valkey cache.
-- NATS command/event transport.
-- OpenTelemetry instrumentation.
-
-### Document Renderer
-
-- Independent FastAPI service.
-- Markdown → DOCX with `python-docx`.
-- DOCX → PDF with LibreOffice headless.
-- LibreOffice and required fonts are installed **inside the image**.
-- Non-root runtime.
-- Read-only root filesystem compatible.
-- Ephemeral `/tmp` working directory.
-- No LibreOffice installation is required on the developer machine or Kubernetes node.
-
-### Google Workspace MCP
-
-The local MCP server wraps stable Google Drive, Slides, Docs and Sheets APIs. It is used for source access and final presentation materialization.
-
-Important capabilities include:
-
-- Drive discovery/download/export/copy/move.
-- Slides creation from blank or corporate-template copy.
-- Slides structure inspection and thumbnails.
-- Slides batch updates and visual QA.
-- Native Google Docs/Sheets reads.
-- OAuth credentials remain outside the repository.
-
-## Source ingestion and token strategy
-
-Source documents are not treated as plain text only.
-
-The backend can ingest Google-native documents and ordinary files, extract text with native APIs/Tika and create PDF visual representations when needed. Office-to-PDF conversion uses LibreOffice packaged in the backend image, so local hosts do not need LibreOffice.
-
-### Analysis
-
-The analysis phase is allowed to inspect the source corpus broadly because it builds the compact canonical understanding of the opportunity.
-
-### Strategy
-
-Strategy works primarily from approved artifacts rather than repeatedly injecting all raw documents.
-
-### Solution
-
-Solution must retain access to original customer evidence, but it does not blindly send every original source to every expensive model call.
-
-The current flow is:
+If the approved context fits safely within the configured threshold, one Business Analyst execution writes the complete `proposal.md`.
 
 ```text
 approved artifacts
-+ source manifest
-        ↓
-solution architect source triage
-        ↓
-REVIEW_IN_DEPTH / TARGETED_REVIEW / SKIP
-        ↓
-selected original customer sources
-        ↓
-specialists (max 2, only if needed)
-        ↓
-solution.md
-        ↓
-delivery-plan.md
-        ↓
-coherence review
+      ↓
+Business Analyst
+      ↓
+complete proposal.md
 ```
 
-If triage cannot be interpreted safely, the implementation falls back to the full corpus rather than risk losing factual evidence.
+The objective is a coherent customer-facing document with a single storyline and voice.
 
-The governing principle is:
+The proposal must not look like independently generated sections concatenated together.
+
+## Large-volume fallback
+
+Only when the input context is too large for a safe single-pass generation does the platform switch to bounded generation:
 
 ```text
-approved artifacts = compact working context
-original current-offer sources = factual authority
-reference proposals = non-factual structure/style patterns
+large approved context
+        ↓
+compact context pack
+        ↓
+section-aware reference retrieval
+        ↓
+bounded drafts
+        ↓
+issues-only reviews
+        ↓
+correct only affected sections
+        ↓
+one global consistency review
+        ↓
+proposal.md
 ```
 
-## Proposal RAG
+Successful substeps are persisted in Valkey and reused across retries.
 
-The Agent Platform exposes knowledge-base management and retrieval to the main UI.
+The system does **not** regenerate already successful sections after a late failure when their input fingerprint is unchanged.
+
+## Proposal cost protection
+
+Large proposal generation has configurable safeguards:
+
+```env
+PROPOSAL_INPUT_TOKEN_BUDGET=250000
+PROPOSAL_OUTPUT_TOKEN_BUDGET=30000
+PROPOSAL_COST_BUDGET_USD=2.0
+```
+
+If the configured budget is reached, generation stops before continuing to burn model tokens.
+
+## Canonical and materialized outputs
+
+Canonical:
+
+```text
+proposal.md
+```
+
+After human approval:
+
+```text
+proposal.md
+   ↓ deterministic renderer
+proposal.docx
+   ↓ LibreOffice
+proposal.pdf
+```
+
+DOCX/PDF rendering does not use an LLM.
+
+A proposal may finish here when no presentation is required.
+
+---
+
+# 4. Hilo de presentación
+
+**Owner:** Business Analyst / Offer Owner  
+**Skill:** `design-presentation`
+
+Primary input:
+
+- approved `proposal.md`.
+
+Optional inputs:
+
+- presentation guidance;
+- previous presentations/offers from RAG for storyline/style patterns.
+
+The complete RFP is not reread by default.
+
+The Business Analyst turns the approved proposal into a presentation narrative.
+
+Output:
+
+```text
+slides-plan.md
+```
+
+Each planned slide should define:
+
+- slide ID;
+- concise exact title;
+- primary message/purpose;
+- content;
+- visual-support intent;
+- traceability when useful.
+
+The plan is human-reviewed before presentation materialization starts.
+
+---
+
+# 5. Generación de presentación
+
+**Owner:** Business Analyst / Offer Owner  
+**Skill:** `generate-presentation`
+
+The Business Analyst owns the approved presentation content. The materialization layer applies the corporate template and may use bounded visual-design support for layout/QA.
+
+Authority order:
+
+1. approved `slides-plan.md`;
+2. corporate template;
+3. reference presentations from RAG for style/patterns;
+4. upstream artifacts for clarification only.
+
+The system:
+
+- copies the corporate template rather than editing it;
+- materializes the approved hierarchy/content;
+- performs bounded visual QA;
+- preserves approved titles/messages;
+- avoids rewriting content merely to fit a layout.
+
+Outputs include the final Google Slides/PPTX-equivalent presentation and a presentation build report.
+
+---
+
+# Active agent and skill model
+
+ProposalFlow intentionally keeps the base team small.
+
+| Agent | Active skills | Responsibility |
+|---|---|---|
+| `business-analyst` | `qualify-opportunity`, `compose-proposal`, `design-presentation`, `generate-presentation` | Business qualification, strategy, proposal narrative and presentation |
+| `solution-architect` | `design-solution` | End-to-end solution design |
+| `delivery-manager` | `plan-delivery` | Delivery approach and governance |
+| `security-specialist` | `design-solution` | Optional bounded specialist consultation |
+| `corporate-slide-designer` | `generate-presentation` | Optional bounded visual/layout support |
+
+The governing rules are:
+
+```text
+artifact != agent
+skill != mandatory separate model invocation
+more complexity != more agents
+```
+
+Prefer:
+
+```text
+better context engineering
++ structured outputs
++ selective retrieval
++ bounded generation only when necessary
+```
+
+over unnecessary agent fan-out.
+
+---
+
+# Canonical artifacts
+
+```text
+opportunity-brief.md
+questions.md              optional
+technology.md             optional
+solution.md
+delivery-plan.md
+proposal.md
+slides-plan.md            optional
+presentation metadata     optional
+```
+
+There is no standalone `strategy.md`.
+
+Markdown artifacts are versioned, inspectable and human-reviewable.
+
+---
+
+# Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Angular UI                                                  │
+│ offers · gates · artifacts · RAG · templates · telemetry   │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ REST + SSE
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Spring Boot backend                                         │
+│ deterministic workflow owner                                │
+│ phase state · human gates · artifacts · source ingestion    │
+│ command/event correlation · document materialization        │
+└───────────────┬──────────────────────────────┬──────────────┘
+                │ NATS JetStream               │ HTTP/MCP
+                ▼                              ▼
+┌──────────────────────────────┐      ┌───────────────────────┐
+│ Agent Platform               │      │ Render / Workspace     │
+│ FastAPI + LangGraph          │      │ DOCX/PDF + Slides      │
+│ agents · skills · RAG        │      │ Google Workspace MCP   │
+│ checkpoints · Valkey cache   │      └───────────────────────┘
+│ provider integrations        │
+└───────────────┬──────────────┘
+                │
+                ├─ PostgreSQL + pgvector
+                ├─ Valkey
+                └─ Anthropic
+```
+
+## True command/event execution
+
+NATS execution is asynchronous end to end.
+
+```text
+Spring
+  ├─ persist RUNNING
+  ├─ publish execution.requested
+  └─ return immediately
+
+Agent Platform
+  └─ work for as long as needed
+
+NATS
+  └─ execution.completed / execution.failed
+
+Spring
+  ├─ persist terminal result
+  └─ resume phase from durable checkpoints
+```
+
+There is no workflow-duration timeout in the NATS path.
+
+Provider/API operations may still have their own bounded technical timeouts.
+
+---
+
+# Retry and durability model
+
+Agent tasks have stable checkpoint keys and input fingerprints.
+
+A completed step is reusable only when all relevant inputs are unchanged:
+
+- model;
+- prompt;
+- context;
+- attachments;
+- output contract;
+- human refinement.
+
+For large proposal generation, internal substeps are additionally checkpointed in Valkey.
+
+This means a late failure should resume near the failure point instead of paying again for the entire workflow.
+
+---
+
+# RAG and source authority
+
+Authority hierarchy:
+
+```text
+current customer sources
+        ↓
+approved current-offer artifacts
+        ↓
+RAG references / prior offers
+```
+
+Current-customer sources are factual authority.
+
+Approved artifacts are compact working context.
+
+RAG content is used as reference knowledge or style/pattern guidance according to the skill. Historical proposals never introduce customer facts into the current offer.
 
 Default knowledge bases include:
 
-- `reference-offers`
-- `architecture-references`
-- `corporate-roles`
-- `corporate-capabilities`
-- `accelerators`
-- `case-studies`
+- `reference-offers`;
+- `architecture-references`;
+- `corporate-roles`;
+- `corporate-capabilities`;
+- `accelerators`;
+- `case-studies`.
 
-Documents can be uploaded as PDF, DOCX, TXT or Markdown and are parsed, enriched, chunked and embedded.
+---
 
-Supported retrieval modes include vector, keyword, graph and hybrid retrieval.
+# Observability and cost
 
-### Reference proposal isolation
+Every AgentExecution exposes:
 
-Historical proposals are never treated as factual authority for a current offer.
+- agent;
+- phase;
+- objective;
+- status;
+- model;
+- duration;
+- input tokens;
+- output tokens;
+- prompt-cache read tokens;
+- prompt-cache write tokens;
+- estimated model cost;
+- provider request ID;
+- errors.
 
-During `compose-proposal` the LangGraph proposal flow retrieves references section by section from `reference-offers`. Retrieved chunks are explicitly injected as **NON-FACTUAL** patterns useful for structure, depth, terminology and style only.
+Large proposal executions additionally expose per-substep usage:
 
-The current-offer artifacts and original source material remain authoritative for facts, commitments, technology, customer data, dates, staffing and pricing.
+- draft;
+- review;
+- correction;
+- global review;
+- checkpoint reuse.
 
-Proposal retrieval emits per-section diagnostics so it is possible to inspect which document/chunk influenced the generation.
+The stack exports OpenTelemetry traces and Prometheus metrics to the local observability environment.
 
-## Proposal generation graph
+Anthropic prompt caching is enabled for stable agent/skill instructions and reusable proposal context.
 
-`compose-proposal` uses a dedicated LangGraph flow:
+---
 
-```text
-build_context
-    ↓
-plan_proposal
-    ↓
-retrieve section references
-    ↓
-draft sections (bounded concurrency)
-    ↓
-review sections
-    ↓
-assemble proposal
-    ↓
-global consistency/coverage review
-    ↓
-optional targeted correction
-```
+# Main components
 
-The output remains one canonical `proposal.md`.
+## Frontend
 
-LangGraph is an internal runtime implementation detail. Spring and other clients depend on Agent Platform contracts, not on LangGraph APIs.
+- Angular 20.
+- Offer workflow and human gates.
+- Artifact preview/raw Markdown.
+- Refinement/retry actions.
+- RAG/knowledge administration.
+- Template configuration.
+- Per-agent token/cache/cost observability.
+- DOCX/PDF download.
+- Presentation workflow.
 
-## Document materialization
+## Backend
 
-When `proposal.md` is approved, Spring schedules deterministic materialization asynchronously.
+- Java 21 / Spring Boot 3.5.
+- PostgreSQL + Flyway.
+- Deterministic five-phase business workflow.
+- Source ingestion.
+- NATS command/event execution.
+- Durable phase resume.
+- Versioned artifacts.
+- Google Workspace MCP integration.
+- deterministic DOCX/PDF materialization.
 
-Each materialized document stores:
+## Agent Platform
 
-- source artifact id;
-- content version;
-- render version;
-- source SHA-256;
-- template id;
-- renderer version;
-- render key;
-- status (`PROCESSING`, `READY`, `FAILED`);
-- error details;
-- binary content.
+- Python/FastAPI.
+- LangGraph runtime.
+- agent/skill registries.
+- Anthropic provider.
+- PostgreSQL LangGraph checkpoints.
+- pgvector knowledge/RAG.
+- Valkey caches/checkpoints.
+- hybrid retrieval.
+- ontology signals.
+- OpenTelemetry.
 
-The render key includes the source hash, template, renderer version, materializer version and target type. Repeating a render with identical inputs reuses the existing result.
+## Document Renderer
 
-DOCX and PDF failures are independent. A successful DOCX is preserved even if PDF conversion fails. Rendering failures do not roll back approval of the canonical proposal.
+- Markdown → DOCX using `python-docx`.
+- DOCX → PDF using LibreOffice headless.
+- No LLM involved in rendering.
 
-## Templates
+---
 
-Corporate templates are configured globally from **Plantillas** in the main UI, not per offer.
+# Local development
 
-There are two independent settings:
+## Prerequisites
 
-- proposal DOCX template;
-- Google Slides presentation template.
+Using Docker Compose, the host only needs:
 
-Both are optional.
-
-### No document template configured
-
-A new DOCX is created with neutral built-in styles and PDF is generated from that DOCX.
-
-### No presentation template configured
-
-A new blank Google Slides presentation is created and populated from the approved `slides-plan.md`.
-
-### Template configured
-
-- DOCX rendering loads the configured document template.
-- Slides generation copies the configured Google Slides template before making any changes; the original is never edited.
-
-Google Slides configuration accepts either a presentation ID or a normal Google Slides URL.
-
-Environment variables `PROPOSAL_TEMPLATE_ID` and `GOOGLE_SLIDES_TEMPLATE_ID` can still provide bootstrap/default values when no global setting has yet been persisted.
-
-## Presentation generation
-
-Presentation is optional per offer.
-
-When enabled:
-
-1. `slides-plan.md` defines the approved narrative and slide hierarchy.
-2. The presentation adapter either copies the global template or creates a blank deck.
-3. The Presentation Builder generates bounded Google Slides operations.
-4. The real deck is inspected via Slides thumbnails.
-5. Visual QA can perform bounded corrective operations without rewriting approved narrative copy.
-
-## Output contracts
-
-Agent executions declare an output format:
-
-- `markdown`
-- `optional_markdown`
-- `json`
-- `text`
-
-Agent Platform normalizes and validates outputs before completing the execution. Invalid output fails instead of forcing Spring/UI code to repair arbitrary LLM formatting.
-
-This keeps the application contract stable regardless of whether the internal runtime is native or LangGraph.
-
-## Local development
-
-### Prerequisites
-
-You need:
-
-- Docker with Docker Compose;
-- Node.js/npm only for the one-time Google OAuth setup;
+- Docker + Docker Compose;
 - an Anthropic API key for real model execution;
-- Google OAuth credentials if Google Drive/Slides integration is used.
+- Google OAuth credentials when Drive/Slides integration is used.
 
-You do **not** need Java, Python, PostgreSQL, NATS, Valkey, LibreOffice or pgvector installed on the host when using Docker Compose.
-
-### 1. Configure environment
+## Configure
 
 ```bash
 cp .env.example .env
 ```
 
-At minimum for real AI execution:
+At minimum:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Corporate templates are optional and are normally configured later in the UI.
-
-### 2. Google Workspace OAuth
-
-Put the OAuth client credentials at:
-
-```text
-.secrets/google-oauth-credentials.json
-```
-
-Authenticate once on the host:
-
-```bash
-npm --prefix mcp/google-workspace install
-npm --prefix mcp/google-workspace run auth
-npm --prefix mcp/google-workspace run doctor
-```
-
-This creates:
-
-```text
-.secrets/google-token.json
-```
-
-Both files are gitignored and mounted read-only into the relevant containers.
-
-### 3. Start the stack
+## Start
 
 ```bash
 docker compose up -d --build
 ```
 
-### Local endpoints
+## Main local endpoints
 
 | Component | URL / port |
 |---|---|
 | ProposalFlow UI | http://localhost:4200 |
 | Spring backend | http://localhost:8080 |
-| Agent Platform API | http://localhost:8000 |
-| Agent Platform OpenAPI | http://localhost:8000/docs |
-| Agent Platform Admin | http://localhost:8000/admin/ |
+| Agent Platform | http://localhost:8000 |
+| Agent Platform API docs | http://localhost:8000/docs |
 | Document Renderer | http://localhost:8090 |
-| PostgreSQL (application) | localhost:5432 |
-| PostgreSQL + pgvector (agents/RAG) | localhost:5433 |
+| Application PostgreSQL | localhost:5432 |
+| Agent/RAG PostgreSQL | localhost:5433 |
 | NATS | localhost:4222 |
 | NATS monitoring | http://localhost:8222 |
 | Valkey | localhost:6379 |
@@ -424,160 +767,41 @@ docker compose up -d --build
 | Tempo | http://localhost:3200 |
 | Jaeger | http://localhost:16686 |
 
-Grafana local credentials are `admin / admin`.
+---
 
-### Useful health checks
+# First clean end-to-end run
 
-```bash
-curl http://localhost:8080/actuator/health
-curl http://localhost:8000/health/ready
-curl http://localhost:8090/health/ready
-```
+1. Start/rebuild the stack.
+2. Configure optional corporate templates.
+3. Create a new offer and provide the input source folder.
+4. Let **Entendimiento y calificación** finish.
+5. Review `opportunity-brief.md`, optional `questions.md` and optional `technology.md`.
+6. Make the human GO/NO-GO decision.
+7. If GO, approve the phase.
+8. Review and approve **Propuesta de solución y plan de delivery**.
+9. Review and approve **Documento de oferta**.
+10. Download the materialized DOCX/PDF.
+11. Stop here when no presentation is required.
+12. Otherwise approve/iterate **Hilo de presentación**.
+13. Generate and inspect the final corporate presentation.
 
-## First end-to-end run
+For a clean database, ProposalFlow creates only the five current business phases. No compatibility migration from the previous six-phase workflow is required for a fresh run.
 
-1. Start the stack and authenticate Google Workspace.
-2. Open the UI at `http://localhost:4200`.
-3. Optionally configure global DOCX/Slides templates under **Plantillas**.
-4. Create an offer and provide the source Google Drive folder.
-5. Choose whether presentation generation is required.
-6. Review each generated Markdown artifact.
-7. Use **PDF · Exportar** if you want a printable version of any artifact while validating it.
-8. Refine and approve each phase.
-9. Approving **Documento de oferta detallado** triggers `proposal.docx` and `proposal.pdf`.
-10. Download the materialized files from the offer view.
-11. If presentation was enabled, approve the presentation plan and let the system create the final deck.
+---
 
-## Docker / production direction
-
-Docker Compose is the reference local topology, but service boundaries are intentionally compatible with Kubernetes deployment:
-
-- backend, Agent Platform and document renderer have independent images;
-- PostgreSQL/pgvector, NATS and Valkey are externalizable infrastructure dependencies;
-- document renderer does not require a PVC and uses ephemeral working storage;
-- LibreOffice is inside the renderer/backend images;
-- renderer supports a read-only root filesystem and non-root UID;
-- health/readiness endpoints are available;
-- stateless services can be scaled independently;
-- persisted application and knowledge state lives outside service containers.
-
-For a production deployment, credentials should be supplied through Kubernetes Secrets or an external secret manager rather than repository files.
-
-## Persistence
-
-Two PostgreSQL databases intentionally separate application workflow state from cognitive/knowledge state.
-
-### Application database
-
-Stores:
-
-- offers and phase status;
-- versioned Markdown artifacts;
-- agent execution telemetry;
-- materialized DOCX/PDF versions;
-- global template settings.
-
-Flyway owns the schema.
-
-### Agent Platform database
-
-Uses PostgreSQL + pgvector for:
-
-- agents/platform persistence;
-- LangGraph checkpoints;
-- knowledge bases/documents/chunks;
-- embeddings and retrieval metadata;
-- ontology/retrieval data.
-
-Alembic owns this schema.
-
-## Messaging
-
-NATS JetStream is used for cognitive execution commands/events between Spring and Agent Platform.
-
-The UI never talks directly to NATS or Agent Platform for workflow execution. Spring remains the deterministic owner and the application boundary.
-
-HTTP remains appropriate for management/query operations such as knowledge administration and diagnostics.
-
-## Observability
-
-The stack includes:
-
-- OpenTelemetry Collector;
-- Tempo;
-- Jaeger;
-- Prometheus;
-- Grafana.
-
-The application records:
-
-- HTTP/service traces;
-- MCP tool spans;
-- agent execution status;
-- token input/output;
-- provider request ids;
-- duration/error details;
-- proposal-RAG retrieval diagnostics.
-
-This makes cost, latency and retrieval behavior inspectable instead of hidden inside agent calls.
-
-## Testing
-
-Backend:
-
-```bash
-docker compose exec backend ./mvnw test
-```
-
-If the Maven wrapper is not present in the image/worktree, run Maven inside the backend build environment or locally with Java 21/Maven.
-
-Agent Platform:
-
-```bash
-docker compose exec agent-platform pytest
-```
-
-Focused retrieval/evaluation tests:
-
-```bash
-docker compose exec agent-platform pytest tests/application/test_retrieval.py
-docker compose exec agent-platform pytest tests/evaluation
-```
-
-Document renderer:
-
-```bash
-docker compose exec document-renderer python -m unittest discover -s tests
-```
-
-## Repository layout
+# Repository layout
 
 ```text
 .
-├── frontend/                 Angular UI
-├── backend/                  Spring Boot workflow/application backend
-├── agent-platform/           FastAPI agent/cognitive platform
-├── document-renderer/        deterministic Markdown/DOCX/PDF rendering
-├── mcp/google-workspace/     Google Workspace MCP server
-├── observability/            OTel, Tempo, Prometheus, Grafana configuration
-├── docs/                     architecture and ADR documentation
-├── docker-compose.yml        complete local topology
-└── .env.example              environment defaults
+├── frontend/
+├── backend/
+├── agent-platform/
+├── document-renderer/
+├── mcp/google-workspace/
+├── observability/
+├── docs/
+├── docker-compose.yml
+└── .env.example
 ```
 
-## Security notes
-
-- OAuth credentials/tokens are not committed.
-- MCP file downloads are restricted to the workspace area.
-- Document renderer runs non-root and is compatible with a read-only filesystem.
-- Temporary rendering files are isolated and cleaned up.
-- LibreOffice uses isolated temporary user profiles for conversions.
-- Corporate source documents should be treated as confidential data; production deployments should add organization-appropriate encryption, retention, authorization and audit policies.
-
-## Design documentation
-
-- [Architecture](docs/architecture.md)
-- [Architecture Decision Records](docs/ADRs.md)
-- [Agent Platform](agent-platform/README.md)
-- [Document Renderer](document-renderer/README.md)
-- [Google Workspace MCP](mcp/google-workspace/README.md)
+Additional architecture detail is available under `docs/`.
