@@ -32,6 +32,7 @@ public class OfferWorkflowService {
     private final TaskExecutor phaseTaskExecutor;
     private final TaskExecutor documentTaskExecutor;
     private final ProposalDocumentMaterializationService proposalDocuments;
+    private static final int SINGLE_PASS_PROPOSAL_CONTEXT_CHARS = 55_000;
     private final ObjectMapper json = new ObjectMapper();
     private final java.util.concurrent.ConcurrentMap<String,java.util.concurrent.locks.ReentrantLock> phaseLocks = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -536,34 +537,43 @@ public class OfferWorkflowService {
         var approved=approvedArtifactsContext(offer.id(),List.of(
                 ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY,
                 ArtifactType.SOLUTION,ArtifactType.DELIVERY_PLAN));
+        var guidance=proposalGuidanceJson(offer.proposalGuidance());
 
-        // Build one compact, evidence-preserving representation of all approved upstream artifacts.
-        // It is checkpointed independently, so retries do not pay again for compaction.
-        var contextPack=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst",null,
-                "Construir contexto compacto para la oferta","""
-                Build an INTERNAL proposal context pack from the approved artifacts below.
-                Return ONLY compact JSON with these top-level keys:
-                customerAndOpportunity, mandatoryRequirements, goalsAndScope, strategy, solutionHighlights,
-                architectureAndIntegrations, securityAndOperations, deliveryApproach, risksAssumptionsAndTbds,
-                differentiators, evidenceIndex.
+        // Default path: one Business Analyst execution owns the complete proposal so the narrative
+        // stays coherent. Only large contexts are compacted/split by the Agent Platform.
+        var singlePass=(approved.length()+guidance.length())<=SINGLE_PASS_PROPOSAL_CONTEXT_CHARS;
+        String proposalContext;
+        if(singlePass){
+            proposalContext=offerContext(offer)
+                    +"\n\n# PROPOSAL MODE\nSINGLE"
+                    +"\n\n# APPROVED OFFER ARTIFACTS\n"+approved;
+        }else{
+            var contextPack=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst",null,
+                    "Compactar contexto para una oferta de gran volumen","""
+                    Build an INTERNAL compact proposal context pack because the approved offer artifacts
+                    are too large for a coherent single-pass proposal generation.
+                    Return ONLY compact JSON with: customerAndOpportunity, mandatoryRequirements,
+                    goalsAndScope, responseStrategy, solutionHighlights, architectureAndIntegrations,
+                    securityAndOperations, deliveryApproach, risksAssumptionsAndTbds, differentiators,
+                    evidenceIndex. Preserve material FACT/DECISION/ASSUMPTION distinctions and evidence
+                    locators. Deduplicate aggressively. Do not invent or strengthen claims.
+                    Keep the JSON below roughly 24,000 characters.
+                    """).withOutputFormat("json").withCheckpoint("proposal.large-context-pack"),
+                    model(offer,"proposal"),offerContext(offer)+approved+refinement(refinement));
 
-                Requirements:
-                - Preserve material FACT/DECISION/ASSUMPTION distinctions and DOC/page/section locators.
-                - Keep exact mandatory requirements, constraints and unresolved gaps.
-                - Do not invent or strengthen claims.
-                - Deduplicate repeated content across upstream artifacts.
-                - Prefer concise arrays/objects over prose.
-                - evidenceIndex should map short evidence ids to source locators, not copy source text.
-                - Keep the complete JSON below roughly 24,000 characters.
-                - This is internal context, not proposal prose.
-                """).withOutputFormat("json").withCheckpoint("proposal.context-pack"),
-                model(offer,"proposal"),offerContext(offer)+approved+refinement(refinement));
+            proposalContext=offerContext(offer)
+                    +"\n\n# PROPOSAL MODE\nSPLIT"
+                    +"\n\n# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"+contextPack.content();
+        }
 
-        var context=offerContext(offer)
-                +"\n\n# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"+contextPack.content();
         var result=agents.execute(AgentTask.of(offer.id(),PhaseType.PROPOSAL,"business-analyst","compose-proposal",
-                "Redactar oferta detallada","Execute compose-proposal exactly. Produce ONLY the complete canonical proposal.md in Markdown. Follow PROPOSAL GUIDANCE as authoritative structure/depth guidance. Never invent prices, effort, staffing, dates, contractual commitments or customer facts."+refinement(refinement)).withCheckpoint("proposal.document"),
-                model(offer,"proposal"),context+"\n\n# PROPOSAL GUIDANCE JSON\n"+proposalGuidanceJson(offer.proposalGuidance()));
+                "Redactar documento de oferta","""
+                Execute compose-proposal exactly and produce the canonical proposal.md.
+                Maintain one coherent narrative voice and storyline from customer context through solution
+                and delivery. Do not expose internal orchestration or context-pack terminology.
+                Never invent prices, numeric effort/staffing/duration, contractual commitments or customer facts.
+                """+refinement(refinement)).withCheckpoint("proposal.document"),
+                model(offer,"proposal"),proposalContext+"\n\n# PROPOSAL GUIDANCE JSON\n"+guidance);
         saveArtifact(offer.id(),PhaseType.PROPOSAL,ArtifactType.PROPOSAL,result.content());
     }
 
