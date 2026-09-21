@@ -27,6 +27,8 @@ class LangGraphState(TypedDict, total=False):
     proposal_force_split: bool
     proposal_references: dict[str, list[dict]]
     proposal_context_pack: dict
+    proposal_quality_degraded: bool
+    proposal_skipped_quality_steps: list[str]
 
 
 class LangGraphAgentRuntime(AgentRuntime):
