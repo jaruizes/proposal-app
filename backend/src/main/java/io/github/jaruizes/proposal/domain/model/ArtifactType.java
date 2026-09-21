@@ -7,7 +7,6 @@ public enum ArtifactType {
     OPPORTUNITY_BRIEF,
     QUESTIONS,
     TECHNOLOGY,
-    STRATEGY,
     SOLUTION,
     DELIVERY_PLAN,
     PROPOSAL,
