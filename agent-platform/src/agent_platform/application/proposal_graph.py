@@ -671,6 +671,19 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     1 for item in normalized if item["severity"] == "BLOCKING"
                 ),
                 "global_review_corrected": bool(normalized),
+                "proposal_step_usage": step_usage,
+                "proposal_budget": {
+                    "input_tokens": settings.proposal_input_token_budget,
+                    "output_tokens": settings.proposal_output_token_budget,
+                    "cost_usd": settings.proposal_cost_budget_usd,
+                },
+                "proposal_consumed": {
+                    "input_tokens": consumed["input"],
+                    "output_tokens": consumed["output"],
+                    "cache_read_tokens": consumed["cache_read"],
+                    "cache_write_tokens": consumed["cache_write"],
+                    "estimated_cost_usd": round(consumed["cost_usd"], 6),
+                },
             },
         )
         return {"model_result": final.model_dump(mode="json")}
