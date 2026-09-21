@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 
 from agent_platform.application.cognitive import CognitiveContextBuilder, CognitiveContextPolicy
@@ -111,3 +112,33 @@ async def test_prompt_assembler_renders_epistemic_provenance() -> None:
     assert "Epistemic label: UNCLASSIFIED" in model_request.messages[0].content
     assert "Source: application-context" in model_request.messages[0].content
     assert '"customer": "ACME"' in model_request.messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_builder_serializes_contributors_that_share_request_scoped_resources() -> None:
+    active = 0
+    max_active = 0
+
+    class GuardedContributor:
+        required = False
+
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        async def contribute(self, agent, skill, request):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            try:
+                await asyncio.sleep(0.01)
+                return []
+            finally:
+                active -= 1
+
+    agent = AgentDefinition(key="agent", name="Agent", role="Role")
+    request = AgentExecutionRequest(agent_key="agent", objective="Work")
+    await CognitiveContextBuilder(
+        contributors=[GuardedContributor("memory"), GuardedContributor("retrieval")]
+    ).build(agent, None, request)
+
+    assert max_active == 1
