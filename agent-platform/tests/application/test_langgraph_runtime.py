@@ -453,3 +453,47 @@ async def test_proposal_cost_budget_stops_additional_generation(monkeypatch):
     assert result.error is not None
     assert "budget" in result.error.message.lower()
     assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_proposal_single_mode_uses_one_model_call_and_keeps_coherent_document():
+    class SinglePassProvider:
+        def __init__(self):
+            self.calls = 0
+        async def generate(self, request: ModelRequest):
+            self.calls += 1
+            return ModelResult(
+                content="# Example\n\n## Executive summary\n\nOne coherent proposal.\n\n## Technical approach\n\nIntegrated solution narrative.",
+                model="test-model",
+                usage=ModelUsage(input_tokens=50, output_tokens=30),
+            )
+
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=SinglePassProvider()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    guidance='{"sections":[{"name":"Executive summary","depth":"SUMMARY"},{"name":"Technical approach","depth":"DETAILED"}]}'
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":
+            "Offer name: Example\n\n"
+            "# PROPOSAL MODE\nSINGLE\n\n"
+            "# APPROVED OFFER ARTIFACTS\nQualified context and approved solution.\n\n"
+            "# PROPOSAL GUIDANCE JSON\n"+guidance
+        },
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert provider.calls == 1
+    assert result.artifacts[0].content.startswith("# Example")
+    events=await er.list_events(result.execution_id)
+    assert any(event["event_type"]=="proposal.single_pass" for event in events)
+    assert not any(event["event_type"]=="proposal.section.drafted" for event in events)
