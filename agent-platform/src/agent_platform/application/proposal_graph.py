@@ -12,9 +12,11 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+from agent_platform.application.cache import stable_cache_key
 from agent_platform.application.models import ModelMessage, ModelRequest, ModelResult, ModelRole, ModelUsage
 from agent_platform.application.observability import timed_span
 from agent_platform.application.proposal_retrieval import ProposalReferenceRetriever
+from agent_platform.config import get_settings
 from agent_platform.domain import AgentExecutionRequest, CognitiveContext
 
 
@@ -123,6 +125,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
     semaphore = asyncio.Semaphore(3)
     db_lock = asyncio.Lock()
     calls: list[ModelResult] = []
+    checkpoint_ttl = get_settings().proposal_checkpoint_ttl_seconds
 
     async def add_event(event_type: str, payload: dict) -> None:
         # All proposal substeps share the request-scoped SQLAlchemy AsyncSession.
@@ -140,13 +143,46 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         max_output_tokens: int | None = None,
     ) -> ModelResult:
         prompt = base.messages[0].content + "\n\n# Current stage\n" + instruction
+        effective_max = max_output_tokens or base.max_output_tokens
+        checkpoint_key = stable_cache_key({
+            "version": 2,
+            "stage": event,
+            "payload": payload,
+            "model": base.model,
+            "system_prompt": base.system_prompt,
+            "base_prompt": base.messages[0].content,
+            "instruction": instruction,
+            "max_output_tokens": effective_max,
+        })
+
+        # Cross-execution durable checkpoint. In production the shared cache is Valkey,
+        # so a retry with the same exact inputs can reuse completed proposal substeps
+        # even though the outer AgentExecution/LangGraph thread id changed.
+        if runtime._cache is not None:
+            cached = await runtime._cache.get_json("proposal-step", checkpoint_key)
+            if cached is not None:
+                result = ModelResult.model_validate(cached).model_copy(update={
+                    "usage": ModelUsage(),
+                    "provider_request_id": None,
+                    "metadata": {
+                        **ModelResult.model_validate(cached).metadata,
+                        "proposal_checkpoint_hit": True,
+                    },
+                })
+                await add_event("proposal.step.reused", {
+                    **payload,
+                    "stage": event,
+                    "checkpoint_key": checkpoint_key,
+                })
+                return result
+
         model_request = base.model_copy(update={
             "system_prompt": (base.system_prompt or "") +
                 "\n\n# Execution mode\nThis is an intermediate proposal workflow stage. "
                 "Follow the current stage output format. The graph assembles the canonical document. "
                 "Respect the requested size budget; never expand beyond it.",
             "messages": [ModelMessage(role=ModelRole.USER, content=prompt)],
-            "max_output_tokens": max_output_tokens or base.max_output_tokens,
+            "max_output_tokens": effective_max,
         })
         async with semaphore:
             for attempt in range(2):
@@ -166,11 +202,19 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     with timed_span("langgraph.proposal.model", stage=event, model=base.model or "default"):
                         result = await runtime._model_provider.generate(request_for_attempt)
                     calls.append(result)
+                    if runtime._cache is not None:
+                        await runtime._cache.set_json(
+                            "proposal-step",
+                            checkpoint_key,
+                            result.model_dump(mode="json"),
+                            ttl_seconds=checkpoint_ttl,
+                        )
                     await add_event(event, {
                         **payload,
                         "attempt": attempt + 1,
                         "model": result.model,
                         "max_output_tokens": request_for_attempt.max_output_tokens,
+                        "checkpoint_key": checkpoint_key,
                     })
                     return result
                 except Exception as exc:
