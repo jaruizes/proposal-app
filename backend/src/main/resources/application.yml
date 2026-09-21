@@ -24,6 +24,7 @@ agent-platform:
   transport: ${AGENT_PLATFORM_TRANSPORT:nats}
   base-url: ${AGENT_PLATFORM_URL:http://localhost:8000}
   api-key: ${AGENT_PLATFORM_API_KEY:}
+  # HTTP fallback only. The NATS transport is command/event-driven and has no workflow execution timeout.
   poll-interval: ${AGENT_PLATFORM_POLL_INTERVAL:1s}
   execution-timeout: ${AGENT_PLATFORM_EXECUTION_TIMEOUT:10m}
   proposal-execution-timeout: ${AGENT_PLATFORM_PROPOSAL_EXECUTION_TIMEOUT:30m}
