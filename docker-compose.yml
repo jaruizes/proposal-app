@@ -147,6 +147,7 @@ services:
       AGENT_PLATFORM_TRANSPORT: nats
       AGENT_PLATFORM_URL: http://agent-platform:8000
       NATS_URL: nats://nats:4222
+      AGENT_PLATFORM_NATS_MAX_COMMAND_BYTES: ${AGENT_PLATFORM_NATS_MAX_COMMAND_BYTES:-900000}
       GOOGLE_OAUTH_CREDENTIALS: /app/.secrets/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /app/.secrets/google-token.json
       GOOGLE_SLIDES_TEMPLATE_ID: ${GOOGLE_SLIDES_TEMPLATE_ID:-}
