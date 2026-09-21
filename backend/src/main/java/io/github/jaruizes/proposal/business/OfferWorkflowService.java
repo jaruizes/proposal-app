@@ -32,6 +32,7 @@ public class OfferWorkflowService {
     private final TaskExecutor phaseTaskExecutor;
     private final TaskExecutor documentTaskExecutor;
     private final ProposalDocumentMaterializationService proposalDocuments;
+    private static final int SINGLE_PASS_SOLUTION_CONTEXT_CHARS = 45_000;
     private static final int SINGLE_PASS_PROPOSAL_CONTEXT_CHARS = 55_000;
     private final ObjectMapper json = new ObjectMapper();
     private final java.util.concurrent.ConcurrentMap<String,java.util.concurrent.locks.ReentrantLock> phaseLocks = new java.util.concurrent.ConcurrentHashMap<>();
@@ -263,122 +264,158 @@ public class OfferWorkflowService {
 
     private void runSolution(Offer offer,String refinement){
         var sourceBundle=sources.loadOrIngest(offer);
-        var approved=offerContext(offer)+approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY));
+        var approved=offerContext(offer)+approvedArtifactsContext(
+                offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF,ArtifactType.QUESTIONS,ArtifactType.TECHNOLOGY));
 
-        // Triage the complete source inventory before loading expensive original evidence.
+        // One architect-owned triage decides which original sources and optional specialists matter.
         var triageContext=approved+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+refinement(refinement);
-        var triage=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","design-solution",
-                "Triage de fuentes y especialistas opcionales","""
-                Before designing the solution, use the approved current-offer artifacts plus the source manifest to decide which ORIGINAL customer sources require review.
-                Classify every source as REVIEW_IN_DEPTH, TARGETED_REVIEW or SKIP. Select originals whenever exact technical constraints, versions, integrations, security, data, volumes, SLAs, diagrams or other factual details may affect the solution.
-                Return ONLY JSON: {"sourceReview":[{"id":"DOC-001","disposition":"REVIEW_IN_DEPTH","reason":"..."}],"specialistConsultations":[{"agentKey":"security-specialist","question":"..."}]}.
-                Maximum two consultations. Do not request base roles as specialists.
-                """).withOutputFormat("json").withCheckpoint("solution.triage"),model(offer,"solutionArchitecture"),triageContext);
+        var triage=agents.execute(
+                AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","design-solution",
+                        "Seleccionar evidencia y especialistas necesarios","""
+                        Inspect the approved qualification plus the complete source manifest.
+                        Select only original customer sources that materially affect functionality, architecture,
+                        data, integrations, security, NFRs, deployment or transition.
+                        Return ONLY JSON:
+                        {"sourceReview":[{"id":"DOC-001","disposition":"REVIEW_IN_DEPTH|TARGETED_REVIEW|SKIP","reason":"..."}],
+                         "specialistConsultations":[{"agentKey":"security-specialist","question":"..."}]}.
+                        Maximum two specialist consultations. Specialists are optional and bounded.
+                        """).withOutputFormat("json").withCheckpoint("solution.triage"),
+                model(offer,"solutionArchitecture"),triageContext);
 
         var selectedSources=sources.selectForSolution(sourceBundle,triage.content());
-        var evidenceContext=approved+"\n\n# SOURCE MANIFEST (SELECTED ORIGINALS)\n"+selectedSources.manifest()
+        var evidenceContext=approved
+                +"\n\n# SELECTED CUSTOMER EVIDENCE\n"+selectedSources.manifest()
                 +"\n\n"+selectedSources.textualContext();
+        var specialistResults=runRequestedSpecialists(
+                offer,evidenceContext,triage.content(),selectedSources.visualAttachments());
+        var architectContext=evidenceContext
+                +"\n\n# SOURCE TRIAGE\n"+triage.content()
+                +specialistResults
+                +refinement(refinement);
 
-        var specialistResults=runRequestedSpecialists(offer,evidenceContext,triage.content(),selectedSources.visualAttachments());
+        String solution;
+        if(architectContext.length()<=SINGLE_PASS_SOLUTION_CONTEXT_CHARS){
+            // Normal case: one Solution Architect execution owns the complete solution narrative.
+            var result=agents.execute(
+                    AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","design-solution",
+                            "Diseñar solución completa","""
+                            Produce ONLY the complete canonical solution.md as raw Markdown.
+                            Use exactly this structure:
+                            # Definición de solución
+                            ## 1. Resumen de la solución propuesta
+                            ## 2. Principios, drivers y asunciones
+                            ## 3. Arquitectura de solución
+                            ### 3.1 Arquitectura conceptual
+                            ### 3.2 Arquitectura lógica
+                            ### 3.3 Arquitectura física
+                            ### 3.4 Componentes y tecnologías
+                            ### 3.5 Integraciones y datos
+                            ### 3.6 Seguridad, resiliencia, observabilidad y operación
+                            ## 4. Alternativas, pros/contras y decisiones
+                            ## 5. Riesgos técnicos y puntos a validar
+                            ## 6. Tareas de implementación, complejidad, dependencias y perfiles
+                            ## 7. TBDs y trazabilidad
 
-        // The architect performs one evidence-grounding pass over the authoritative originals.
-        // It returns a compact internal blueprint rather than attempting the whole solution.md in one model response.
-        var blueprintContext=evidenceContext+"\n\n# ARCHITECT SOURCE TRIAGE\n"+triage.content()+specialistResults;
-        var blueprint=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,
-                "Aterrizar blueprint técnico de la solución","""
-                Execute the evidence-review and architectural reasoning needed for section A of define-solution, but DO NOT write solution.md yet.
-                Produce a compact INTERNAL solution blueprint as JSON. It must preserve enough grounded detail and DOC-nnn/page/slide/sheet/section locators to draft the final document without rereading originals.
-                Include: solutionSummary, principles, logicalArchitecture, components, integrations, data, security, resilience, observability, infrastructure, legacyAndTransition, decisionsAndTradeoffs, deliveryConstraints, risks, capabilityProfiles, assumptionsAndTbds, proposalHighlights, sourceReview, specialistValidations.
-                Distinguish FACT, PRINCIPLE, PROPOSAL, DECISION and ASSUMPTION where material. Do not estimate effort, staffing, duration, cost or price.
-                Be selective: keep the complete JSON below roughly 20,000 characters. Do not duplicate source text.
-                """).withOutputFormat("json").withCheckpoint("solution.blueprint"),model(offer,"solutionArchitecture"),blueprintContext+refinement(refinement),selectedSources.visualAttachments());
+                            Section 5 must explicitly identify validations such as PoCs, spikes or benchmarks when needed.
+                            For every implementation task in section 6 include task, intended outcome/deliverable,
+                            qualitative complexity LOW/MEDIUM/HIGH/VERY_HIGH, dependencies, recommended profile type
+                            and workstream/capability. Qualitative complexity is allowed; numeric effort, staffing,
+                            duration, cost and price are forbidden.
+                            Preserve material evidence locators and distinguish FACT, PRINCIPLE, PROPOSAL,
+                            DECISION and ASSUMPTION where useful.
+                            """).withCheckpoint("solution.document.single"),
+                    model(offer,"solutionArchitecture"),architectContext,selectedSources.visualAttachments());
+            solution=normalizeSolutionHeadings(result.content(),requiredSolutionHeadings());
+            validateAssembledSolution(solution);
+        }else{
+            // Large solution: reason once into a compact blueprint, then draft three bounded blocks.
+            var blueprint=agents.execute(
+                    AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,
+                            "Aterrizar blueprint técnico para solución extensa","""
+                            Produce ONLY compact JSON for an INTERNAL solution blueprint. Include:
+                            summary, principlesDriversAssumptions, conceptualArchitecture, logicalArchitecture,
+                            physicalArchitecture, componentsAndTechnologies, integrationsAndData,
+                            securityResilienceObservabilityOperations, alternativesTradeoffsDecisions,
+                            technicalRisksAndValidations, implementationTasks, tbds, evidenceTraceability,
+                            specialistValidations.
+                            Each implementation task must include qualitative complexity, dependencies,
+                            recommended profile type and workstream/capability.
+                            Preserve material evidence locators. Deduplicate aggressively and keep the JSON
+                            below roughly 24,000 characters.
+                            """).withOutputFormat("json").withCheckpoint("solution.blueprint"),
+                    model(offer,"solutionArchitecture"),architectContext,selectedSources.visualAttachments());
 
-        // Draft independent bounded blocks from the compact blueprint. These calls intentionally do not receive
-        // the original corpus again: the preceding architect-owned blueprint is the grounded hand-off.
-        var draftingContext=offerContext(offer)+"\n\n# INTERNAL SOLUTION BLUEPRINT (authoritative grounding for this draft)\n"+blueprint.content();
-        var solutionPartTasks=List.of(
-                solutionPartTask(offer,"Redactar solución · arquitectura base","""
-                        Return ONLY JSON {"markdown":"..."} containing sections 1, 2 and 3 through subsection 3.4 of solution.md:
-                        ## 1. Resumen de la solución propuesta
-                        ## 2. Principios de solución
-                        ## 3. Arquitectura de solución
-                        ### 3.1 Arquitectura lógica
-                        ### 3.2 Componentes principales
-                        ### 3.3 Integraciones
-                        ### 3.4 Datos
-                        Preserve evidence locators and epistemic labels where material. Do not add an H1. Do not write later sections.
-                        Keep this block concise and below 2,500 words.
-                        """),
-                solutionPartTask(offer,"Redactar solución · seguridad y operación","""
-                        Return ONLY JSON {"markdown":"..."} containing exactly:
-                        ### 3.5 Seguridad
-                        ### 3.6 Alta disponibilidad, resiliencia y continuidad
-                        ### 3.7 Observabilidad y operación
-                        ### 3.8 Despliegue e infraestructura
-                        ## 4. Tratamiento del legado y transición
-                        Preserve evidence locators and epistemic labels where material. Do not add an H1 or repeat sections 1-3.4.
-                        Keep this block concise and below 2,500 words.
-                        """),
-                solutionPartTask(offer,"Redactar solución · decisiones y delivery","""
-                        Return ONLY JSON {"markdown":"..."} containing exactly:
-                        ## 5. Decisiones técnicas y trade-offs
-                        ## 6. Condicionantes de delivery
-                        ## 7. Riesgos de ejecución y mitigaciones actualizadas
-                        ## 8. Tareas de implementación, complejidad y perfiles
-                        For each implementation task include: task, purpose/deliverable, qualitative complexity
-                        LOW/MEDIUM/HIGH/VERY_HIGH, dependencies when any, recommended profile type, and workstream/capability.
-                        Qualitative complexity is allowed; never provide numeric effort, staffing quantities, duration, cost or price.
-                        Do not add an H1 or repeat prior sections. Keep this block concise and below 2,600 words.
-                        """),
-                solutionPartTask(offer,"Redactar solución · cierre y trazabilidad","""
-                        Return ONLY JSON {"markdown":"..."} containing exactly:
-                        ## 9. Decisiones, asunciones y TBDs pendientes
-                        ## 10. Elementos clave que deberán aparecer en la oferta
-                        ## 11. Revisión de fuentes realizada por el arquitecto
-                        ## 12. Consultas/validaciones de especialistas realizadas
-                        Section 11 must account for every triaged source and preserve disposition/reason. Section 12 must faithfully reflect specialist consultations.
-                        Do not add an H1 or repeat prior sections. Keep this block concise and below 2,200 words.
-                        """)
-        );
-        var solutionParts=new ArrayList<String>();
-        for(var partTask:solutionPartTasks){
-            var result=agents.execute(partTask,model(offer,"solutionArchitecture"),draftingContext);
-            solutionParts.add(validateAndRepairSolutionPart(offer,partTask,result,draftingContext));
+            var draftingContext=offerContext(offer)
+                    +"\n\n# INTERNAL SOLUTION BLUEPRINT\n"+blueprint.content();
+            var tasks=List.of(
+                    solutionPartTask(offer,"Redactar solución · arquitectura","""
+                            Return ONLY JSON {"markdown":"..."} with exactly:
+                            # Definición de solución
+                            ## 1. Resumen de la solución propuesta
+                            ## 2. Principios, drivers y asunciones
+                            ## 3. Arquitectura de solución
+                            ### 3.1 Arquitectura conceptual
+                            ### 3.2 Arquitectura lógica
+                            ### 3.3 Arquitectura física
+                            Keep this block coherent and below 2,800 words.
+                            """),
+                    solutionPartTask(offer,"Redactar solución · componentes y decisiones","""
+                            Return ONLY JSON {"markdown":"..."} with exactly:
+                            ### 3.4 Componentes y tecnologías
+                            ### 3.5 Integraciones y datos
+                            ### 3.6 Seguridad, resiliencia, observabilidad y operación
+                            ## 4. Alternativas, pros/contras y decisiones
+                            Preserve trade-offs and evidence. Keep below 2,800 words.
+                            """),
+                    solutionPartTask(offer,"Redactar solución · riesgos y tareas","""
+                            Return ONLY JSON {"markdown":"..."} with exactly:
+                            ## 5. Riesgos técnicos y puntos a validar
+                            ## 6. Tareas de implementación, complejidad, dependencias y perfiles
+                            ## 7. TBDs y trazabilidad
+                            Include PoC/spike/benchmark needs where applicable. For every task include
+                            qualitative complexity LOW/MEDIUM/HIGH/VERY_HIGH, dependencies, recommended
+                            profile type and workstream/capability. Never provide numeric estimates.
+                            Keep below 2,800 words.
+                            """)
+            );
+            var parts=new ArrayList<String>();
+            for(var task:tasks){
+                var result=agents.execute(task,model(offer,"solutionArchitecture"),draftingContext);
+                parts.add(validateAndRepairSolutionPart(offer,task,result,draftingContext));
+            }
+            solution=String.join("\n\n",parts);
+            solution=normalizeSolutionHeadings(solution,requiredSolutionHeadings());
+            validateAssembledSolution(solution);
         }
 
-        var solution="# Definición de solución\n\n"+String.join("\n\n",solutionParts);
-        validateAssembledSolution(solution);
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.SOLUTION,solution);
 
-        // Delivery also uses a grounding pass before the final document, so the Delivery Manager can inspect
-        // authoritative originals without forcing the final delivery-plan.md call to carry the whole corpus.
-        var deliveryReviewContext=evidenceContext+"\n\n# solution.md\n"+solution;
-        var deliveryReview=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager",null,
-                "Aterrizar restricciones y estrategia de delivery","""
-                Review the approved solution and the selected ORIGINAL customer evidence for delivery implications. Do NOT write delivery-plan.md yet.
-                Return ONLY compact JSON with: recommendedMethodology, rationale, inceptionOrDiscovery, reestimationOrDecisionGates, workstreams, milestones, dependencies, governance, customerAndThirdPartyParticipation, acceptanceAndValidation, cutoverTransitionHandover, risksAndTbds, capabilityCoverage, sourceReview.
-                Preserve material evidence locators. Do not redefine the technical solution and do not estimate effort, staffing, duration, cost or price.
-                Keep the JSON below roughly 16,000 characters and avoid duplicating source text.
-                """).withOutputFormat("json").withCheckpoint("delivery.grounding"),model(offer,"deliveryPlanning"),deliveryReviewContext,selectedSources.visualAttachments());
-
-        var deliveryContext=offerContext(offer)+"\n\n# solution.md\n"+solution+"\n\n# INTERNAL DELIVERY REVIEW\n"+deliveryReview.content();
-        var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","plan-delivery",
-                "Definir enfoque de ejecución","""
-                Execute section B of define-solution. Produce ONLY the complete unestimated delivery-plan.md as raw Markdown, without an outer code fence or filename heading.
-                Use the supplied solution.md, including its implementation tasks/dependencies/qualitative complexity/profile types, and INTERNAL DELIVERY REVIEW. Cover methodology/lifecycle, inception or discovery where appropriate, workstreams, sequencing/dependencies, milestones and decision gates, governance model, customer/third-party participation, acceptance, release/cutover/transition/handover and delivery risks/TBDs.
-                Do not redefine the technical solution. Do not estimate effort, staffing, duration, cost or price. Keep the document focused and below 4,500 words.
-                """).withCheckpoint("delivery.plan"),model(offer,"deliveryPlanning"),deliveryContext);
-        var deliveryPlan=delivery.content();
-        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.DELIVERY_PLAN,deliveryPlan);
-
+        // Delivery is intentionally one Delivery Manager execution over approved business context + solution.
+        var deliveryContext=offerContext(offer)
+                +approvedArtifactsContext(offer.id(),List.of(ArtifactType.OPPORTUNITY_BRIEF))
+                +"\n\n# APPROVED SOLUTION\n"+solution
+                +refinement(refinement);
+        var delivery=agents.execute(
+                AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","plan-delivery",
+                        "Definir plan de delivery y gobierno","""
+                        Produce ONLY the complete canonical delivery-plan.md as raw Markdown.
+                        Use the approved solution tasks, dependencies, qualitative complexity and profile types.
+                        Define the most appropriate methodology/lifecycle, optional inception/discovery,
+                        workstreams, sequencing/dependencies, milestones and decision gates, integrated validation
+                        and acceptance, release/cutover/transition/handover, customer/third-party participation,
+                        governance roles/forums/ceremonies and delivery risks/TBDs.
+                        Do not redefine the technical solution. Do not invent person-days/hours, story points,
+                        staffing quantities, numeric duration, price, cost or margin.
+                        """).withCheckpoint("delivery.plan"),
+                model(offer,"deliveryPlanning"),deliveryContext);
+        saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.DELIVERY_PLAN,delivery.content());
     }
 
     private AgentTask solutionPartTask(Offer offer,String objective,String prompt){
         var key=switch(objective){
-            case "Redactar solución · arquitectura base" -> "solution.part.architecture";
-            case "Redactar solución · seguridad y operación" -> "solution.part.security-operations";
-            case "Redactar solución · decisiones y delivery" -> "solution.part.decisions-delivery";
-            case "Redactar solución · cierre y trazabilidad" -> "solution.part.traceability";
+            case "Redactar solución · arquitectura" -> "solution.part.architecture";
+            case "Redactar solución · componentes y decisiones" -> "solution.part.components-decisions";
+            case "Redactar solución · riesgos y tareas" -> "solution.part.risks-tasks";
             default -> "solution.part."+Integer.toHexString(objective.hashCode());
         };
         return AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect",null,objective,prompt)
