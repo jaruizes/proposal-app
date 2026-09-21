@@ -111,7 +111,7 @@ def _proposal_mode(request: AgentExecutionRequest) -> str:
         estimated_words = sum(_section_budget(section["depth"])["words"] for section in sections)
         # A long requested document is not a safe single-pass generation even if its
         # input context is small. Route before spending a doomed 12k-token call.
-        if len(sections) > 6 or estimated_words > 8_000:
+        if len(sections) >= 6 or estimated_words > 6_000:
             return "SPLIT"
     return requested
 
