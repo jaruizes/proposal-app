@@ -93,7 +93,15 @@ def _assemble(title: str, sections: list[dict[str, str]], drafts: dict[str, str]
 def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
     """Attach the proposal stages after build_context, ending with model_result."""
     semaphore = asyncio.Semaphore(3)
+    db_lock = asyncio.Lock()
     calls: list[ModelResult] = []
+
+    async def add_event(event_type: str, payload: dict) -> None:
+        # All proposal substeps share the request-scoped SQLAlchemy AsyncSession.
+        # AsyncSession/asyncpg cannot execute concurrent DB operations on one connection,
+        # so serialize event persistence while keeping model calls concurrent.
+        async with db_lock:
+            await runtime._executions.add_event(execution.id, event_type, payload)
 
     async def generate(base: ModelRequest, instruction: str, event: str, payload: dict) -> ModelResult:
         prompt = base.messages[0].content + "\n\n# Current stage\n" + instruction
@@ -109,12 +117,12 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     with timed_span("langgraph.proposal.model", stage=event, model=base.model or "default"):
                         result = await runtime._model_provider.generate(model_request)
                     calls.append(result)
-                    await runtime._executions.add_event(execution.id, event, {**payload, "attempt": attempt + 1, "model": result.model})
+                    await add_event(event, {**payload, "attempt": attempt + 1, "model": result.model})
                     return result
                 except Exception as exc:
                     if attempt or not getattr(exc, "retryable", False):
                         raise
-                    await runtime._executions.add_event(execution.id, "proposal.model.retry", {**payload, "stage": event})
+                    await add_event("proposal.model.retry", {**payload, "stage": event})
         raise AssertionError("Unreachable")
 
     async def base_request(state: dict) -> ModelRequest:
@@ -128,25 +136,29 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
     async def plan(state: dict) -> dict:
         request = AgentExecutionRequest.model_validate(state["request"])
         sections = configured_sections(request)
-        await runtime._executions.add_event(execution.id, "proposal.plan.completed", {"sections": [s["name"] for s in sections]})
+        await add_event("proposal.plan.completed", {"sections": [s["name"] for s in sections]})
         return {"proposal_sections": sections}
 
     async def retrieve_references(state: dict) -> dict:
         request = AgentExecutionRequest.model_validate(state["request"])
         sections = state["proposal_sections"]
         if runtime._proposal_retrieval_service is None:
-            await runtime._executions.add_event(execution.id, "proposal.retrieval.summary", {"enabled": False, "sections": len(sections), "hits": 0})
+            await add_event("proposal.retrieval.summary", {"enabled": False, "sections": len(sections), "hits": 0})
             return {"proposal_references": {section["name"]: [] for section in sections}}
 
         retriever = ProposalReferenceRetriever(runtime._proposal_retrieval_service)
 
         async def one(section: dict):
-            section_type, references, metadata = await retriever.retrieve(
-                section_name=section["name"],
-                guidance=section.get("guidance", ""),
-                objective=request.objective,
-                top_k=3,
-            )
+            # The retrieval service and ontology repository are backed by the same
+            # request-scoped AsyncSession as execution persistence. Serialize the DB-bound
+            # retrieval portion; model drafting/review below remains concurrent.
+            async with db_lock:
+                section_type, references, metadata = await retriever.retrieve(
+                    section_name=section["name"],
+                    guidance=section.get("guidance", ""),
+                    objective=request.objective,
+                    top_k=3,
+                )
             safe_hits = [
                 {
                     "title": ref.title,
@@ -158,7 +170,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 }
                 for ref in references
             ]
-            await runtime._executions.add_event(execution.id, "proposal.section.retrieval", {
+            await add_event("proposal.section.retrieval", {
                 "section": section["name"],
                 "section_type": section_type,
                 "query": f"{section['name']}. {section.get('guidance','')}".strip(),
@@ -184,7 +196,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             ]
 
         results = dict(await asyncio.gather(*(one(section) for section in sections)))
-        await runtime._executions.add_event(execution.id, "proposal.retrieval.summary", {
+        await add_event("proposal.retrieval.summary", {
             "enabled": True,
             "sections": len(sections),
             "hits": sum(len(items) for items in results.values()),
@@ -260,7 +272,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         if not isinstance(title, str) or not title.strip() or "\n" in title:
             title = "Oferta detallada"
         content = _assemble(title.strip(), state["proposal_sections"], state["proposal_drafts"])
-        await runtime._executions.add_event(execution.id, "proposal.assembled", {"sections": len(state["proposal_sections"])})
+        await add_event("proposal.assembled", {"sections": len(state["proposal_sections"])})
         return {"proposal_content": content}
 
     async def global_review(state: dict) -> dict:
