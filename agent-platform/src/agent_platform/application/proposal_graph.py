@@ -463,6 +463,18 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 {"mode": "single", "sections": len(guidance)},
                 max_output_tokens=12000,
             )
+            content = result.content.strip()
+            missing = [
+                section["name"]
+                for section in guidance
+                if f"## {section['name']}" not in content
+            ]
+            if not content.startswith("# ") or missing:
+                await add_event("proposal.single_pass.fallback", {
+                    "reason": "incomplete_structure",
+                    "missing_sections": missing,
+                })
+                return {"proposal_force_split": True}
             return {"model_result": result.model_dump(mode="json"), "proposal_force_split": False}
         except ModelProviderError as exc:
             if getattr(exc, "code", None) == "ANTHROPIC_OUTPUT_TRUNCATED":
