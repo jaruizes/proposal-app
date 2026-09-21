@@ -60,22 +60,22 @@ def _section_context(pack: dict[str, Any], section: dict[str, str]) -> dict[str,
     text = (section.get("name", "") + " " + section.get("guidance", "")).casefold()
     keys = {"customerAndOpportunity", "mandatoryRequirements", "evidenceIndex"}
     rules = [
-        (("resumen", "summary", "executive", "valor", "value"), {"goalsAndScope", "strategy", "solutionHighlights", "differentiators", "risksAssumptionsAndTbds"}),
-        (("reto", "context", "understand", "necesidad"), {"goalsAndScope", "strategy", "risksAssumptionsAndTbds"}),
-        (("objetiv", "alcance", "scope", "goal"), {"goalsAndScope", "strategy", "risksAssumptionsAndTbds"}),
+        (("resumen", "summary", "executive", "valor", "value"), {"goalsAndScope", "responseStrategy", "solutionHighlights", "differentiators", "risksAssumptionsAndTbds"}),
+        (("reto", "context", "understand", "necesidad"), {"goalsAndScope", "responseStrategy", "risksAssumptionsAndTbds"}),
+        (("objetiv", "alcance", "scope", "goal"), {"goalsAndScope", "responseStrategy", "risksAssumptionsAndTbds"}),
         (("requis", "condicion", "constraint"), {"goalsAndScope", "securityAndOperations", "risksAssumptionsAndTbds"}),
-        (("estrateg", "strategy"), {"strategy", "goalsAndScope", "solutionHighlights", "differentiators"}),
-        (("solución", "solution", "technical"), {"solutionHighlights", "architectureAndIntegrations", "securityAndOperations", "strategy"}),
+        (("estrateg", "responseStrategy"), {"responseStrategy", "goalsAndScope", "solutionHighlights", "differentiators"}),
+        (("solución", "solution", "technical"), {"solutionHighlights", "architectureAndIntegrations", "securityAndOperations", "responseStrategy"}),
         (("arquitect", "integr", "datos", "data"), {"architectureAndIntegrations", "solutionHighlights", "securityAndOperations"}),
         (("ejecución", "delivery", "workstream", "metodolog"), {"deliveryApproach", "risksAssumptionsAndTbds", "goalsAndScope"}),
         (("calidad", "risk", "riesg", "supuest", "assumption"), {"risksAssumptionsAndTbds", "securityAndOperations", "deliveryApproach"}),
-        (("diferenci", "próxim", "next step", "valor añadido"), {"differentiators", "strategy", "solutionHighlights", "deliveryApproach"}),
+        (("diferenci", "próxim", "next step", "valor añadido"), {"differentiators", "responseStrategy", "solutionHighlights", "deliveryApproach"}),
     ]
     for needles, additions in rules:
         if any(needle in text for needle in needles):
             keys.update(additions)
     if len(keys) <= 3:
-        keys.update({"goalsAndScope", "strategy", "solutionHighlights", "risksAssumptionsAndTbds"})
+        keys.update({"goalsAndScope", "responseStrategy", "solutionHighlights", "risksAssumptionsAndTbds"})
     return {key: pack[key] for key in keys if key in pack}
 
 
