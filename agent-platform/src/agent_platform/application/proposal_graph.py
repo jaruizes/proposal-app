@@ -388,6 +388,24 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     return result
                 except Exception as exc:
                     truncated = getattr(exc, "code", None) == "ANTHROPIC_OUTPUT_TRUNCATED"
+                    if truncated and getattr(exc, "usage", None) is not None:
+                        truncated_result = ModelResult(
+                            content=getattr(exc, "partial_content", None) or "",
+                            model=getattr(exc, "model", None) or base.model or "unknown",
+                            usage=exc.usage,
+                            provider_request_id=getattr(exc, "provider_request_id", None),
+                            finish_reason="max_tokens",
+                            metadata={"truncated": True},
+                        )
+                        calls.append(truncated_result)
+                        await record_step(event, {**payload, "truncated": True}, truncated_result)
+                        await add_event("proposal.model.truncated", {
+                            **payload,
+                            "stage": event,
+                            "attempt": attempt + 1,
+                            "input_tokens": exc.usage.input_tokens,
+                            "output_tokens": exc.usage.output_tokens,
+                        })
                     if attempt or (truncated and not retry_on_truncation) or (not truncated and not getattr(exc, "retryable", False)):
                         raise
                     await add_event("proposal.model.retry", {
