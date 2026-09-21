@@ -44,9 +44,9 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
         var hasTemplate=templateId!=null&&!templateId.isBlank();
         var templateStructure=hasTemplate?text(tools.execute("slides_get_presentation",Map.of("presentationId",templateId))):"{\"slides\":[],\"layouts\":[],\"masters\":[]}";
 
-        // Presentation Builder maps the frozen slide-plan onto the live corporate template.
+        // Business Analyst materialization step maps the frozen slide-plan onto the live corporate template.
         var operationPlan=agents.execute(
-                AgentTask.of(offerId,PhaseType.PRESENTATION,"presentation-builder","generate-presentation",
+                AgentTask.of(offerId,PhaseType.PRESENTATION,"business-analyst","generate-presentation",
                         "Plan presentation materialization","""
                         Produce ONLY JSON with this shape: {"operations":[{"tool":"slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|slides_replace_element_text|slides_batch_update","arguments":{...}}]}.
                         Use $PRESENTATION_ID as the presentationId placeholder. Materialize the approved slides-plan exactly: hierarchy, order and exact titles are frozen. Do not rewrite approved narrative copy.
@@ -101,7 +101,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
             var inspection=inspectGenerated(presentationId);
             if(inspection.thumbnails().isEmpty()) break;
             var qa=agents.execute(
-                    AgentTask.of(offer.id(),PhaseType.PRESENTATION,"presentation-builder","generate-presentation",
+                    AgentTask.of(offer.id(),PhaseType.PRESENTATION,"business-analyst","generate-presentation",
                             "Visual QA iteration "+iteration,"""
                             Inspect the real slide thumbnails against the frozen slides-plan and current deck structure. Check clipping, overlap, awkward word/syllable wrapping, unreadably dense text, template leftovers, incorrect language and unapproved cliente/customer wording. Do NOT rewrite approved narrative copy.
                             Return ONLY JSON: {"status":"OK|FIX","operations":[...]}. If status is FIX, operations may only use the allowed Slides tools and $PRESENTATION_ID placeholder. Prefer: natural line breaks → textbox geometry → bounded font reduction → alternate corporate pattern. If no safe visual correction remains, return status OK with no operations and describe the unresolved issue in an optional "note" field.
