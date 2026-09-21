@@ -4,11 +4,11 @@ import { OfferExecution, Phase, SectionConfig } from './models';
 @Injectable({ providedIn: 'root' })
 export class MockExecutionService {
   readonly phasesTemplate: Phase[] = [
-    { key: 'analysis', label: 'Entendimiento y cualificación', status: 'pending' },
-    { key: 'strategy', label: 'Estrategia de respuesta', status: 'pending' },
-    { key: 'solution', label: 'Definición de solución', status: 'pending' },
-    { key: 'slide-plan', label: 'Plan de slides', status: 'pending' },
-    { key: 'presentation', label: 'Presentación corporativa', status: 'pending' }
+    { key: 'analysis', label: 'Entendimiento y calificación', status: 'pending' },
+    { key: 'solution', label: 'Propuesta de solución y plan de delivery', status: 'pending' },
+    { key: 'proposal', label: 'Documento de oferta', status: 'pending' },
+    { key: 'slide-plan', label: 'Hilo de presentación', status: 'pending' },
+    { key: 'presentation', label: 'Generación de presentación', status: 'pending' }
   ];
 
   readonly defaultSections: SectionConfig[] = [
@@ -20,7 +20,7 @@ export class MockExecutionService {
   ];
 
   executions = signal<OfferExecution[]>([
-    this.seed('REDEIA · SSIR', 'Estrategia de respuesta', 'Esperando aprobación', 1),
+    this.seed('REDEIA · SSIR', 'Entendimiento y calificación', 'Esperando aprobación', 0),
     this.seed('Retail Data Platform 2027', 'Definición de solución', 'Trabajando', 2),
     this.seed('Modernización Portal Cliente', 'Presentación corporativa', 'Esperando aprobación', 4)
   ]);
@@ -34,7 +34,7 @@ export class MockExecutionService {
     return {
       id: crypto.randomUUID(), name, presentationLanguage: 'Español', inputDriveFolder: '/Propuestas/Entrada',
       outputDriveFolder: '/Propuestas/Salida', presentationName: `${name} - Propuesta`, provider: 'AWS Bedrock',
-      models: { analysis: 'Claude Sonnet 4', strategy: 'Claude Sonnet 4', solution: 'Claude Sonnet 4', slides: 'Claude Sonnet 4' },
+      models: { analysis: 'Claude Sonnet 4', solution: 'Claude Sonnet 4', proposal: 'Claude Sonnet 4', slides: 'Claude Sonnet 4' },
       sections: structuredClone(this.defaultSections), currentStep, overallStatus, createdAt: new Date(), phases
     };
   }
