@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -7,6 +8,9 @@ from agent_platform.api.dependencies import (
     get_model_provider,
     get_skill_repository,
 )
+from agent_platform.application.dispatcher import get_execution_dispatcher
+from agent_platform.application.registries import AgentRegistry, SkillRegistry
+from agent_platform.application.runtime import AgentRuntime
 from agent_platform.api.state import agents, executions, skills
 from agent_platform.application.models import ModelProvider, ModelRequest, ModelResult, ModelUsage
 from agent_platform.domain import AgentDefinition, AgentExecution, SkillDefinition
@@ -93,3 +97,23 @@ app.dependency_overrides[get_agent_repository] = lambda: _agent_repository
 app.dependency_overrides[get_skill_repository] = lambda: _skill_repository
 app.dependency_overrides[get_execution_repository] = lambda: _execution_repository
 app.dependency_overrides[get_model_provider] = lambda: _model_provider
+
+
+class InMemoryExecutionDispatcher:
+    def dispatch(self, execution_id, request) -> None:
+        async def run() -> None:
+            runtime = AgentRuntime(
+                agents=AgentRegistry(_agent_repository, _skill_repository),
+                skills=SkillRegistry(_skill_repository),
+                executions=_execution_repository,
+                model_provider=_model_provider,
+            )
+            execution = await _execution_repository.get(execution_id)
+            if execution is not None:
+                await runtime.run(execution, request)
+
+        asyncio.create_task(run())
+
+
+_dispatcher = InMemoryExecutionDispatcher()
+app.dependency_overrides[get_execution_dispatcher] = lambda: _dispatcher
