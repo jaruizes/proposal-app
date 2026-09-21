@@ -24,10 +24,11 @@ public class SkillRegistryService {
         var registered = new LinkedHashMap<String, String>();
         registered.put("create-offer", "skills/create-offer/SKILL.md");
         registered.put("ingest-sources", "skills/ingest-sources/SKILL.md");
-        registered.put("analyze-opportunity", "skills/analyze-opportunity/SKILL.md");
-        registered.put("build-strategy", "skills/build-strategy/SKILL.md");
-        registered.put("define-solution", "skills/define-solution/SKILL.md");
-        registered.put("design-proposal", "skills/design-proposal/SKILL.md");
+        registered.put("qualify-opportunity", "skills/qualify-opportunity/SKILL.md");
+        registered.put("design-solution", "skills/design-solution/SKILL.md");
+        registered.put("plan-delivery", "skills/plan-delivery/SKILL.md");
+        registered.put("compose-proposal", "skills/compose-proposal/SKILL.md");
+        registered.put("design-presentation", "skills/design-presentation/SKILL.md");
         registered.put("generate-presentation", "skills/generate-presentation/SKILL.md");
         this.skills = Map.copyOf(registered);
     }
