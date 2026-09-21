@@ -9,11 +9,13 @@ public record AgentPlatformProperties(
         String baseUrl,
         String apiKey,
         Duration pollInterval,
-        Duration executionTimeout) {
+        Duration executionTimeout,
+        Duration proposalExecutionTimeout) {
 
     public AgentPlatformProperties {
         if (baseUrl == null || baseUrl.isBlank()) baseUrl = "http://localhost:8000";
         if (pollInterval == null) pollInterval = Duration.ofSeconds(1);
         if (executionTimeout == null) executionTimeout = Duration.ofMinutes(10);
+        if (proposalExecutionTimeout == null) proposalExecutionTimeout = Duration.ofMinutes(30);
     }
 }
