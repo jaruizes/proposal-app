@@ -63,7 +63,7 @@ public class HttpAgentPlatformAdapter implements AgentPlatformPort {
             throw new DomainException("Agent Platform returned an invalid submission response");
         }
         var executionId = submitted.path("id").asText();
-        waitForCompletion(executionId);
+        waitForCompletion(executionId, timeoutFor(task));
 
         JsonNode result = client.get().uri("/v1/executions/{id}/result", executionId)
                 .retrieve().bodyToMono(JsonNode.class).block();
@@ -79,8 +79,14 @@ public class HttpAgentPlatformAdapter implements AgentPlatformPort {
                 nullIfBlank(result.path("provider_request_id").asText()));
     }
 
-    private void waitForCompletion(String executionId) {
-        var deadline = Instant.now().plus(properties.executionTimeout());
+    private java.time.Duration timeoutFor(AgentTask task) {
+        return task.phase() == io.github.jaruizes.proposal.domain.model.PhaseType.PROPOSAL
+                ? properties.proposalExecutionTimeout()
+                : properties.executionTimeout();
+    }
+
+    private void waitForCompletion(String executionId, java.time.Duration timeout) {
+        var deadline = Instant.now().plus(timeout);
         while (Instant.now().isBefore(deadline)) {
             JsonNode execution = client.get().uri("/v1/executions/{id}", executionId)
                     .retrieve().bodyToMono(JsonNode.class).block();
@@ -93,7 +99,7 @@ public class HttpAgentPlatformAdapter implements AgentPlatformPort {
             try { Thread.sleep(properties.pollInterval().toMillis()); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new DomainException("Interrupted while waiting for Agent Platform execution"); }
         }
-        throw new DomainException("Agent Platform execution timed out after " + properties.executionTimeout());
+        throw new DomainException("Agent Platform execution timed out after " + timeout);
     }
 
     private static String nullIfBlank(String value) { return value == null || value.isBlank() ? null : value; }
