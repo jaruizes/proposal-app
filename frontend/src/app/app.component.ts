@@ -78,6 +78,7 @@ export class AppComponent {
   friendlyErrorCause(raw:string|undefined):string {
     if(!raw?.trim())return 'Se produjo un error inesperado durante la ejecución del agente.';
     const value=raw.toLowerCase();
+    if(/hard cost safety limit/.test(value)) return 'se alcanzó el límite máximo de seguridad de coste configurado para esta ejecución.';
     if(/proposal cost budget|cost budget|token budget|budget.*exceed/.test(value)) return 'se alcanzó el presupuesto de coste o tokens configurado para proteger esta ejecución.';
     if(/max[_ -]?tokens|token limit|too many tokens|context window|context length|maximum.*token/.test(value)) return 'se alcanzó el límite máximo de tokens permitido para esta ejecución.';
     if(/timeout|timed out|readtimeout|apitimeouterror/.test(value)) return 'la generación superó el tiempo máximo permitido.';
