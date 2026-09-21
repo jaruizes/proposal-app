@@ -34,6 +34,7 @@ class LangGraphState(TypedDict, total=False):
     presentation_plan_force_split: bool
     presentation_plan_title: str
     presentation_plan_sections: list[dict]
+    presentation_materialization: dict
 
 
 class LangGraphAgentRuntime(AgentRuntime):
