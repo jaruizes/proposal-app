@@ -27,7 +27,7 @@ public class OfferWorkflowService {
     private final AgentRuntimeService agents;
     private final AgentRegistryService agentRegistry;
     private final SourceIngestionService sources;
-    private final PresentationPort presentations;
+    private final TemplateSettingsService templateSettings;
     private final SlidePlanValidator slidePlanValidator;
     private final TaskExecutor phaseTaskExecutor;
     private final TaskExecutor documentTaskExecutor;
@@ -40,13 +40,13 @@ public class OfferWorkflowService {
     public OfferWorkflowService(OfferRepositoryPort offers, PhaseRepositoryPort phases,
                                 ArtifactRepositoryPort artifacts, AgentExecutionRepositoryPort agentExecutions,
                                 AgentRuntimeService agents, AgentRegistryService agentRegistry,
-                                SourceIngestionService sources, PresentationPort presentations,
+                                SourceIngestionService sources, TemplateSettingsService templateSettings,
                                 SlidePlanValidator slidePlanValidator,
                                 ProposalDocumentMaterializationService proposalDocuments,
                                 @Qualifier("agentTaskExecutor") TaskExecutor phaseTaskExecutor,
                                 @Qualifier("documentTaskExecutor") TaskExecutor documentTaskExecutor) {
         this.offers=offers; this.phases=phases; this.artifacts=artifacts; this.agentExecutions=agentExecutions;
-        this.agents=agents; this.agentRegistry=agentRegistry; this.sources=sources; this.presentations=presentations;
+        this.agents=agents; this.agentRegistry=agentRegistry; this.sources=sources; this.templateSettings=templateSettings;
         this.slidePlanValidator=slidePlanValidator; this.phaseTaskExecutor=phaseTaskExecutor; this.documentTaskExecutor=documentTaskExecutor;
         this.proposalDocuments=proposalDocuments;
     }
@@ -603,11 +603,50 @@ public class OfferWorkflowService {
     }
 
     private void runPresentation(Offer offer,String refinement){
-        var plan=artifacts.findLatest(offer.id(),ArtifactType.SLIDES_PLAN).orElseThrow(()->new DomainException("Missing approved slides-plan"));
+        var plan=artifacts.findLatest(offer.id(),ArtifactType.SLIDES_PLAN)
+                .orElseThrow(()->new DomainException("Missing approved slides-plan"));
         slidePlanValidator.validate(plan.content());
-        var result=presentations.materialize(offer.id(),plan.content(),offer.outputDriveFolder(),offer.presentationName());
-        saveArtifact(offer.id(),PhaseType.PRESENTATION,ArtifactType.PRESENTATION_METADATA,"{\"externalId\":\""+result.externalId()+"\",\"url\":\""+result.url()+"\"}");
-        saveArtifact(offer.id(),PhaseType.PRESENTATION,ArtifactType.PRESENTATION_BUILD_REPORT,result.buildReport());
+
+        var templateId=templateSettings.get().presentationTemplateId();
+        var config=Map.<String,Object>of(
+                "templateId",Objects.toString(templateId,""),
+                "outputFolder",Objects.toString(offer.outputDriveFolder(),""),
+                "presentationName",Objects.toString(offer.presentationName(),"Generated presentation")
+        );
+        final String configJson;
+        try{configJson=json.writeValueAsString(config);}
+        catch(Exception e){throw new DomainException("Invalid presentation materialization configuration");}
+
+        // Spring owns one business execution only. Internal planning, chunking and all
+        // Google Workspace MCP calls belong to Agent Platform/LangGraph.
+        var result=agents.execute(
+                AgentTask.of(offer.id(),PhaseType.PRESENTATION,"business-analyst","generate-presentation",
+                        "Generar presentación final","""
+                        Execute generate-presentation exactly. Materialize the approved slides-plan using Agent Platform tools.
+                        Return ONLY the final materialization result JSON. Do not expose internal chunking or tool orchestration.
+                        """+refinement(refinement))
+                        .withOutputFormat("json")
+                        .withCheckpoint("presentation.materialization"),
+                model(offer,"presentation"),
+                offerContext(offer)
+                        +"\n\n# APPROVED SLIDES PLAN\n"+plan.content()
+                        +"\n\n# PRESENTATION MATERIALIZATION CONFIG JSON\n"+configJson);
+
+        try{
+            var root=json.readTree(result.content());
+            var externalId=root.path("externalId").asText();
+            var url=root.path("url").asText();
+            if(externalId.isBlank()||url.isBlank())
+                throw new DomainException("Agent Platform returned presentation result without externalId/url");
+            saveArtifact(offer.id(),PhaseType.PRESENTATION,ArtifactType.PRESENTATION_METADATA,
+                    json.writeValueAsString(Map.of("externalId",externalId,"url",url)));
+            var report=root.path("buildReport");
+            saveArtifact(offer.id(),PhaseType.PRESENTATION,ArtifactType.PRESENTATION_BUILD_REPORT,
+                    "# Presentation build report\n\n```json\n"
+                            +json.writerWithDefaultPrettyPrinter().writeValueAsString(report)
+                            +"\n```");
+        }catch(DomainException e){throw e;}
+        catch(Exception e){throw new DomainException("Invalid presentation result returned by Agent Platform: "+e.getMessage());}
     }
 
     private void saveArtifact(UUID offerId,PhaseType phase,ArtifactType type,String content){
