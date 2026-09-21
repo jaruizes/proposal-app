@@ -71,12 +71,29 @@ def _json_response(content: str) -> dict[str, Any]:
 
 
 def _section_body(raw: str, name: str) -> str:
+    """Normalize harmless Markdown deviations while preserving section content.
+
+    The proposal assembler owns H1/H2. Models occasionally repeat the configured
+    section title or introduce H1/H2 subheadings despite the output contract.
+    Treat those as formatting deviations: remove a repeated section heading and
+    demote remaining H1/H2 headings to H3 rather than failing the whole proposal.
+    """
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", text).strip()
-    heading = re.compile(r"^##\s+" + re.escape(name) + r"\s*$", re.M)
-    text = heading.sub("", text, count=1).strip()
-    if not text or re.search(r"^#{1,2}\s+", text, re.M):
+
+    escaped = re.escape(name.strip())
+    repeated_heading = re.compile(
+        rf"^\s*#{{1,2}}\s+(?:\*\*)?{escaped}(?:\*\*)?\s*[:\-–—]?\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    text = repeated_heading.sub("", text, count=1).strip()
+
+    # Section bodies may use subsections, but the canonical proposal reserves
+    # levels 1 and 2 for the document and configured section headings.
+    text = re.sub(r"^\s*#{1,2}\s+(.+?)\s*$", r"### \1", text, flags=re.MULTILINE).strip()
+
+    if not text:
         raise ProposalPlanError(f"Invalid content for section {name}")
     return text
 
@@ -132,6 +149,35 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         agent = await runtime._agents.get(request.agent_key)
         skill = await runtime._skills.get(request.skill_key)
         return runtime._prompt_assembler.build(agent, skill, request, context)
+
+    async def validated_section_body(
+        base: ModelRequest,
+        raw: str,
+        name: str,
+        *,
+        source_stage: str,
+    ) -> str:
+        try:
+            return _section_body(raw, name)
+        except ProposalPlanError:
+            await add_event("proposal.section.format.invalid", {
+                "section": name,
+                "source_stage": source_stage,
+            })
+            repaired = await generate(
+                base,
+                (
+                    f"Repair ONLY the Markdown formatting of section {name!r}. "
+                    "Preserve all factual content, wording, tables, lists, citations and meaning. "
+                    "Return the section BODY only: no section title, no level-one heading and no level-two heading. "
+                    "Level-three or deeper subheadings are allowed. Do not add, remove or reinterpret facts.\n\n"
+                    "# Content to reformat\n"
+                    + raw
+                ),
+                "proposal.section.format.repaired",
+                {"section": name, "source_stage": source_stage},
+            )
+            return _section_body(repaired.content, name)
 
     async def plan(state: dict) -> dict:
         request = AgentExecutionRequest.model_validate(state["request"])
@@ -238,7 +284,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "Do not introduce level-one or level-two headings."
                 + reference_prompt(references)
             ), "proposal.section.drafted", {"section": name, "reference_hits": len(references)})
-            return name, _section_body(result.content, name)
+            return name, await validated_section_body(base, result.content, name, source_stage="draft")
 
         results = await asyncio.gather(*(one(section) for section in sections))
         return {"proposal_drafts": dict(results)}
@@ -259,7 +305,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 f"# Candidate section\n{current}"
                 + reference_prompt(references)
             ), "proposal.section.reviewed", {"section": name, "reference_hits": len(references)})
-            return name, _section_body(result.content, name)
+            return name, await validated_section_body(base, result.content, name, source_stage="review")
 
         results = await asyncio.gather(*(one(section) for section in state["proposal_sections"]))
         return {"proposal_drafts": dict(results)}
@@ -321,7 +367,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     + "\n".join(f"- {item}" for item in instructions)
                     + "\n\n# Current body\n" + drafts[name]
                 ), "proposal.section.revised", {"section": name})
-                return name, _section_body(correction.content, name)
+                return name, await validated_section_body(base, correction.content, name, source_stage="global-revision")
             drafts.update(await asyncio.gather(*(revise(name, instructions) for name, instructions in grouped.items())))
         raise AssertionError("Unreachable")
 
