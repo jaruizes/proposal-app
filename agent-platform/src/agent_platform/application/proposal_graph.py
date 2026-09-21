@@ -22,6 +22,17 @@ class ProposalPlanError(ValueError):
     pass
 
 
+_SECTION_BUDGETS = {
+    "SUMMARY": {"words": 700, "tokens": 2200},
+    "STANDARD": {"words": 1200, "tokens": 3600},
+    "DETAILED": {"words": 1800, "tokens": 5600},
+}
+
+
+def _section_budget(depth: str) -> dict[str, int]:
+    return _SECTION_BUDGETS.get(depth, _SECTION_BUDGETS["STANDARD"])
+
+
 def configured_sections(request: AgentExecutionRequest) -> list[dict[str, str]]:
     context = request.context.get("business_context", "")
     marker = "# PROPOSAL GUIDANCE JSON\n"
@@ -120,26 +131,57 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         async with db_lock:
             await runtime._executions.add_event(execution.id, event_type, payload)
 
-    async def generate(base: ModelRequest, instruction: str, event: str, payload: dict) -> ModelResult:
+    async def generate(
+        base: ModelRequest,
+        instruction: str,
+        event: str,
+        payload: dict,
+        *,
+        max_output_tokens: int | None = None,
+    ) -> ModelResult:
         prompt = base.messages[0].content + "\n\n# Current stage\n" + instruction
         model_request = base.model_copy(update={
             "system_prompt": (base.system_prompt or "") +
                 "\n\n# Execution mode\nThis is an intermediate proposal workflow stage. "
-                "Follow the current stage output format. The graph assembles the canonical document.",
+                "Follow the current stage output format. The graph assembles the canonical document. "
+                "Respect the requested size budget; never expand beyond it.",
             "messages": [ModelMessage(role=ModelRole.USER, content=prompt)],
+            "max_output_tokens": max_output_tokens or base.max_output_tokens,
         })
         async with semaphore:
             for attempt in range(2):
                 try:
+                    request_for_attempt = model_request
+                    if attempt:
+                        request_for_attempt = model_request.model_copy(update={
+                            "messages": [ModelMessage(
+                                role=ModelRole.USER,
+                                content=prompt +
+                                    "\n\n# RETRY AFTER OUTPUT LIMIT\n"
+                                    "Your previous response exceeded the output budget. "
+                                    "Regenerate the requested output from scratch, materially more concise. "
+                                    "Do not repeat context, do not add extra sections, and stop once the requested body/JSON is complete."
+                            )]
+                        })
                     with timed_span("langgraph.proposal.model", stage=event, model=base.model or "default"):
-                        result = await runtime._model_provider.generate(model_request)
+                        result = await runtime._model_provider.generate(request_for_attempt)
                     calls.append(result)
-                    await add_event(event, {**payload, "attempt": attempt + 1, "model": result.model})
+                    await add_event(event, {
+                        **payload,
+                        "attempt": attempt + 1,
+                        "model": result.model,
+                        "max_output_tokens": request_for_attempt.max_output_tokens,
+                    })
                     return result
                 except Exception as exc:
-                    if attempt or not getattr(exc, "retryable", False):
+                    truncated = getattr(exc, "code", None) == "ANTHROPIC_OUTPUT_TRUNCATED"
+                    if attempt or (not truncated and not getattr(exc, "retryable", False)):
                         raise
-                    await add_event("proposal.model.retry", {**payload, "stage": event})
+                    await add_event("proposal.model.retry", {
+                        **payload,
+                        "stage": event,
+                        "reason": "output_truncated" if truncated else "retryable_provider_error",
+                    })
         raise AssertionError("Unreachable")
 
     async def base_request(state: dict) -> ModelRequest:
@@ -176,6 +218,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 ),
                 "proposal.section.format.repaired",
                 {"section": name, "source_stage": source_stage},
+                max_output_tokens=4000,
             )
             return _section_body(repaired.content, name)
 
@@ -275,15 +318,21 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         async def one(section: dict) -> tuple[str, str]:
             name = section["name"]
             references = state.get("proposal_references", {}).get(name, [])
+            budget = _section_budget(section["depth"])
             result = await generate(base, (
                 f"Write ONLY the body of section {name!r} in Markdown, without its heading. "
                 f"Depth: {section['depth']}. Human instructions: {section['guidance']}\n"
+                f"Hard size budget: maximum {budget['words']} words. Prefer concise tables/lists over repetitive prose. "
                 "Use approved current-offer evidence as the ONLY factual and decision authority. Label open gaps. "
                 "Do not invent prices, effort, staffing, dates, commitments or customer facts. "
                 "Reference proposal excerpts, when present, are NON-FACTUAL style/depth patterns only. "
                 "Do not introduce level-one or level-two headings."
                 + reference_prompt(references)
-            ), "proposal.section.drafted", {"section": name, "reference_hits": len(references)})
+            ), "proposal.section.drafted", {
+                "section": name,
+                "reference_hits": len(references),
+                "word_budget": budget["words"],
+            }, max_output_tokens=budget["tokens"])
             return name, await validated_section_body(base, result.content, name, source_stage="draft")
 
         results = await asyncio.gather(*(one(section) for section in sections))
@@ -296,15 +345,21 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             name = section["name"]
             current = state["proposal_drafts"][name]
             references = state.get("proposal_references", {}).get(name, [])
+            budget = _section_budget(section["depth"])
             result = await generate(base, (
                 f"Review and correct ONLY section {name!r}. Return its complete revised body, with no heading. "
                 f"Required depth: {section['depth']}. Human instructions: {section['guidance']}\n"
+                f"Hard size budget: maximum {budget['words']} words. Do not expand the section unnecessarily. "
                 "Check factual support, omissions, terminology and prohibited invented commitments. "
                 "Current-offer evidence remains authoritative. Historical references are NON-FACTUAL patterns only. "
                 "Keep unsupported items explicit as gaps. No level-one or level-two headings.\n\n"
                 f"# Candidate section\n{current}"
                 + reference_prompt(references)
-            ), "proposal.section.reviewed", {"section": name, "reference_hits": len(references)})
+            ), "proposal.section.reviewed", {
+                "section": name,
+                "reference_hits": len(references),
+                "word_budget": budget["words"],
+            }, max_output_tokens=budget["tokens"])
             return name, await validated_section_body(base, result.content, name, source_stage="review")
 
         results = await asyncio.gather(*(one(section) for section in state["proposal_sections"]))
@@ -333,7 +388,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "Return ONLY JSON: {\"issues\":[{\"section\":\"exact configured section name\",\"instruction\":\"specific correction\"}]}. "
                 "Return an empty issues array when acceptable. Maximum five actionable issues.\n\n"
                 f"# Candidate proposal\n{proposal}"
-            ), "proposal.global.reviewed", {"pass": pass_number + 1})
+            ), "proposal.global.reviewed", {"pass": pass_number + 1}, max_output_tokens=1800)
             issues = _json_response(result.content)["issues"]
             if not issues:
                 usage = ModelUsage(
@@ -361,12 +416,18 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     raise ProposalPlanError("Global review referenced an invalid section")
                 grouped.setdefault(issue["section"], []).append(issue["instruction"])
             async def revise(name: str, instructions: list[str]) -> tuple[str, str]:
+                section = next(item for item in sections if item["name"] == name)
+                budget = _section_budget(section["depth"])
                 correction = await generate(base, (
                     f"Revise ONLY the body of section {name!r}. No heading or other sections. "
+                    f"Keep the revised section within {budget['words']} words. "
                     "Preserve approved evidence and avoid unsupported commitments. Correct these global review findings:\n"
                     + "\n".join(f"- {item}" for item in instructions)
                     + "\n\n# Current body\n" + drafts[name]
-                ), "proposal.section.revised", {"section": name})
+                ), "proposal.section.revised", {
+                    "section": name,
+                    "word_budget": budget["words"],
+                }, max_output_tokens=budget["tokens"])
                 return name, await validated_section_body(base, correction.content, name, source_stage="global-revision")
             drafts.update(await asyncio.gather(*(revise(name, instructions) for name, instructions in grouped.items())))
         raise AssertionError("Unreachable")
