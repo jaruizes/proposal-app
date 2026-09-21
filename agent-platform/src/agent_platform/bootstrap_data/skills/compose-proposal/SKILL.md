@@ -1,91 +1,73 @@
 ---
 name: compose-proposal
-description: Compose the canonical detailed proposal document from approved offer artifacts and human proposal guidance. The proposal is authoritative for later derived presentation material.
+description: Author the canonical proposal.md from approved qualification, solution and delivery artifacts with a single coherent narrative whenever volume allows.
 ---
 
-# Fase 4 — Oferta detallada
+# Compose Proposal
 
-Produce the canonical detailed commercial/technical response.
-
-## Owner
-
-Business Analyst / Offer Owner.
-
-## Preconditions
-
-Require approved analysis, strategy and solution phases. Use approved canonical artifacts as factual and decision authority.
+Owner: **Business Analyst / Offer Owner**
 
 ## Inputs
 
-- approved opportunity brief, questions and technology analysis when present;
-- approved response strategy;
-- approved solution and solution plan;
-- human proposal guidance;
-- relevant current-offer context supplied by the runtime.
+Primary factual/decision authority:
 
-## Proposal guidance
+- approved `opportunity-brief.md`;
+- optional `questions.md`;
+- optional `technology.md`;
+- approved `solution.md`;
+- approved `delivery-plan.md`;
+- human proposal guidance.
 
-The human may configure ordered sections. Each section can include:
+Optional RAG references:
 
-- `name`;
-- `enabled`;
-- `depth`: `SUMMARY`, `STANDARD` or `DETAILED`;
-- `guidance`: authoritative instructions for that section.
+- previous proposals or presentations for structure, terminology, tone and depth only.
 
-Preserve enabled human sections and their order unless doing so would contradict approved upstream decisions. Complete each section using approved evidence. If guidance requests unsupported content, expose the gap instead of inventing it.
+Reference proposals are never factual authority for the current customer.
 
-Depth semantics:
+## Default execution mode: SINGLE
 
-- `SUMMARY`: concise synthesis;
-- `STANDARD`: normal explanatory depth;
-- `DETAILED`: comprehensive treatment with explicit reasoning, traceability and tables/matrices where useful.
+When the approved context is within the configured single-pass threshold, one Business Analyst model execution authors the complete proposal.
 
-## Authority and safety
+The document must:
 
-- Current-offer approved artifacts are the factual and decision authority.
-- Never invent customer facts, prices, effort, staffing, dates, payment terms, legal conditions or contractual commitments.
-- Preserve assumptions, open questions and unresolved aspects explicitly.
-- Prefer high information density over filler.
-- Develop acronyms on first relevant use.
-- Use consistent customer and technical terminology.
-- Make requirements-to-response and need-to-solution relationships explicit where useful.
-- The proposal must stand on its own without the later slide deck.
+- have one coherent narrative voice and storyline;
+- move naturally from customer context and objectives to the proposed solution and delivery approach;
+- avoid duplicated content between sections;
+- preserve approved assumptions, risks and open points;
+- use configured proposal sections as a structure contract, not as isolated mini-documents;
+- never expose internal workflow, agent or context-pack terminology.
 
-Reference proposals retrieved from `reference-offers` are examples of structure, depth, terminology patterns and style only. They are explicitly NON-FACTUAL context: they never override current-offer artifacts and must never inject another customer's facts, technologies, commitments, dates, prices, staffing or claims into the current offer.
+Do not create one independent agent execution per section in normal-size proposals.
 
-## Document qualities
+## Large-volume mode: SPLIT
 
-The document should work for human evaluation and automated AI screening:
+Only when context volume is too large for a safe coherent single generation, the runtime may:
 
-- explicit heading hierarchy;
-- descriptive prose rather than slide fragments;
-- traceable requirements and decisions;
-- explicit scope, assumptions, risks and dependencies;
-- detailed technical rationale where configured;
-- tables and matrices where they improve extraction/comparison;
-- no unsupported claims.
+1. compact approved artifacts once;
+2. retrieve relevant reference patterns;
+3. draft a small number of bounded sections/blocks;
+4. use issues-only review;
+5. correct only blocks with material issues;
+6. assemble the canonical proposal;
+7. perform one bounded global consistency review.
 
-## Canonical output
+Successful substeps are checkpointed and reusable across retries.
 
-When the LangGraph proposal workflow invokes this skill, its intermediate calls
-request one section body or a compact JSON review. Follow the current stage instruction
-for those calls. The workflow receives a compact, evidence-preserving Proposal Context
-Pack built once from approved upstream artifacts; do not expect every original artifact
-to be repeated in every section call.
+Even in split mode, the result must read as one authored document, not a Frankenstein concatenation.
 
-Section review is issues-only: an acceptable draft is reused unchanged, and only sections
-with material issues are regenerated. Successful intermediate model calls are durably
-checkpointed by exact input fingerprint so retries can reuse completed work across new
-outer execution IDs. Only the assembled result is the canonical proposal. Global review
-must converge: it may trigger targeted corrections, but stylistic preferences or optional
-improvements must not fail the entire phase.
+## Quality rules
 
-Return ONLY the complete Markdown for:
+- Customer/current-offer artifacts are authoritative.
+- Do not invent prices, numeric effort, staffing quantities, dates, contractual commitments or customer facts.
+- Preserve explicit gaps instead of guessing.
+- RAG references may inspire organization/style but may not introduce foreign facts.
+- Avoid unnecessary repetition of the same architecture, risk or scope statement across sections.
+- Do not turn every implementation task into a proposal subsection unless human guidance requires it.
 
-`generated/proposal/proposal.md`
+## Output
 
-Do not generate DOCX, PDF, slides-plan, PPTX or Google Slides.
+Exactly one canonical artifact:
 
-Start with a clear proposal title. Render configured enabled sections in order. End with a concise coverage/gaps section only when material unresolved information remains.
+`proposal.md`
 
-Set `proposal.status: waiting_for_human` and STOP.
+The application may deterministically materialize the approved Markdown into DOCX/PDF afterwards.
