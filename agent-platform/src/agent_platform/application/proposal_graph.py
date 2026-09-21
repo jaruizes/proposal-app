@@ -352,21 +352,30 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             + len(prompt)
         ) // 4)
         await assert_budget(event, estimated_input)
+        max_attempts = 3 if retry_on_truncation else 1
         async with semaphore:
-            for attempt in range(2):
+            for attempt in range(max_attempts):
+                if attempt == 0:
+                    attempt_max = effective_max
+                    attempt_prompt = prompt
+                else:
+                    factor = 0.65 if attempt == 1 else 0.40
+                    attempt_max = min(effective_max, max(600, int(effective_max * factor)))
+                    target_words = max(250, int(attempt_max * 0.32))
+                    attempt_prompt = (
+                        prompt
+                        + "\n\n# HARD RETRY SIZE LIMIT\n"
+                        + f"The previous response hit max_tokens. Regenerate from scratch in no more than {target_words} words "
+                        "while preserving every material fact required by this stage. "
+                        "Use compact tables/bullets where appropriate. Do not add commentary, preambles or repeated context. "
+                        "For JSON stages, return only the required JSON and keep values terse."
+                    )
+
+                request_for_attempt = model_request.model_copy(update={
+                    "messages": [ModelMessage(role=ModelRole.USER, content=attempt_prompt)],
+                    "max_output_tokens": attempt_max,
+                })
                 try:
-                    request_for_attempt = model_request
-                    if attempt:
-                        request_for_attempt = model_request.model_copy(update={
-                            "messages": [ModelMessage(
-                                role=ModelRole.USER,
-                                content=prompt +
-                                    "\n\n# RETRY AFTER OUTPUT LIMIT\n"
-                                    "Your previous response exceeded the output budget. "
-                                    "Regenerate the requested output from scratch, materially more concise. "
-                                    "Do not repeat context, do not add extra sections, and stop once the requested body/JSON is complete."
-                            )]
-                        })
                     with timed_span("langgraph.proposal.model", stage=event, model=base.model or "default"):
                         result = await runtime._model_provider.generate(request_for_attempt)
                     calls.append(result)
@@ -377,7 +386,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                             result.model_dump(mode="json"),
                             ttl_seconds=checkpoint_ttl,
                         )
-                    await record_step(event, payload, result)
+                    await record_step(event, {**payload, "attempt": attempt + 1}, result)
                     await add_event(event, {
                         **payload,
                         "attempt": attempt + 1,
@@ -388,30 +397,44 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     return result
                 except Exception as exc:
                     truncated = getattr(exc, "code", None) == "ANTHROPIC_OUTPUT_TRUNCATED"
+
+                    # Truncated provider calls still cost money. Record their real usage
+                    # so budgets/telemetry do not under-report failed generations.
                     if truncated and getattr(exc, "usage", None) is not None:
-                        truncated_result = ModelResult(
-                            content=getattr(exc, "partial_content", None) or "",
+                        partial = ModelResult(
+                            content=getattr(exc, "partial_content", "") or "",
                             model=getattr(exc, "model", None) or base.model or "unknown",
                             usage=exc.usage,
                             provider_request_id=getattr(exc, "provider_request_id", None),
                             finish_reason="max_tokens",
-                            metadata={"truncated": True},
+                            metadata={"truncated": True, "stage": event},
                         )
-                        calls.append(truncated_result)
-                        await record_step(event, {**payload, "truncated": True}, truncated_result)
-                        await add_event("proposal.model.truncated", {
-                            **payload,
-                            "stage": event,
-                            "attempt": attempt + 1,
-                            "input_tokens": exc.usage.input_tokens,
-                            "output_tokens": exc.usage.output_tokens,
-                        })
-                    if attempt or (truncated and not retry_on_truncation) or (not truncated and not getattr(exc, "retryable", False)):
+                        calls.append(partial)
+                        await record_step(
+                            event,
+                            {**payload, "attempt": attempt + 1, "truncated": True},
+                            partial,
+                        )
+
+                    if truncated and not retry_on_truncation:
                         raise
+                    if not truncated and not getattr(exc, "retryable", False):
+                        raise
+                    if attempt == max_attempts - 1:
+                        section = payload.get("section")
+                        location = f" for section {section!r}" if section else ""
+                        raise ModelProviderError(
+                            "PROPOSAL_STEP_TRUNCATED",
+                            f"Proposal substep {event}{location} repeatedly reached max_tokens after {max_attempts} attempts",
+                        ) from exc
+
+                    next_factor = 0.65 if attempt == 0 else 0.40
                     await add_event("proposal.model.retry", {
                         **payload,
                         "stage": event,
+                        "attempt": attempt + 1,
                         "reason": "output_truncated" if truncated else "retryable_provider_error",
+                        "next_max_output_tokens": min(effective_max, max(600, int(effective_max * next_factor))),
                     })
         raise AssertionError("Unreachable")
 
