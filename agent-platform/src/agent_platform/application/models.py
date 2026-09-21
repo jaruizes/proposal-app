@@ -26,6 +26,8 @@ class ModelRequest(BaseModel):
     model: str | None = None
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_output_tokens: int | None = Field(default=None, gt=0)
+    cache_system_prompt: bool = False
+    cacheable_context: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
