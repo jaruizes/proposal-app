@@ -130,12 +130,10 @@ def _validate_section_details(section: dict[str, Any], value: dict[str, Any]) ->
     for expected_slide, raw in zip(expected, raw_slides):
         if not isinstance(raw, dict):
             raise PresentationPlanError(f"Invalid slide detail in {section['id']}")
-        slide_id = str(raw.get("id") or "").strip()
-        title = str(raw.get("title") or "").strip()
-        if slide_id != expected_slide["id"] or title != expected_slide["title"]:
-            raise PresentationPlanError(f"Slide detail changed frozen storyline for {expected_slide['id']}")
-        if len(title.split()) > 12:
-            raise PresentationPlanError(f"Slide title exceeds 12 words: {title}")
+        # The storyline is frozen authority. Detail calls are allowed to echo ids/titles
+        # imperfectly; normalize them rather than failing a complete phase.
+        slide_id = expected_slide["id"]
+        title = expected_slide["title"]
         purpose = str(raw.get("purpose") or expected_slide["purpose"]).strip()
         content = str(raw.get("content") or "").strip()
         visual = str(raw.get("visual") or "").strip()
