@@ -13,7 +13,7 @@ router = APIRouter(tags=["platform"])
 @router.get("/health")
 @router.get("/health/live")
 async def live() -> dict:
-    return {"status": "ok", "service": "proposal-agent-platform"}
+    return {"status": "ok", "service": "proposal-agent-platform", "version": "0.1.0"}
 
 
 @router.get("/health/ready")
