@@ -41,7 +41,8 @@ class AgentRuntimeServiceCheckpointTest {
         assertThat(reused.content()).isEqualTo(firstResult.content());
         assertThat(reused.inputTokens()).isZero();
         assertThat(reused.outputTokens()).isZero();
-        assertThat(repository.items.stream().filter(e->e.reusedFromExecutionId()!=null)).hasSize(1);
+        assertThat(repository.items.stream().filter(e->e.reusedFromExecutionId()!=null)).isEmpty();
+        assertThat(repository.items).hasSize(1);
 
         var changedContext=AgentTask.of(offerId,PhaseType.SOLUTION,"solution-architect",null,
                 "Aterrizar blueprint técnico de la solución","same prompt")
