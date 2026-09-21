@@ -45,7 +45,7 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
         // Materialization is planned in bounded, checkpointable chunks. NATS still carries
         // the same process-agnostic AgentExecution command; only the application chooses
         // several small executions instead of one giant JSON response.
-        var slideChunks=splitSlidesPlan(slidesPlan,4);
+        var slideChunks=splitSlidesPlan(slidesPlan,3);
         var operationPlans=new ArrayList<String>();
         for(int i=0;i<slideChunks.size();i++){
             var chunk=slideChunks.get(i);
@@ -189,38 +189,58 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
 
     List<String> splitSlidesPlan(String slidesPlan,int maxSlidesPerChunk){
         if(slidesPlan==null||slidesPlan.isBlank())return List.of("");
-        var lines=slidesPlan.split("\\R",-1);
-        var chunks=new ArrayList<String>();
-        var header=new StringBuilder();
-        var current=new StringBuilder();
-        int currentSlides=0;
-        boolean seenSlide=false;
 
-        for(var line:lines){
-            if(line.startsWith("## SLIDE-")){
-                if(currentSlides>=maxSlidesPerChunk && current.length()>0){
-                    chunks.add(current.toString().trim());
-                    current.setLength(0);
-                    currentSlides=0;
+        var documentTitle="";
+        var currentSection="";
+        var currentSlide=new StringBuilder();
+        var blocks=new ArrayList<SlidePlanBlock>();
+
+        for(var line:slidesPlan.split("\\R",-1)){
+            if(line.startsWith("# ")&&!line.startsWith("# SECTION-")&&documentTitle.isBlank()){
+                documentTitle=line.trim();
+                continue;
+            }
+            if(line.startsWith("# SECTION-")){
+                if(currentSlide.length()>0){
+                    blocks.add(new SlidePlanBlock(currentSection,currentSlide.toString().trim()));
+                    currentSlide.setLength(0);
                 }
-                currentSlides++;
-                seenSlide=true;
+                currentSection=line.trim();
+                continue;
             }
-            if(!seenSlide){
-                header.append(line).append('\n');
-            }else{
-                current.append(line).append('\n');
+            if(line.startsWith("## SLIDE-")){
+                if(currentSlide.length()>0){
+                    blocks.add(new SlidePlanBlock(currentSection,currentSlide.toString().trim()));
+                    currentSlide.setLength(0);
+                }
+                currentSlide.append(line).append('\n');
+                continue;
             }
+            if(currentSlide.length()>0) currentSlide.append(line).append('\n');
         }
-        if(current.length()>0)chunks.add(current.toString().trim());
-        if(chunks.isEmpty())chunks.add(slidesPlan.trim());
+        if(currentSlide.length()>0)
+            blocks.add(new SlidePlanBlock(currentSection,currentSlide.toString().trim()));
 
-        var prefix=header.toString().trim();
-        if(!prefix.isBlank()){
-            for(int i=0;i<chunks.size();i++) chunks.set(i,prefix+"\n\n"+chunks.get(i));
+        if(blocks.isEmpty()) return List.of(slidesPlan.trim());
+
+        var chunks=new ArrayList<String>();
+        for(int offset=0;offset<blocks.size();offset+=maxSlidesPerChunk){
+            var chunk=new StringBuilder();
+            if(!documentTitle.isBlank())chunk.append(documentTitle).append("\n\n");
+            var lastSection="";
+            for(int i=offset;i<Math.min(blocks.size(),offset+maxSlidesPerChunk);i++){
+                var block=blocks.get(i);
+                if(!Objects.equals(lastSection,block.section())&&!block.section().isBlank()){
+                    chunk.append(block.section()).append("\n\n");
+                    lastSection=block.section();
+                }
+                chunk.append(block.body()).append("\n\n");
+            }
+            chunks.add(chunk.toString().trim());
         }
         return List.copyOf(chunks);
     }
+
 
     String slidesPlanOutline(String slidesPlan){
         if(slidesPlan==null||slidesPlan.isBlank())return "";
@@ -336,5 +356,5 @@ public class McpGoogleSlidesPresentationAdapter implements PresentationPort {
     }
     private static String text(Map<String,Object> r){return Objects.toString(r.get("text"),"");}
     private static String driveId(String value){if(value==null)return "";var v=value.trim();var marker="/folders/";var i=v.indexOf(marker);if(i>=0){var x=v.substring(i+marker.length());var q=x.indexOf('?');return q>=0?x.substring(0,q):x;}return v;}
-    private record Inspection(String structure,List<LlmRequest.Attachment> thumbnails){}
+    private record SlidePlanBlock(String section,String body){}
 }
