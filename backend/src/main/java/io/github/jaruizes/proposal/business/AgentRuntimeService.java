@@ -168,7 +168,8 @@ public class AgentRuntimeService {
                 event.model()==null?current.model():event.model(),
                 event.inputTokens(),event.outputTokens(),event.providerRequestId(),
                 current.startedAt(),completedAt,event.completed()?null:event.errorMessage(),
-                current.checkpointKey(),current.inputFingerprint(),current.reusedFromExecutionId());
+                current.checkpointKey(),current.inputFingerprint(),current.reusedFromExecutionId(),
+                event.telemetry()==null?java.util.Map.of():event.telemetry());
         executions.save(updated);
         if(event.completed()){
             var result=new LlmResult(updated.output(),updated.model(),updated.inputTokens(),updated.outputTokens(),updated.providerRequestId());
