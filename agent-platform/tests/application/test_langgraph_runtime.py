@@ -497,3 +497,42 @@ async def test_proposal_single_mode_uses_one_model_call_and_keeps_coherent_docum
     events=await er.list_events(result.execution_id)
     assert any(event["event_type"]=="proposal.single_pass" for event in events)
     assert not any(event["event_type"]=="proposal.section.drafted" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_proposal_single_mode_uses_one_business_analyst_generation():
+    class SinglePassProvider:
+        def __init__(self): self.calls=[]
+        async def generate(self, request: ModelRequest):
+            stage=request.messages[0].content.split("# Current stage\n")[-1]
+            self.calls.append(stage)
+            return ModelResult(
+                content="# Example\n\n## Executive summary\n\nCoherent summary.\n\n## Solution\n\nCoherent solution.",
+                model="test-model",
+                usage=ModelUsage(input_tokens=20,output_tokens=10),
+            )
+
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    provider=SinglePassProvider();er=ExecutionRepo()
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+    )
+    guidance='{"sections":[{"name":"Executive summary","depth":"SUMMARY"},{"name":"Solution","depth":"STANDARD"}]}'
+    result=await runtime.execute(AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":"Offer name: Example\n\n# PROPOSAL MODE\nSINGLE\n\n# APPROVED OFFER ARTIFACTS\nBrief and solution.\n\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+        constraints={"output_format":"markdown"},
+    ))
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert len(provider.calls)==1
+    assert result.artifacts[0].content.startswith("# Example")
+    events=await er.list_events(result.execution_id)
+    assert any(event["event_type"]=="proposal.single_pass" for event in events)
