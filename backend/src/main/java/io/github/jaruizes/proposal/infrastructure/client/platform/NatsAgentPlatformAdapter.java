@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jaruizes.proposal.domain.exceptions.DomainException;
 import io.github.jaruizes.proposal.domain.model.AgentPlatformExecutionEvent;
+import io.github.jaruizes.proposal.domain.model.AgentPlatformArtifact;
 import io.github.jaruizes.proposal.domain.model.AgentExecutionProtocol;
 import io.github.jaruizes.proposal.domain.model.AgentTask;
 import io.github.jaruizes.proposal.domain.model.LlmRequest;
@@ -177,7 +178,7 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
         var completed = "execution.completed".equals(event.eventType())
                 && !"FAILED".equals(payload.path("status").asText())
                 && hasArtifact;
-        var content = primary == null ? null : primary.content();
+        String content = primary == null ? null : primary.content();
         var usage = payload.path("usage");
         Map<String,Object> telemetry=Map.of();
         if(primary!=null && primary.metadata()!=null){
