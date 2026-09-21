@@ -134,10 +134,10 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
             try {
                 for (Message message : subscription.fetch(20, Duration.ofSeconds(1))) {
                     try {
-                        var event = mapper.readTree(message.getData());
-                        var eventType = event.path("event_type").asText();
+                        var event = mapper.readValue(message.getData(), AgentExecutionProtocol.EventEnvelope.class);
+                        var eventType = event.eventType();
                         if ("execution.completed".equals(eventType) || "execution.failed".equals(eventType)) {
-                            publishTerminalEvent(event, eventType);
+                            publishTerminalEvent(event);
                         }
                         message.ack();
                     } catch (Exception e) {
@@ -151,14 +151,12 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
         }
     }
 
-    private void publishTerminalEvent(JsonNode event, String eventType) {
-        var executionIdText = event.path("execution_id").asText();
-        if (executionIdText == null || executionIdText.isBlank()) return;
-        var payload = event.path("payload");
+    private void publishTerminalEvent(AgentExecutionProtocol.EventEnvelope event) {
+        var payload = mapper.valueToTree(event.payload());
         var artifacts = payload.path("artifacts");
         var hasArtifact = artifacts.isArray() && !artifacts.isEmpty()
                 && !artifacts.get(0).path("content").asText("").isBlank();
-        var completed = "execution.completed".equals(eventType)
+        var completed = "execution.completed".equals(event.eventType())
                 && !"FAILED".equals(payload.path("status").asText())
                 && hasArtifact;
         var content = hasArtifact ? artifacts.get(0).path("content").asText() : null;
@@ -169,12 +167,12 @@ public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
             if(modelMetadata.isObject()) telemetry=mapper.convertValue(modelMetadata,new TypeReference<Map<String,Object>>(){});
         }
         var error = completed ? null
-                : ("execution.failed".equals(eventType)
+                : ("execution.failed".equals(event.eventType())
                     ? payload.path("error").path("message").asText("Agent Platform execution failed")
                     : "Agent Platform completed without a usable artifact");
 
         events.publishEvent(new AgentPlatformExecutionEvent(
-                UUID.fromString(executionIdText),
+                event.executionId(),
                 null,
                 null,
                 completed,
