@@ -39,54 +39,81 @@ def _section_budget(depth: str) -> dict[str, int]:
     return _SECTION_BUDGETS.get(depth, _SECTION_BUDGETS["STANDARD"])
 
 
-def _proposal_context_pack(request: AgentExecutionRequest) -> dict[str, Any]:
+def _approved_artifacts(request: AgentExecutionRequest) -> dict[str, str]:
+    """Parse canonical approved artifacts from the backend context deterministically."""
     context = request.context.get("business_context", "")
-    marker = "# PROPOSAL CONTEXT PACK (authoritative compact representation)\n"
-    end_marker = "\n\n# PROPOSAL GUIDANCE JSON\n"
+    marker = "# APPROVED OFFER ARTIFACTS\n"
+    guidance_marker = "\n\n# PROPOSAL GUIDANCE JSON\n"
     if not isinstance(context, str) or marker not in context:
         return {}
     raw = context.split(marker, 1)[1]
-    if end_marker in raw:
-        raw = raw.split(end_marker, 1)[0]
-    try:
-        value = json.loads(raw.strip())
-        return value if isinstance(value, dict) else {}
-    except ValueError:
-        return {}
+    if guidance_marker in raw:
+        raw = raw.split(guidance_marker, 1)[0]
+
+    names = {
+        "OPPORTUNITY_BRIEF": "opportunityBrief",
+        "QUESTIONS": "questions",
+        "TECHNOLOGY": "technology",
+        "SOLUTION": "solution",
+        "DELIVERY_PLAN": "deliveryPlan",
+    }
+    matches = list(re.finditer(
+        r"(?m)^# (OPPORTUNITY_BRIEF|QUESTIONS|TECHNOLOGY|SOLUTION|DELIVERY_PLAN)\s*$",
+        raw,
+    ))
+    result: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        content_start = match.end()
+        content_end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
+        value = raw[content_start:content_end].strip()
+        if value:
+            result[names[match.group(1)]] = value
+    return result
 
 
 def _section_context(pack: dict[str, Any], section: dict[str, str]) -> dict[str, Any]:
-    """Select only context-pack slices relevant to one configured proposal section."""
+    """Select canonical artifacts relevant to one proposal section without another LLM call."""
     text = (section.get("name", "") + " " + section.get("guidance", "")).casefold()
-    keys = {"customerAndOpportunity", "mandatoryRequirements", "evidenceIndex"}
+    keys = {"opportunityBrief"}
+
     rules = [
-        (("resumen", "summary", "executive", "valor", "value"), {"goalsAndScope", "responseStrategy", "solutionHighlights", "differentiators", "risksAssumptionsAndTbds"}),
-        (("reto", "context", "understand", "necesidad"), {"goalsAndScope", "responseStrategy", "risksAssumptionsAndTbds"}),
-        (("objetiv", "alcance", "scope", "goal"), {"goalsAndScope", "responseStrategy", "risksAssumptionsAndTbds"}),
-        (("requis", "condicion", "constraint"), {"goalsAndScope", "securityAndOperations", "risksAssumptionsAndTbds"}),
-        (("estrateg", "responseStrategy"), {"responseStrategy", "goalsAndScope", "solutionHighlights", "differentiators"}),
-        (("solución", "solution", "technical"), {"solutionHighlights", "architectureAndIntegrations", "securityAndOperations", "responseStrategy"}),
-        (("arquitect", "integr", "datos", "data"), {"architectureAndIntegrations", "solutionHighlights", "securityAndOperations"}),
-        (("ejecución", "delivery", "workstream", "metodolog"), {"deliveryApproach", "risksAssumptionsAndTbds", "goalsAndScope"}),
-        (("calidad", "risk", "riesg", "supuest", "assumption"), {"risksAssumptionsAndTbds", "securityAndOperations", "deliveryApproach"}),
-        (("diferenci", "próxim", "next step", "valor añadido"), {"differentiators", "responseStrategy", "solutionHighlights", "deliveryApproach"}),
+        (("resumen", "summary", "executive", "valor", "value"), {"solution", "deliveryPlan"}),
+        (("reto", "context", "understand", "necesidad"), {"questions"}),
+        (("objetiv", "alcance", "scope", "goal"), {"questions"}),
+        (("requis", "condicion", "constraint"), {"questions", "technology"}),
+        (("estrateg", "strategy"), {"solution", "deliveryPlan"}),
+        (("solución", "solution", "technical"), {"solution", "technology"}),
+        (("arquitect", "integr", "datos", "data"), {"solution", "technology"}),
+        (("ejecución", "delivery", "workstream", "metodolog"), {"deliveryPlan", "solution"}),
+        (("calidad", "risk", "riesg", "supuest", "assumption"), {"solution", "deliveryPlan", "questions"}),
+        (("diferenci", "próxim", "next step", "valor añadido"), {"solution", "deliveryPlan"}),
     ]
     for needles, additions in rules:
         if any(needle in text for needle in needles):
             keys.update(additions)
-    if len(keys) <= 3:
-        keys.update({"goalsAndScope", "responseStrategy", "solutionHighlights", "risksAssumptionsAndTbds"})
+
+    if len(keys) == 1:
+        keys.update({"solution", "deliveryPlan"})
     return {key: pack[key] for key in keys if key in pack}
 
 
 
 def _proposal_mode(request: AgentExecutionRequest) -> str:
     context = request.context.get("business_context", "")
+    requested = "SPLIT"
     if isinstance(context, str):
         match = re.search(r"^# PROPOSAL MODE\s*\n(SINGLE|SPLIT)\s*$", context, re.MULTILINE)
         if match:
-            return match.group(1)
-    return "SPLIT"
+            requested = match.group(1)
+
+    if requested == "SINGLE":
+        sections = configured_sections(request)
+        estimated_words = sum(_section_budget(section["depth"])["words"] for section in sections)
+        # A long requested document is not a safe single-pass generation even if its
+        # input context is small. Route before spending a doomed 12k-token call.
+        if len(sections) > 6 or estimated_words > 8_000:
+            return "SPLIT"
+    return requested
 
 
 
@@ -271,6 +298,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
         payload: dict,
         *,
         max_output_tokens: int | None = None,
+        retry_on_truncation: bool = True,
     ) -> ModelResult:
         prompt = base.messages[0].content + "\n\n# Current stage\n" + instruction
         effective_max = max_output_tokens or base.max_output_tokens
@@ -360,7 +388,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                     return result
                 except Exception as exc:
                     truncated = getattr(exc, "code", None) == "ANTHROPIC_OUTPUT_TRUNCATED"
-                    if attempt or (not truncated and not getattr(exc, "retryable", False)):
+                    if attempt or (truncated and not retry_on_truncation) or (not truncated and not getattr(exc, "retryable", False)):
                         raise
                     await add_event("proposal.model.retry", {
                         **payload,
@@ -378,7 +406,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
 
         business_context = request.context.get("business_context", "")
         state_pack = state.get("proposal_context_pack")
-        pack = state_pack if isinstance(state_pack, dict) else _proposal_context_pack(request)
+        pack = state_pack if isinstance(state_pack, dict) else _approved_artifacts(request)
 
         if isinstance(business_context, str):
             if isinstance(state_pack, dict):
@@ -435,27 +463,19 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
             return _section_body(repaired.content, name)
 
     async def compact_context(state: dict) -> dict:
-        base = await base_request(state)
-        result = await generate(
-            base,
-            (
-                "Build an INTERNAL compact proposal context pack from the approved current-offer artifacts. "
-                "Return ONLY a compact JSON object with these top-level keys: "
-                "customerAndOpportunity, mandatoryRequirements, goalsAndScope, responseStrategy, "
-                "solutionHighlights, architectureAndIntegrations, securityAndOperations, deliveryApproach, "
-                "risksAssumptionsAndTbds, differentiators, evidenceIndex. "
-                "Preserve material FACT/DECISION/ASSUMPTION distinctions, mandatory constraints, open gaps "
-                "and evidence locators. Deduplicate aggressively. Do not invent or strengthen claims. "
-                "evidenceIndex should map short evidence ids to source locators rather than copying source text. "
-                "Keep the JSON below roughly 24,000 characters."
-            ),
-            "proposal.context.compacted",
-            {"mode": "split"},
-            max_output_tokens=6500,
-        )
-        pack = _json_object(result.content, "Proposal context compaction")
-        if not pack:
-            raise ProposalPlanError("Proposal context compaction returned an empty object")
+        request = AgentExecutionRequest.model_validate(state["request"])
+        pack = _approved_artifacts(request)
+        required = {"opportunityBrief", "solution", "deliveryPlan"}
+        missing = sorted(required - set(pack))
+        if missing:
+            raise ProposalPlanError(
+                "Approved proposal artifacts are incomplete: " + ", ".join(missing)
+            )
+        await add_event("proposal.context.selected", {
+            "mode": "split",
+            "artifacts": sorted(pack),
+            "llm_calls": 0,
+        })
         return {"proposal_context_pack": pack}
 
     async def direct_proposal(state: dict) -> dict:
@@ -504,6 +524,7 @@ def add_proposal_nodes(builder: StateGraph, runtime, execution) -> None:
                 "proposal.single_pass",
                 {"mode": "single", "sections": len(guidance)},
                 max_output_tokens=12000,
+                retry_on_truncation=False,
             )
             content = result.content.strip()
             missing = [
