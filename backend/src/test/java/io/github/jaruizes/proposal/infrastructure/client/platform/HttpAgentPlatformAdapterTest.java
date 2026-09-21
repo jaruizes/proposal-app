@@ -43,7 +43,7 @@ class HttpAgentPlatformAdapterTest {
                 "{\"execution_id\":\"11111111-1111-1111-1111-111111111111\",\"status\":\"COMPLETED\",\"artifacts\":[{\"type\":\"AGENT_OUTPUT\",\"content\":\"# Analysis\\nOK\"}],\"usage\":{\"input_tokens\":12,\"output_tokens\":4},\"model\":\"claude-test\",\"provider_request_id\":\"msg_1\"}"));
         server.start();
 
-        var props = new AgentPlatformProperties("http://localhost:" + server.getAddress().getPort(), "", Duration.ofMillis(1), Duration.ofSeconds(2));
+        var props = new AgentPlatformProperties("http://localhost:" + server.getAddress().getPort(), "", Duration.ofMillis(1), Duration.ofSeconds(2), Duration.ofSeconds(2));
         var adapter = new HttpAgentPlatformAdapter(props, WebClient.builder());
         var task = AgentTask.of(UUID.randomUUID(), PhaseType.ANALYSIS, "business-analyst", "analyze-opportunity", "Analyze", "Return analysis");
 
