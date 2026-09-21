@@ -24,6 +24,7 @@ class LangGraphState(TypedDict, total=False):
     proposal_sections: list[dict]
     proposal_drafts: dict[str, str]
     proposal_content: str
+    proposal_force_split: bool
     proposal_references: dict[str, list[dict]]
 
 
