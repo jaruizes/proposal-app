@@ -19,7 +19,6 @@ export class ExecutionService {
     { name:'Entendimiento del reto', enabled:true, depth:'STANDARD', guidance:'Explicar contexto, necesidades y condicionantes sin inventar hechos.' },
     { name:'Objetivos y alcance', enabled:true, depth:'STANDARD', guidance:'Cubrir objetivos, alcance, exclusiones y dependencias conocidas.' },
     { name:'Requisitos y condicionantes', enabled:true, depth:'DETAILED', guidance:'Responder a requisitos funcionales, no funcionales y restricciones relevantes.' },
-    { name:'Estrategia de respuesta', enabled:true, depth:'STANDARD', guidance:'Conectar necesidades con la estrategia aprobada.' },
     { name:'Solución propuesta', enabled:true, depth:'DETAILED', guidance:'Describir la solución funcional y técnica con suficiente profundidad.' },
     { name:'Arquitectura e integraciones', enabled:true, depth:'DETAILED', guidance:'Detallar arquitectura, componentes, datos, integraciones, seguridad y operación cuando aplique.' },
     { name:'Enfoque de ejecución', enabled:true, depth:'DETAILED', guidance:'Describir fases, workstreams, entregables, gobierno y dependencias sin inventar estimaciones.' },
@@ -37,7 +36,7 @@ export class ExecutionService {
   }
 
   create(data: any) {
-    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName || (data.name+' - Presentación'), generatePresentation:data.generatePresentation!==false, aiProvider:data.provider, models:{ analysis:data.models.analysis, strategy:data.models.strategy, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, proposal:data.models.proposal, slidePlanning:data.models.slides, presentation:data.models.slides }, proposalGuidance:{ sections:data.proposalSections.filter((s:ProposalSectionConfig)=>s.enabled) }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
+    const request = { name:data.name, customer:data.customer || data.name.split('·')[0].trim(), language:'es', presentationLanguage:data.presentationLanguage==='English'?'en':'es', inputDriveFolder:data.inputDriveFolder, outputDriveFolder:data.outputDriveFolder, presentationName:data.presentationName || (data.name+' - Presentación'), generatePresentation:data.generatePresentation!==false, aiProvider:data.provider, models:{ analysis:data.models.analysis, solutionArchitecture:data.models.solution, deliveryPlanning:data.models.solution, proposal:data.models.proposal, slidePlanning:data.models.slides, presentation:data.models.slides }, proposalGuidance:{ sections:data.proposalSections.filter((s:ProposalSectionConfig)=>s.enabled) }, presentationGuidance:{ sections:data.sections.filter((s:SectionConfig)=>s.enabled) } };
     this.http.post<OfferExecution>('/api/offers',request).subscribe(offer=>{this.executions.update(items=>[offer,...items.filter(i=>i.id!==offer.id)]);this.watch(offer.id);this.watchAgents(offer.id);});
   }
 
