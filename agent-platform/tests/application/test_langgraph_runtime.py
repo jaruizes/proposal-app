@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
+from agent_platform.application.cache import CacheService, InMemoryCacheProvider
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
 from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body, _section_budget
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
@@ -341,3 +342,37 @@ def test_proposal_section_budgets_are_bounded_below_agent_global_limit():
 
 def test_unknown_proposal_depth_falls_back_to_standard_budget():
     assert _section_budget("UNKNOWN") == _section_budget("STANDARD")
+
+
+@pytest.mark.asyncio
+async def test_proposal_substeps_are_reused_across_new_execution_ids():
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
+    er=ExecutionRepo();provider=ProposalProvider();cache=CacheService(InMemoryCacheProvider(),prefix="test")
+    runtime=LangGraphAgentRuntime(
+        AgentRegistry(AgentRepo(agent),SkillRepo(skill)),
+        SkillRegistry(SkillRepo(skill)),
+        er,
+        provider,
+        checkpointer=MemorySaver(),
+        cache=cache,
+    )
+    guidance='{"sections":[{"name":"Executive summary","depth":"SUMMARY"},{"name":"Technical approach","depth":"DETAILED"}]}'
+    request=AgentExecutionRequest(
+        agent_key=agent.key,
+        skill_key=skill.key,
+        objective="Compose",
+        context={"business_context":"Offer name: Example\n# PROPOSAL GUIDANCE JSON\n"+guidance},
+    )
+
+    first=await runtime.execute(request)
+    first_call_count=len(provider.calls)
+    second=await runtime.execute(request)
+
+    assert first.status is ExecutionStatus.COMPLETED
+    assert second.status is ExecutionStatus.COMPLETED
+    assert len(provider.calls)==first_call_count
+    assert second.usage.input_tokens==0
+    assert second.usage.output_tokens==0
+    events=await er.list_events(second.execution_id)
+    assert any(event["event_type"]=="proposal.step.reused" for event in events)
