@@ -3,39 +3,51 @@ package io.github.jaruizes.proposal.infrastructure.client.platform;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jaruizes.proposal.domain.exceptions.DomainException;
+import io.github.jaruizes.proposal.domain.model.AgentPlatformExecutionEvent;
 import io.github.jaruizes.proposal.domain.model.AgentTask;
 import io.github.jaruizes.proposal.domain.model.LlmRequest;
 import io.github.jaruizes.proposal.domain.model.LlmResult;
-import io.github.jaruizes.proposal.domain.ports.AgentPlatformPort;
+import io.github.jaruizes.proposal.domain.ports.AsyncAgentPlatformPort;
 import io.nats.client.*;
-import io.nats.client.api.ConsumerConfiguration;
-import io.nats.client.api.DeliverPolicy;
 import io.nats.client.api.PublishAck;
 import io.nats.client.impl.Headers;
 import jakarta.annotation.PreDestroy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+/**
+ * True command/event transport. submit() only publishes the command; terminal events are
+ * emitted into Spring and handled independently by the workflow. No caller waits for the
+ * Agent Platform execution lifetime.
+ */
 @Component
 @ConditionalOnProperty(name = "agent-platform.transport", havingValue = "nats", matchIfMissing = true)
-public class NatsAgentPlatformAdapter implements AgentPlatformPort {
+public class NatsAgentPlatformAdapter implements AsyncAgentPlatformPort {
     private final NatsAgentPlatformProperties properties;
     private final ObjectMapper mapper;
+    private final ApplicationEventPublisher events;
     private final Connection connection;
     private final JetStream jetStream;
     private final JetStreamSubscription subscription;
     private final ExecutorService consumer;
-    private final ConcurrentMap<String, CompletableFuture<JsonNode>> pending = new ConcurrentHashMap<>();
     private volatile boolean running = true;
 
-    public NatsAgentPlatformAdapter(NatsAgentPlatformProperties properties, ObjectMapper mapper) throws Exception {
+    public NatsAgentPlatformAdapter(NatsAgentPlatformProperties properties,
+                                    ObjectMapper mapper,
+                                    ApplicationEventPublisher events) throws Exception {
         this.properties = properties;
         this.mapper = mapper;
+        this.events = events;
         this.connection = Nats.connect(properties.url());
         this.jetStream = connection.jetStream();
         var options = PullSubscribeOptions.builder().durable(properties.eventsDurable()).build();
@@ -45,14 +57,9 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
     }
 
     @Override
-    public LlmResult execute(AgentTask task, String model, String context, List<LlmRequest.Attachment> attachments) {
-        var executionId = task.id().toString();
-        var future = new CompletableFuture<JsonNode>();
-        if (pending.putIfAbsent(executionId, future) != null) {
-            throw new DomainException("Execution already pending: " + executionId);
-        }
-
+    public void submit(AgentTask task, String model, String context, List<LlmRequest.Attachment> attachments) {
         try {
+            var executionId = task.id().toString();
             var request = new LinkedHashMap<String,Object>();
             request.put("execution_id", executionId);
             request.put("correlation_id", task.offerId().toString());
@@ -87,43 +94,20 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
             headers.add("Nats-Msg-Id", executionId);
             PublishAck ack = jetStream.publish(properties.commandSubject(), headers, mapper.writeValueAsBytes(envelope));
             if (ack == null) throw new DomainException("NATS did not acknowledge execution command");
-
-            var timeout=timeoutFor(task);
-            JsonNode event = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-            var payload = event.path("payload");
-            if ("FAILED".equals(payload.path("status").asText()) || event.path("event_type").asText().equals("execution.failed")) {
-                throw new DomainException(payload.path("error").path("message").asText("Agent Platform execution failed"));
-            }
-            var artifacts = payload.path("artifacts");
-            if (!artifacts.isArray() || artifacts.isEmpty()) throw new DomainException("Agent Platform returned no artifact");
-            var usage = payload.path("usage");
-            return new LlmResult(
-                    artifacts.get(0).path("content").asText(),
-                    payload.path("model").asText(model),
-                    usage.path("input_tokens").asLong(0),
-                    usage.path("output_tokens").asLong(0),
-                    nullIfBlank(payload.path("provider_request_id").asText())
-            );
-        } catch (TimeoutException e) {
-            throw new DomainException("Agent Platform execution timed out after " + timeoutFor(task));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new DomainException("Interrupted while waiting for Agent Platform event");
-        } catch (ExecutionException e) {
-            throw new DomainException(e.getCause() == null ? e.getMessage() : e.getCause().getMessage());
         } catch (DomainException e) {
             throw e;
         } catch (Exception e) {
-            throw new DomainException("NATS Agent Platform transport failed: " + e.getMessage());
-        } finally {
-            pending.remove(executionId);
+            throw new DomainException("NATS Agent Platform command publish failed: " + e.getMessage());
         }
     }
 
-    private Duration timeoutFor(AgentTask task) {
-        return task.phase() == io.github.jaruizes.proposal.domain.model.PhaseType.PROPOSAL
-                ? properties.proposalExecutionTimeout()
-                : properties.executionTimeout();
+    /**
+     * Synchronous execution is intentionally unsupported for the NATS transport.
+     * AgentRuntimeService detects AsyncAgentPlatformPort and uses submit().
+     */
+    @Override
+    public LlmResult execute(AgentTask task, String model, String context, List<LlmRequest.Attachment> attachments) {
+        throw new DomainException("NATS Agent Platform transport is asynchronous; use submit()");
     }
 
     private void consumeLoop() {
@@ -132,11 +116,9 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
                 for (Message message : subscription.fetch(20, Duration.ofSeconds(1))) {
                     try {
                         var event = mapper.readTree(message.getData());
-                        var executionId = event.path("execution_id").asText();
                         var eventType = event.path("event_type").asText();
                         if ("execution.completed".equals(eventType) || "execution.failed".equals(eventType)) {
-                            var future = pending.get(executionId);
-                            if (future != null) future.complete(event);
+                            publishTerminalEvent(event, eventType);
                         }
                         message.ack();
                     } catch (Exception e) {
@@ -144,9 +126,38 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
                     }
                 }
             } catch (Exception ignored) {
-                try { Thread.sleep(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                try { Thread.sleep(500); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
             }
         }
+    }
+
+    private void publishTerminalEvent(JsonNode event, String eventType) {
+        var executionIdText = event.path("execution_id").asText();
+        if (executionIdText == null || executionIdText.isBlank()) return;
+        var payload = event.path("payload");
+        var completed = "execution.completed".equals(eventType)
+                && !"FAILED".equals(payload.path("status").asText());
+        var artifacts = payload.path("artifacts");
+        var content = artifacts.isArray() && !artifacts.isEmpty()
+                ? artifacts.get(0).path("content").asText(null)
+                : null;
+        var usage = payload.path("usage");
+        var error = completed ? null : payload.path("error").path("message")
+                .asText("Agent Platform execution failed");
+
+        events.publishEvent(new AgentPlatformExecutionEvent(
+                UUID.fromString(executionIdText),
+                null,
+                null,
+                completed,
+                content,
+                payload.path("model").asText(null),
+                usage.path("input_tokens").asLong(0),
+                usage.path("output_tokens").asLong(0),
+                nullIfBlank(payload.path("provider_request_id").asText()),
+                error
+        ));
     }
 
     @PreDestroy
@@ -157,5 +168,7 @@ public class NatsAgentPlatformAdapter implements AgentPlatformPort {
         try { connection.close(); } catch (Exception ignored) {}
     }
 
-    private static String nullIfBlank(String value) { return value == null || value.isBlank() ? null : value; }
+    private static String nullIfBlank(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
 }
