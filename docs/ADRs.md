@@ -625,7 +625,7 @@ Always splitting a proposal into many model calls increases token cost and can p
 `compose-proposal` always has one Business Analyst AgentExecution.
 
 - **SINGLE mode:** one model generation writes the complete proposal when approved context fits the configured threshold.
-- **SPLIT mode:** for large context, or when the single pass is structurally incomplete/truncated, the same AgentExecution compacts context once and uses bounded internal LangGraph substeps.
+- **SPLIT mode:** for large context, or when the single pass is structurally incomplete/truncated, the same AgentExecution deterministically routes the canonical approved artifacts to the relevant sections and uses bounded internal LangGraph substeps.
 
 Split mode uses section-specific context, reference retrieval, issues-only review, targeted correction, deterministic assembly and one global review. Successful internal substeps are checkpointed in Valkey.
 
@@ -633,7 +633,7 @@ Split mode uses section-specific context, reference retrieval, issues-only revie
 
 - Always one huge generation.
 - Always generate every section independently.
-- Separate Business Analyst AgentExecutions for compaction and each section.
+- Separate Business Analyst AgentExecutions for context preparation and each section.
 
 ### Why this option
 
