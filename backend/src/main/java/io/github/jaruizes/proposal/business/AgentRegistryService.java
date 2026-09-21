@@ -12,17 +12,14 @@ public class AgentRegistryService {
 
     public AgentRegistryService() {
         register(new AgentDefinition("business-analyst","Business Analyst","Offer Owner",
-                Set.of("opportunity-analysis","response-strategy","slide-planning","coherence-review"),
-                Set.of("source.read","source.search","knowledge.search"),"agents/business-analyst.md"));
+                Set.of("opportunity-analysis","qualification","response-strategy","proposal-authoring","slide-planning","presentation-materialization"),
+                Set.of("source.read","source.search","knowledge.search","presentation.read","presentation.write"),"agents/business-analyst.md"));
         register(new AgentDefinition("solution-architect","Solution Architect","Solution Architect",
-                Set.of("architecture-design","technical-decisions","source-analysis"),
+                Set.of("architecture-design","technical-decisions","source-analysis","implementation-task-modeling"),
                 Set.of("source.read","source.search","knowledge.search","ontology.query"),"agents/solution-architect.md"));
         register(new AgentDefinition("delivery-manager","Delivery Manager","Delivery Manager",
-                Set.of("delivery-planning","work-breakdown","risk-coordination"),
+                Set.of("delivery-planning","workstream-design","governance","risk-coordination"),
                 Set.of("source.read","source.search","knowledge.search"),"agents/delivery-manager.md"));
-        register(new AgentDefinition("presentation-builder","Presentation Builder","Presentation Builder",
-                Set.of("presentation-materialization","visual-mapping"),
-                Set.of("presentation.read","presentation.write","source.read"),"agents/presentation-builder.md"));
         register(new AgentDefinition("security-specialist","Security Specialist","Specialist",
                 Set.of("security-review","cryptography"),Set.of("source.read","knowledge.search"),"agents/security-specialist.md"));
         register(new AgentDefinition("corporate-slide-designer","Corporate Slide Designer","Visual Specialist",
