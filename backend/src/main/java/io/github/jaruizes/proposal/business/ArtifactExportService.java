@@ -19,7 +19,6 @@ public class ArtifactExportService {
             ArtifactType.OPPORTUNITY_BRIEF,
             ArtifactType.QUESTIONS,
             ArtifactType.TECHNOLOGY,
-            ArtifactType.STRATEGY,
             ArtifactType.SOLUTION,
             ArtifactType.DELIVERY_PLAN,
             ArtifactType.PROPOSAL,
@@ -70,7 +69,6 @@ public class ArtifactExportService {
             case OPPORTUNITY_BRIEF -> "Opportunity brief · " + offerName;
             case QUESTIONS -> "Questions · " + offerName;
             case TECHNOLOGY -> "Technology analysis · " + offerName;
-            case STRATEGY -> "Response strategy · " + offerName;
             case SOLUTION -> "Solution · " + offerName;
             case DELIVERY_PLAN -> "Delivery plan · " + offerName;
             case PROPOSAL -> "Proposal · " + offerName;
@@ -84,7 +82,6 @@ public class ArtifactExportService {
             case OPPORTUNITY_BRIEF -> "opportunity-brief";
             case QUESTIONS -> "questions";
             case TECHNOLOGY -> "technology";
-            case STRATEGY -> "strategy";
             case SOLUTION -> "solution";
             case DELIVERY_PLAN -> "delivery-plan";
             case PROPOSAL -> "proposal";
