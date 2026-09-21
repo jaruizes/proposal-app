@@ -10,7 +10,21 @@
       "inputs": [
         "workspace"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "constraints": {
+        "execution": {
+          "graph": "resilient-single",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
+        }
+      }
     },
     {
       "key": "ingest-sources",
@@ -18,7 +32,21 @@
       "inputs": [
         "workspace"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "constraints": {
+        "execution": {
+          "graph": "resilient-single",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
+        }
+      }
     },
     {
       "key": "qualify-opportunity",
@@ -27,7 +55,21 @@
         "workspace",
         "source-manifest"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "constraints": {
+        "execution": {
+          "graph": "resilient-single",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
+        }
+      }
     },
     {
       "key": "design-solution",
@@ -49,6 +91,18 @@
           "top_k": 6,
           "candidate_k": 18,
           "min_score": 0.2
+        },
+        "execution": {
+          "graph": "resilient-single",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
         }
       }
     },
@@ -60,7 +114,21 @@
         "approved-qualification",
         "approved-solution"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "constraints": {
+        "execution": {
+          "graph": "resilient-single",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
+        }
+      }
     },
     {
       "key": "compose-proposal",
@@ -80,6 +148,18 @@
           "top_k_per_section": 3,
           "mode": "hybrid",
           "vector_min_score": 0.2
+        },
+        "execution": {
+          "graph": "proposal",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
         }
       }
     },
@@ -101,6 +181,18 @@
           "top_k": 4,
           "candidate_k": 12,
           "min_score": 0.2
+        },
+        "execution": {
+          "graph": "presentation-plan",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
         }
       }
     },
@@ -112,7 +204,21 @@
         "approved-slides-plan",
         "presentation-config"
       ],
-      "output_schema": {}
+      "output_schema": {},
+      "constraints": {
+        "execution": {
+          "graph": "resilient-single",
+          "truncation": {
+            "max_attempts": 3,
+            "shrink_factors": [
+              1,
+              0.65,
+              0.4
+            ],
+            "min_output_tokens": 700
+          }
+        }
+      }
     }
   ],
   "agents": [
