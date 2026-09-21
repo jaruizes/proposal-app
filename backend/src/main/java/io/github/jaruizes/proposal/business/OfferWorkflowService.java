@@ -266,7 +266,7 @@ public class OfferWorkflowService {
 
         // Triage the complete source inventory before loading expensive original evidence.
         var triageContext=approved+"\n\n# SOURCE MANIFEST\n"+sourceBundle.manifest()+refinement(refinement);
-        var triage=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","define-solution",
+        var triage=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"solution-architect","design-solution",
                 "Triage de fuentes y especialistas opcionales","""
                 Before designing the solution, use the approved current-offer artifacts plus the source manifest to decide which ORIGINAL customer sources require review.
                 Classify every source as REVIEW_IN_DEPTH, TARGETED_REVIEW or SKIP. Select originals whenever exact technical constraints, versions, integrations, security, data, volumes, SLAs, diagrams or other factual details may affect the solution.
@@ -323,9 +323,11 @@ public class OfferWorkflowService {
                         ## 5. Decisiones técnicas y trade-offs
                         ## 6. Condicionantes de delivery
                         ## 7. Riesgos de ejecución y mitigaciones actualizadas
-                        ## 8. Capacidades/perfiles necesarios a alto nivel
-                        Do not estimate effort, staffing, duration, cost or price. Do not add an H1 or repeat prior sections.
-                        Keep this block concise and below 2,200 words.
+                        ## 8. Tareas de implementación, complejidad y perfiles
+                        For each implementation task include: task, purpose/deliverable, qualitative complexity
+                        LOW/MEDIUM/HIGH/VERY_HIGH, dependencies when any, recommended profile type, and workstream/capability.
+                        Qualitative complexity is allowed; never provide numeric effort, staffing quantities, duration, cost or price.
+                        Do not add an H1 or repeat prior sections. Keep this block concise and below 2,600 words.
                         """),
                 solutionPartTask(offer,"Redactar solución · cierre y trazabilidad","""
                         Return ONLY JSON {"markdown":"..."} containing exactly:
@@ -359,18 +361,15 @@ public class OfferWorkflowService {
                 """).withOutputFormat("json").withCheckpoint("delivery.grounding"),model(offer,"deliveryPlanning"),deliveryReviewContext,selectedSources.visualAttachments());
 
         var deliveryContext=offerContext(offer)+"\n\n# solution.md\n"+solution+"\n\n# INTERNAL DELIVERY REVIEW\n"+deliveryReview.content();
-        var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","define-solution",
+        var delivery=agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"delivery-manager","plan-delivery",
                 "Definir enfoque de ejecución","""
                 Execute section B of define-solution. Produce ONLY the complete unestimated delivery-plan.md as raw Markdown, without an outer code fence or filename heading.
-                Use the supplied solution.md and INTERNAL DELIVERY REVIEW. Cover methodology/lifecycle, inception or discovery where appropriate, decision/re-estimation gates, workstreams, milestones, dependencies, governance, customer/third-party participation, acceptance, cutover/transition/handover, risks/TBDs and capability → workstream coverage.
+                Use the supplied solution.md, including its implementation tasks/dependencies/qualitative complexity/profile types, and INTERNAL DELIVERY REVIEW. Cover methodology/lifecycle, inception or discovery where appropriate, workstreams, sequencing/dependencies, milestones and decision gates, governance model, customer/third-party participation, acceptance, release/cutover/transition/handover and delivery risks/TBDs.
                 Do not redefine the technical solution. Do not estimate effort, staffing, duration, cost or price. Keep the document focused and below 4,500 words.
                 """).withCheckpoint("delivery.plan"),model(offer,"deliveryPlanning"),deliveryContext);
         var deliveryPlan=delivery.content();
         saveArtifact(offer.id(),PhaseType.SOLUTION,ArtifactType.DELIVERY_PLAN,deliveryPlan);
 
-        agents.execute(AgentTask.of(offer.id(),PhaseType.SOLUTION,"business-analyst","define-solution",
-                "Revisión de coherencia","Execute section C of define-solution: review strategy, solution.md and delivery-plan.md for coherence. Do not create a canonical artifact. Return concise findings and say OK when no correction is required.").withOutputFormat("text").withCheckpoint("solution.coherence-review"),
-                model(offer,"solutionArchitecture"),approved+"\n\n# solution.md\n"+solution+"\n\n# delivery-plan.md\n"+deliveryPlan);
     }
 
     private AgentTask solutionPartTask(Offer offer,String objective,String prompt){
@@ -448,7 +447,7 @@ public class OfferWorkflowService {
                     "## 5. Decisiones técnicas y trade-offs",
                     "## 6. Condicionantes de delivery",
                     "## 7. Riesgos de ejecución y mitigaciones actualizadas",
-                    "## 8. Capacidades/perfiles necesarios a alto nivel");
+                    "## 8. Tareas de implementación, complejidad y perfiles");
             case "Redactar solución · cierre y trazabilidad" -> List.of(
                     "## 9. Decisiones, asunciones y TBDs pendientes",
                     "## 10. Elementos clave que deberán aparecer en la oferta",
@@ -495,7 +494,7 @@ public class OfferWorkflowService {
                 "## 5. Decisiones técnicas y trade-offs",
                 "## 6. Condicionantes de delivery",
                 "## 7. Riesgos de ejecución y mitigaciones actualizadas",
-                "## 8. Capacidades/perfiles necesarios a alto nivel",
+                "## 8. Tareas de implementación, complejidad y perfiles",
                 "## 9. Decisiones, asunciones y TBDs pendientes",
                 "## 10. Elementos clave que deberán aparecer en la oferta",
                 "## 11. Revisión de fuentes realizada por el arquitecto",
@@ -511,7 +510,7 @@ public class OfferWorkflowService {
             root.path("specialistConsultations").forEach(node->{
                 if(requested.size()>=2)return;
                 var key=node.path("agentKey").asText(); var question=node.path("question").asText();
-                try{var definition=agentRegistry.get(key);if("Specialist".equals(definition.role())) {var checkpoint="solution.specialist."+requested.size()+"."+key;requested.add(AgentTask.of(offer.id(),PhaseType.SOLUTION,key,"define-solution","Consulta especializada",question).withOutputFormat("text").withCheckpoint(checkpoint));}}catch(Exception ignored){}
+                try{var definition=agentRegistry.get(key);if("Specialist".equals(definition.role())) {var checkpoint="solution.specialist."+requested.size()+"."+key;requested.add(AgentTask.of(offer.id(),PhaseType.SOLUTION,key,"design-solution","Consulta especializada",question).withOutputFormat("text").withCheckpoint(checkpoint));}}catch(Exception ignored){}
             });
             if(requested.isEmpty())return "\n\n# OPTIONAL SPECIALIST CONSULTATIONS\nNone requested.";
             // Keep bounded fan-out. Specialist consultations do not own canonical artifacts.
