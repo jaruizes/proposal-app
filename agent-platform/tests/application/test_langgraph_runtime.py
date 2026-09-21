@@ -37,7 +37,7 @@ class Provider:
 
 @pytest.mark.asyncio
 async def test_langgraph_runtime_preserves_platform_contract():
-    skill=SkillDefinition(key="analyze-opportunity",name="Analyze",objective="Analyze",instructions="Return analysis")
+    skill=SkillDefinition(key="qualify-opportunity",name="Qualify",objective="Qualify",instructions="Return qualification")
     agent=AgentDefinition(key="business-analyst",name="Business Analyst",role="Analyze opportunities",skills=[skill.key])
     ar=AgentRepo(agent);sr=SkillRepo(skill);er=ExecutionRepo()
     runtime=LangGraphAgentRuntime(AgentRegistry(ar,sr),SkillRegistry(sr),er,Provider(),checkpointer=MemorySaver())
@@ -60,7 +60,7 @@ async def test_langgraph_publishes_normalized_document():
             fence = chr(96) * 3
             return ModelResult(content=f"# delivery-plan.md\n\n{fence}markdown\n# Plan\nContent\n{fence}", model="test-model")
 
-    skill=SkillDefinition(key="define-solution",name="Solution",objective="Solution",instructions="Draft")
+    skill=SkillDefinition(key="plan-delivery",name="Delivery",objective="Delivery",instructions="Draft")
     agent=AgentDefinition(key="delivery-manager",name="Delivery",role="Plan",skills=[skill.key])
     ar=AgentRepo(agent);sr=SkillRepo(skill);er=ExecutionRepo()
     runtime=LangGraphAgentRuntime(AgentRegistry(ar,sr),SkillRegistry(sr),er,WrappedProvider(),checkpointer=MemorySaver())
