@@ -6,7 +6,7 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from agent_platform.application.langgraph_runtime import LangGraphAgentRuntime
-from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections
+from agent_platform.application.proposal_graph import ProposalPlanError, configured_sections, _section_body
 from agent_platform.application.models import ModelRequest, ModelResult, ModelUsage
 from agent_platform.application.registries import AgentRegistry, SkillRegistry
 from agent_platform.domain import AgentDefinition, AgentExecution, AgentExecutionRequest, ExecutionStatus, SkillDefinition
@@ -296,3 +296,30 @@ async def test_proposal_graph_serializes_db_bound_retrieval_and_event_persistenc
     assert result.status is ExecutionStatus.COMPLETED
     assert retrieval.max_active == 1
     assert er.max_active == 1
+
+
+def test_proposal_section_body_normalizes_repeated_heading_and_nested_h2():
+    raw = """# Requisitos y condicionantes:
+
+Contenido principal.
+
+## Requisitos funcionales
+- Requisito A
+
+## Condicionantes técnicos
+- Condicionante B
+"""
+    body = _section_body(raw, "Requisitos y condicionantes")
+
+    assert not body.startswith("# Requisitos y condicionantes")
+    assert "### Requisitos funcionales" in body
+    assert "### Condicionantes técnicos" in body
+    assert "Contenido principal." in body
+
+
+def test_proposal_section_body_accepts_bold_repeated_h2_title():
+    raw = """## **Requisitos y condicionantes**
+
+Contenido respaldado por evidencia.
+"""
+    assert _section_body(raw, "Requisitos y condicionantes") == "Contenido respaldado por evidencia."
