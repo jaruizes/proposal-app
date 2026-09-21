@@ -107,16 +107,19 @@ async def test_proposal_graph_preserves_configured_order_and_usage():
 
 
 @pytest.mark.asyncio
-async def test_proposal_global_review_failure_does_not_publish_partial_artifact():
+async def test_proposal_global_review_corrects_issues_without_non_convergent_failure():
     skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose")
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider(issues=True)
     runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
     request=AgentExecutionRequest(agent_key=agent.key,skill_key=skill.key,objective="Compose",context={"business_context":"# PROPOSAL GUIDANCE JSON\n"+'{"sections":[{"name":"Technical approach"}]}'})
     result=await runtime.execute(request)
-    assert result.status is ExecutionStatus.FAILED
-    assert result.artifacts==[]
-    assert any(e["event_type"]=="proposal.section.revised" for e in await er.list_events(result.execution_id))
+    assert result.status is ExecutionStatus.COMPLETED
+    assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
+    events=await er.list_events(result.execution_id)
+    assert any(e["event_type"]=="proposal.section.revised" for e in events)
+    assert any(e["event_type"]=="proposal.global.review.corrected" for e in events)
+    assert result.usage.input_tokens==40
 
 
 @pytest.mark.asyncio
@@ -130,7 +133,7 @@ async def test_proposal_global_review_revises_only_affected_section():
     assert result.status is ExecutionStatus.COMPLETED
     assert "## Technical approach\n\nEvidence-backed revised body." in result.artifacts[0].content
     assert "## Executive summary\n\nEvidence-backed reviewed body." in result.artifacts[0].content
-    assert result.usage.input_tokens==70
+    assert result.usage.input_tokens==60
 
 
 def test_proposal_rejects_missing_or_invalid_guidance():
