@@ -233,7 +233,7 @@
       <label *ngIf="draft.generatePresentation"><span>Nombre de la presentación</span><input [(ngModel)]="draft.presentationName" placeholder="Si se deja vacío se usará el nombre de la oferta" /></label>
       <div class="section-title"><div><h3>Configuración IA</h3><p>Configuración de proveedor y modelos por fase.</p></div></div>
       <div class="form-grid two"><label><span>Proveedor</span><select [(ngModel)]="draft.provider"><option *ngFor="let p of (providerModels | keyvalue)">{{p.key}}</option></select></label><div class="provider-chip">{{draft.provider}}</div></div>
-      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Entendimiento'}, {k:'solution',l:'Solución'}, {k:'proposal',l:'Oferta'}, {k:'slides',l:'Presentación'}]"><span>{{item.l}}</span><select [(ngModel)]="draft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
+      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Entendimiento'}, {k:'solutionArchitecture',l:'Solución'}, {k:'deliveryPlanning',l:'Delivery'}, {k:'proposal',l:'Oferta'}, {k:'slidePlanning',l:'Hilo presentación'}, {k:'presentation',l:'Generación presentación'}]"><span>{{item.l}}</span><select [(ngModel)]="draft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
       <div class="section-title"><div><h3>Estructura de la oferta detallada</h3><p>El agente respetará el orden, profundidad e indicaciones de estas secciones.</p></div><button class="ghost small" (click)="addProposalSection()">＋ Añadir sección</button></div>
       <div class="proposal-sections-editor">
         <div class="proposal-section-row" *ngFor="let s of draft.proposalSections; let i = index">
@@ -273,7 +273,7 @@
         </div>
       </div>
       <div class="section-title"><div><h3>Modelos IA</h3><p>Se pueden ajustar antes de ejecutar fases pendientes o reintentos.</p></div></div>
-      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Entendimiento'}, {k:'solutionArchitecture',l:'Solución'}, {k:'deliveryPlanning',l:'Delivery'}, {k:'proposal',l:'Oferta'}, {k:'slidePlanning',l:'Presentación'}]"><span>{{item.l}}</span><select [(ngModel)]="configDraft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
+      <div class="model-grid"><label *ngFor="let item of [{k:'analysis',l:'Entendimiento'}, {k:'solutionArchitecture',l:'Solución'}, {k:'deliveryPlanning',l:'Delivery'}, {k:'proposal',l:'Oferta'}, {k:'slidePlanning',l:'Hilo presentación'}, {k:'presentation',l:'Generación presentación'}]"><span>{{item.l}}</span><select [(ngModel)]="configDraft.models[item.k]"><option *ngFor="let m of currentModels()">{{m}}</option></select></label></div>
     </div>
     <footer><button class="ghost" (click)="closeConfig()">Cancelar</button><button class="primary" (click)="saveConfig()">Guardar configuración</button></footer>
   </section>
