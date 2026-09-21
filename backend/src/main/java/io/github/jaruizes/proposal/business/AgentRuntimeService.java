@@ -46,10 +46,11 @@ public class AgentRuntimeService {
     }
 
     public LlmResult execute(AgentTask task, String model, String context, List<LlmRequest.Attachment> attachments) {
-        var checkpointKey=blankToNull(task.checkpointKey());
-        if(checkpointKey==null && platform instanceof AsyncAgentPlatformPort)
-            checkpointKey="auto:"+task.phase().name().toLowerCase(Locale.ROOT)+":"+task.agentKey()+":"+task.objective();
-        var fingerprint=checkpointKey==null?null:fingerprint(task,model,context,attachments);
+        var explicitCheckpointKey=blankToNull(task.checkpointKey());
+        final String checkpointKey=(explicitCheckpointKey==null && platform instanceof AsyncAgentPlatformPort)
+                ?"auto:"+task.phase().name().toLowerCase(Locale.ROOT)+":"+task.agentKey()+":"+task.objective()
+                :explicitCheckpointKey;
+        final String fingerprint=checkpointKey==null?null:fingerprint(task,model,context,attachments);
 
         if(checkpointKey!=null){
             var candidates=executions.findByOfferId(task.offerId()).stream()
