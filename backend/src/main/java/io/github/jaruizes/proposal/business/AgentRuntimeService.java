@@ -66,13 +66,12 @@ public class AgentRuntimeService {
                     .max(Comparator.comparing(AgentExecution::completedAt,Comparator.nullsLast(Comparator.naturalOrder())));
             if(reusable.isPresent()){
                 var source=reusable.get();
-                var now=Instant.now();
-                var reused=new AgentExecution(task.id(),task.offerId(),task.phase(),task.agentKey(),AgentTaskStatus.COMPLETED,
-                        task.objective(),source.output(),source.model(),0,0,
-                        "reused:"+source.id(),now,now,null,checkpointKey,fingerprint,source.id());
-                executions.save(reused);
+                // A checkpoint hit is control-flow reuse, not a new agent execution.
+                // Persisting a synthetic COMPLETED row on every phase re-entry created O(n²)
+                // "Reutilizado" history and made a handful of real model calls look like dozens.
                 meterRegistry.counter("proposal.agent.platform.requests","agent",task.agentKey(),"status","reused").increment();
-                return new LlmResult(source.output(),source.model()==null?model:source.model(),0,0,reused.providerRequestId());
+                return new LlmResult(source.output(),source.model()==null?model:source.model(),0,0,
+                        "reused:"+source.id());
             }
 
             var inFlight=candidates.stream()
