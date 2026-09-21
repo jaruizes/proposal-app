@@ -15,7 +15,7 @@ export class AppComponent {
   selectedArtifacts=computed(()=>this.phaseArtifacts(this.selectedPhase()));
   selectedArtifact=computed(()=>this.selectedArtifacts()[this.selectedArtifactIndex()]||this.selectedArtifacts()[0]);
   stats=computed(()=>{const items=this.svc.executions();return{total:items.length,working:items.filter(x=>x.overallStatus==='Trabajando').length,waiting:items.filter(x=>x.overallStatus==='Esperando aprobación').length};});
-  agentStats=computed(()=>{const items=this.svc.agentExecutions();return{running:items.filter(x=>x.status==='RUNNING').length,failed:items.filter(x=>x.status==='FAILED').length,input:items.reduce((sum,x)=>sum+(x.inputTokens||0),0),output:items.reduce((sum,x)=>sum+(x.outputTokens||0),0)};});
+  agentStats=computed(()=>{const items=this.svc.agentExecutions();return{running:items.filter(x=>x.status==='RUNNING').length,failed:items.filter(x=>x.status==='FAILED').length,input:items.reduce((sum,x)=>sum+(x.inputTokens||0),0),output:items.reduce((sum,x)=>sum+(x.outputTokens||0),0),cost:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.estimated_cost_usd||0),0),cacheRead:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.cache_read_tokens||0),0),cacheWrite:items.reduce((sum,x)=>sum+(x.telemetry?.execution_usage?.cache_write_tokens||0),0)};});
   latestFailedAgent=computed(()=>this.svc.agentExecutions().find(x=>x.status==='FAILED'));
   failedPhase=computed(()=>this.selected()?.phases.find(p=>p.status==='failed'));
   offerErrorMessage=computed(()=>this.latestFailedAgent()?.errorMessage||this.failedPhase()?.errorMessage||'');
@@ -69,6 +69,7 @@ export class AppComponent {
   regenerateDocuments(){const offer=this.selected();if(offer)this.svc.materializeDocuments(offer.id);}
   formatTokens(value:number){return new Intl.NumberFormat('es-ES').format(value||0);}
   formatCost(value:number|undefined){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:3,maximumFractionDigits:3}).format(value||0);}
+  executionUsage(agent:AgentExecutionTelemetry){return agent.telemetry?.execution_usage;}
   proposalSteps(agent:AgentExecutionTelemetry){return agent.telemetry?.proposal_step_usage||[];}
   proposalConsumed(agent:AgentExecutionTelemetry){return agent.telemetry?.proposal_consumed;}
   proposalBudget(agent:AgentExecutionTelemetry){return agent.telemetry?.proposal_budget;}
