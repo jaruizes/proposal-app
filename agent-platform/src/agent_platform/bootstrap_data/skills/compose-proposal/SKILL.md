@@ -43,7 +43,7 @@ Do not create one independent agent execution per section in normal-size proposa
 
 Only when context volume is too large for a safe coherent single generation, the SAME Business Analyst AgentExecution may use multiple internal model substeps:
 
-1. compact approved artifacts once;
+1. deterministically select the approved canonical artifacts relevant to each section;
 2. retrieve relevant reference patterns;
 3. draft a small number of bounded sections/blocks;
 4. use issues-only review;
@@ -51,7 +51,7 @@ Only when context volume is too large for a safe coherent single generation, the
 6. assemble the canonical proposal;
 7. perform one bounded global consistency review.
 
-Successful internal substeps are checkpointed and reusable across retries. No extra Business Analyst AgentExecution is created merely to compact or split the proposal.
+Successful internal substeps are checkpointed and reusable across retries. No extra Business Analyst AgentExecution is created merely to prepare context or split the proposal.
 
 Even in split mode, the result must read as one authored document, not a Frankenstein concatenation.
 
