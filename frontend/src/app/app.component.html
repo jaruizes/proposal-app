@@ -132,7 +132,7 @@
             <span class="eyebrow">OBSERVABILIDAD</span>
             <div class="agent-summary-title">
               <h2>Actividad de agentes</h2>
-              <span class="agent-count">{{svc.agentExecutions().length}} ejecuciones</span>
+              <span class="agent-count">{{visibleAgentExecutions().length}} ejecuciones</span>
               <span class="agent-live" *ngIf="agentStats().running">● {{agentStats().running}} trabajando</span>
             </div>
             <p *ngIf="!agentActivityExpanded()">Resumen de ejecución. Despliega para consultar cada agente, consumo y detalle técnico.</p>
@@ -149,9 +149,9 @@
         </button>
 
         <div class="agent-activity-body" *ngIf="agentActivityExpanded()">
-          <div class="agent-empty" *ngIf="svc.agentExecutions().length === 0">Todavía no hay ejecuciones de agentes registradas para esta oferta.</div>
-          <div class="agent-list compact-list" *ngIf="svc.agentExecutions().length > 0">
-            <article class="agent-item compact-agent" *ngFor="let agent of svc.agentExecutions()" [class.open]="agentExpanded(agent.id)">
+          <div class="agent-empty" *ngIf="visibleAgentExecutions().length === 0">Todavía no hay ejecuciones de agentes registradas para esta oferta.</div>
+          <div class="agent-list compact-list" *ngIf="visibleAgentExecutions().length > 0">
+            <article class="agent-item compact-agent" *ngFor="let agent of visibleAgentExecutions()" [class.open]="agentExpanded(agent.id)">
               <button class="agent-row" type="button" (click)="toggleAgent(agent.id)" [attr.aria-expanded]="agentExpanded(agent.id)">
                 <div class="agent-row-primary">
                   <span class="agent-dot" [ngClass]="agentStatusClass(agent.status)"></span>
