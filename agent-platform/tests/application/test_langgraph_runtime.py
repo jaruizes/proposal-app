@@ -106,7 +106,7 @@ class ProposalProvider:
 
 @pytest.mark.asyncio
 async def test_proposal_graph_preserves_configured_order_and_usage():
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider()
     runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
@@ -124,7 +124,7 @@ async def test_proposal_graph_preserves_configured_order_and_usage():
 
 @pytest.mark.asyncio
 async def test_proposal_global_review_corrects_issues_without_non_convergent_failure():
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider(issues=True)
     runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
@@ -140,7 +140,7 @@ async def test_proposal_global_review_corrects_issues_without_non_convergent_fai
 
 @pytest.mark.asyncio
 async def test_proposal_global_review_revises_only_affected_section():
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider(revise_once=True)
     runtime=LangGraphAgentRuntime(AgentRegistry(AgentRepo(agent),SkillRepo(skill)),SkillRegistry(SkillRepo(skill)),er,provider,checkpointer=MemorySaver())
@@ -195,7 +195,7 @@ class ProposalRetrievalService:
 
 @pytest.mark.asyncio
 async def test_proposal_graph_retrieves_section_reference_as_non_factual_context():
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider();retrieval=ProposalRetrievalService()
     runtime=LangGraphAgentRuntime(
@@ -229,7 +229,7 @@ async def test_proposal_graph_retrieves_section_reference_as_non_factual_context
 
 @pytest.mark.asyncio
 async def test_proposal_graph_falls_back_cleanly_when_no_reference_is_relevant():
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider();retrieval=ProposalRetrievalService()
     runtime=LangGraphAgentRuntime(
@@ -293,7 +293,7 @@ async def test_proposal_graph_serializes_db_bound_retrieval_and_event_persistenc
             finally:
                 self.active -= 1
 
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=GuardedExecutionRepo();provider=ProposalProvider();retrieval=GuardedRetrieval()
     runtime=LangGraphAgentRuntime(
@@ -361,7 +361,7 @@ def test_unknown_proposal_depth_falls_back_to_standard_budget():
 
 @pytest.mark.asyncio
 async def test_proposal_substeps_are_reused_across_new_execution_ids():
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider();cache=CacheService(InMemoryCacheProvider(),prefix="test")
     runtime=LangGraphAgentRuntime(
@@ -444,7 +444,7 @@ async def test_proposal_cost_budget_stops_additional_generation(monkeypatch):
     )
     monkeypatch.setattr(proposal_graph, "get_settings", lambda: guarded)
 
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider()
     runtime=LangGraphAgentRuntime(
@@ -481,7 +481,7 @@ async def test_proposal_single_mode_uses_one_model_call_and_keeps_coherent_docum
                 usage=ModelUsage(input_tokens=50, output_tokens=30),
             )
 
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=SinglePassProvider()
     runtime=LangGraphAgentRuntime(
@@ -520,7 +520,7 @@ async def test_proposal_single_mode_uses_one_business_analyst_generation():
                 usage=ModelUsage(input_tokens=20,output_tokens=10),
             )
 
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     provider=SinglePassProvider();er=ExecutionRepo()
     runtime=LangGraphAgentRuntime(
@@ -581,7 +581,7 @@ async def test_proposal_soft_output_budget_returns_valid_assembled_document(monk
     )
     monkeypatch.setattr(proposal_graph, "get_settings", lambda: guarded)
 
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider(issues=True)
     runtime=LangGraphAgentRuntime(
@@ -620,7 +620,7 @@ async def test_proposal_soft_output_budget_degrades_quality_but_completes(monkey
     )
     monkeypatch.setattr(proposal_graph, "get_settings", lambda: guarded)
 
-    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal")
+    skill=SkillDefinition(key="compose-proposal",name="Compose",objective="Proposal",instructions="Compose proposal",constraints={"execution":{"graph":"proposal"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     er=ExecutionRepo();provider=ProposalProvider()
     runtime=LangGraphAgentRuntime(
@@ -668,7 +668,7 @@ async def test_design_presentation_small_plan_completes_in_single_pass():
                 usage=ModelUsage(input_tokens=30,output_tokens=40),
             )
 
-    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan")
+    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan",constraints={"execution":{"graph":"presentation-plan"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     provider=SlideProvider();er=ExecutionRepo()
     runtime=LangGraphAgentRuntime(
@@ -721,7 +721,7 @@ async def test_design_presentation_truncated_single_pass_falls_back_to_bounded_s
                 )
             raise AssertionError("Unexpected presentation-plan prompt")
 
-    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan")
+    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan",constraints={"execution":{"graph":"presentation-plan"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     provider=AdaptiveSlideProvider();er=ExecutionRepo()
     runtime=LangGraphAgentRuntime(
@@ -768,7 +768,7 @@ async def test_design_presentation_large_proposal_routes_directly_to_split():
                 )
             raise AssertionError("Large proposal should not use single-pass slide generation")
 
-    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan")
+    skill=SkillDefinition(key="design-presentation",name="Slides",objective="Storyline",instructions="Create slides plan",constraints={"execution":{"graph":"presentation-plan"}})
     agent=AgentDefinition(key="business-analyst",name="BA",role="Writer",skills=[skill.key])
     provider=SplitSlideProvider();er=ExecutionRepo()
     runtime=LangGraphAgentRuntime(
