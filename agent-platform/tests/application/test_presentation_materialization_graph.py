@@ -264,3 +264,28 @@ def test_semantic_slide_plan_maps_texts_to_platform_owned_element_ids():
         {"templateElementObjectId": "title-1", "text": "Approved title"},
         {"templateElementObjectId": "body-1", "text": "Approved body"},
     ]
+
+
+def test_semantic_slide_plan_normalizes_legacy_elements_output():
+    inventory = json.dumps({
+        "slides": [{
+            "objectId": "template-slide-1",
+            "elements": [
+                {"objectId": "title-1", "kind": "shape", "text": "Template title"},
+                {"objectId": "body-1", "kind": "shape", "text": "Template body"},
+            ],
+        }]
+    })
+    legacy = json.dumps({
+        "templateSlideObjectId": "template-slide-1",
+        "elements": [
+            {"templateElementObjectId": "ignored-old-id", "text": "Approved title"},
+            {"templateElementObjectId": "another-old-id", "text": "Approved body"},
+        ],
+    })
+
+    semantic = _semantic_slide_plan(legacy, inventory)
+    assert semantic["elements"] == [
+        {"templateElementObjectId": "title-1", "text": "Approved title"},
+        {"templateElementObjectId": "body-1", "text": "Approved body"},
+    ]
