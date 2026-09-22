@@ -145,14 +145,14 @@ def test_semantic_slide_plan_rejects_synthetic_ids():
     })
     plan = json.dumps({
         "templateSlideObjectId": "SLIDE_5_NEW",
-        "elements": [{"templateElementObjectId": "title-1", "text": "Approved title"}],
+        "texts": ["Approved title"],
     })
 
     with pytest.raises(PresentationMaterializationError, match="Unknown template slide objectId"):
         _semantic_slide_plan(plan, inventory)
 
 
-def test_semantic_slide_plan_requires_all_populated_template_text_shapes():
+def test_semantic_slide_plan_requires_one_text_per_template_shape():
     inventory = json.dumps({
         "slides": [{
             "objectId": "template-slide-1",
@@ -164,10 +164,10 @@ def test_semantic_slide_plan_requires_all_populated_template_text_shapes():
     })
     plan = json.dumps({
         "templateSlideObjectId": "template-slide-1",
-        "elements": [{"templateElementObjectId": "title-1", "text": "Approved title"}],
+        "texts": ["Approved title"],
     })
 
-    with pytest.raises(PresentationMaterializationError, match="explicitly map or clear"):
+    with pytest.raises(PresentationMaterializationError, match="texts\[\] length"):
         _semantic_slide_plan(plan, inventory)
 
 
@@ -241,3 +241,26 @@ def test_large_template_compaction_preserves_element_ids():
     compact = json.loads(_compact_template(json.dumps(raw)))
     assert compact["slides"][0]["elements"][0]["objectId"] == "shape-0-0"
     assert compact["slides"][39]["elements"][23]["objectId"] == "shape-39-23"
+
+
+def test_semantic_slide_plan_maps_texts_to_platform_owned_element_ids():
+    inventory = json.dumps({
+        "slides": [{
+            "objectId": "template-slide-1",
+            "elements": [
+                {"objectId": "title-1", "kind": "shape", "text": "Template title"},
+                {"objectId": "body-1", "kind": "shape", "text": "Template body"},
+                {"objectId": "image-1", "kind": "image"},
+            ],
+        }]
+    })
+    plan = json.dumps({
+        "templateSlideObjectId": "template-slide-1",
+        "texts": ["Approved title", "Approved body"],
+    })
+
+    semantic = _semantic_slide_plan(plan, inventory)
+    assert semantic["elements"] == [
+        {"templateElementObjectId": "title-1", "text": "Approved title"},
+        {"templateElementObjectId": "body-1", "text": "Approved body"},
+    ]
