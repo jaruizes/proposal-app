@@ -27,6 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 3
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 4
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -340,7 +341,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
 
     async def generate_json(base: ModelRequest, instruction: str, stage: str, max_output_tokens: int = 4500) -> ModelResult:
         checkpoint = stable_cache_key({
-            "version": 3,
+            "version": PRESENTATION_MATERIALIZATION_CONTRACT_VERSION,
             "stage": stage,
             "model": base.model,
             "instruction": instruction,
@@ -550,6 +551,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
                 "presentation_url": url,
                 "materialization_chunks": len(data["chunks"]),
                 "mcp_owned_by_agent_platform": True,
+                "materialization_contract_version": PRESENTATION_MATERIALIZATION_CONTRACT_VERSION,
             },
         )
         await runtime._executions.add_event(execution.id, "presentation.materialization.completed", {
@@ -574,4 +576,5 @@ __all__ = [
     "add_presentation_materialization_nodes",
     "_split_slides_plan",
     "_compact_template",
+    "PRESENTATION_MATERIALIZATION_CONTRACT_VERSION",
 ]
