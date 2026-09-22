@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 1
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 13
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 14
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -321,11 +321,11 @@ def _operation_plan(content: str) -> list[dict[str, Any]]:
 def _semantic_slide_plan(content: str, template_inventory: str) -> dict[str, Any]:
     value = _extract_json_object(content)
     source_slide_id = str(value.get("templateSlideObjectId") or "").strip()
-    elements = value.get("elements")
+    texts = value.get("texts")
     if not source_slide_id:
         raise PresentationMaterializationError("Semantic slide plan requires templateSlideObjectId")
-    if not isinstance(elements, list):
-        raise PresentationMaterializationError("Semantic slide plan requires elements[]")
+    if not isinstance(texts, list) or not all(isinstance(item, str) for item in texts):
+        raise PresentationMaterializationError("Semantic slide plan requires texts[] as strings")
 
     try:
         inventory = json.loads(template_inventory)
@@ -335,41 +335,30 @@ def _semantic_slide_plan(content: str, template_inventory: str) -> dict[str, Any
     source = next((slide for slide in slides if slide.get("objectId") == source_slide_id), None)
     if source is None:
         raise PresentationMaterializationError(f"Unknown template slide objectId: {source_slide_id}")
-    allowed_elements = {
-        str(element.get("objectId")): element
+
+    text_shapes = [
+        element
         for element in (source.get("elements") or [])
-        if isinstance(element, dict) and element.get("objectId")
-    }
-
-    normalized_elements: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for element in elements:
-        if not isinstance(element, dict):
-            raise PresentationMaterializationError("Semantic slide elements[] must contain objects")
-        element_id = str(element.get("templateElementObjectId") or "").strip()
-        text = element.get("text")
-        if not element_id or element_id not in allowed_elements:
-            raise PresentationMaterializationError(f"Unknown template element objectId: {element_id}")
-        if allowed_elements[element_id].get("kind") != "shape":
-            raise PresentationMaterializationError(f"Template element is not a text shape: {element_id}")
-        if not isinstance(text, str):
-            raise PresentationMaterializationError(f"Semantic slide element {element_id} requires string text")
-        if element_id in seen:
-            raise PresentationMaterializationError(f"Duplicate semantic slide element: {element_id}")
-        seen.add(element_id)
-        normalized_elements.append({"templateElementObjectId": element_id, "text": text})
-
-    text_shape_ids = {
-        element_id for element_id, element in allowed_elements.items()
-        if element.get("kind") == "shape" and str(element.get("text") or "")
-    }
-    missing = sorted(text_shape_ids - seen)
-    if missing:
+        if isinstance(element, dict)
+        and element.get("kind") == "shape"
+        and element.get("objectId")
+    ]
+    if len(texts) != len(text_shapes):
         raise PresentationMaterializationError(
-            "Semantic slide plan must explicitly map or clear every populated template text shape: "
-            + ", ".join(missing)
+            f"Semantic slide plan texts[] length {len(texts)} does not match "
+            f"template text-shape count {len(text_shapes)} for slide {source_slide_id}"
         )
-    return {"templateSlideObjectId": source_slide_id, "elements": normalized_elements}
+
+    return {
+        "templateSlideObjectId": source_slide_id,
+        "elements": [
+            {
+                "templateElementObjectId": str(element["objectId"]),
+                "text": texts[index],
+            }
+            for index, element in enumerate(text_shapes)
+        ],
+    }
 
 
 def _parse_duplicate_result(raw: str) -> tuple[str, dict[str, str]]:
@@ -604,7 +593,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             retry = "" if attempt == 1 else (
                 "\n\n# RETRY AFTER OUTPUT FAILURE\n"
                 f"Previous attempt failed ({last_error}). Return ONLY the semantic JSON object. "
-                "Do not emit Google Slides API requests, synthetic object IDs, markdown or prose."
+                "Do not emit Google Slides API requests, element object IDs, synthetic object IDs, markdown or prose."
             )
             request = base.model_copy(update={
                 "messages": [ModelMessage(role=ModelRole.USER, content=instruction + retry)],
@@ -684,10 +673,10 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
                     "\"elements\":[{\"templateElementObjectId\":\"EXISTING_TEMPLATE_ELEMENT_ID\",\"text\":\"final visible text\"}]}.\n"
                     "This is a semantic rendering plan, NOT a Google Slides API plan. "
                     "Choose exactly one EXISTING slide objectId from the compact template inventory. "
-                    "Use ONLY element objectIds that belong to that chosen template slide. "
+                    "Do NOT return element objectIds: the platform owns element mapping. "
+                    "The texts[] array MUST contain exactly one string for every shape element of the chosen template slide, "
+                    "in the same order shown in that slide's elements[] inventory. Use an empty string to clear an unused shape. "
                     "Never invent object IDs. Never emit createSlide, duplicateObject, replaceAllText, batchUpdate or any MCP tool. "
-                    "For every populated text shape in the chosen template slide, include an elements[] entry: "
-                    "set its final approved text, or set text to empty string to clear unused template/example copy. "
                     "Preserve the approved slide title and narrative wording exactly; only map it onto the corporate pattern.\n\n"
                     f"# GLOBAL OUTLINE\n{data['outline']}\n\n"
                     f"# CURRENT APPROVED SLIDE {index}/{len(chunks)}\n{chunk}\n\n"
