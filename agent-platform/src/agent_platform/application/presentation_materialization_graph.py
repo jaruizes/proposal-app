@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 3
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 5
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 6
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -418,7 +418,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             except PresentationMaterializationError as exc:
                 if attempt == len(factors):
                     raise
-                last_error = "INVALID_AGENT_OUTPUT"
+                last_error = str(exc)[:1200] or "INVALID_AGENT_OUTPUT"
         raise AssertionError("unreachable")
 
     async def prepare(state: dict) -> dict:
