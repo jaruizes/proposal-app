@@ -72,14 +72,6 @@ async def get_cognitive_context_builder(retrieval_service:KnowledgeRetrievalServ
     settings=get_settings();return CognitiveContextBuilder(contributors=[ApplicationContextContributor(),AttachmentContextContributor(),MemoryContextContributor(memory_service),KnowledgeRetrievalContributor(retrieval_service,cache,cache_ttl_seconds=settings.cognitive_cache_ttl_seconds)])
 CognitiveContextBuilderDep=Annotated[CognitiveContextBuilder,Depends(get_cognitive_context_builder)]
 
-def get_agent_runtime(agents:AgentRegistryDep,skills:SkillRegistryDep,executions:ExecutionRepositoryDep,model_provider:ModelProviderDep,cognitive_context_builder:CognitiveContextBuilderDep,memory_service:MemoryServiceDep,cache:CacheServiceDep,retrieval_service:KnowledgeRetrievalServiceDep,tools:ToolRegistryDep)->AgentRuntime:
-    settings=get_settings()
-    common=dict(agents=agents,skills=skills,executions=executions,model_provider=model_provider,cognitive_context_builder=cognitive_context_builder,memory_service=memory_service,cache=cache,tool_registry=tools)
-    if settings.agent_runtime.lower()=="langgraph":
-        return LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url,proposal_retrieval_service=retrieval_service)
-    return AgentRuntime(**common)
-AgentRuntimeDep=Annotated[AgentRuntime,Depends(get_agent_runtime)]
-
 @lru_cache
 def get_mcp_registry()->McpRegistry:
     settings=get_settings();registry=McpRegistry()
@@ -93,3 +85,12 @@ def get_mcp_registry()->McpRegistry:
 @lru_cache
 def get_tool_registry()->ToolRegistry:return ToolRegistry(get_mcp_registry().tool_providers())
 McpRegistryDep=Annotated[McpRegistry,Depends(get_mcp_registry)];ToolRegistryDep=Annotated[ToolRegistry,Depends(get_tool_registry)]
+
+def get_agent_runtime(agents:AgentRegistryDep,skills:SkillRegistryDep,executions:ExecutionRepositoryDep,model_provider:ModelProviderDep,cognitive_context_builder:CognitiveContextBuilderDep,memory_service:MemoryServiceDep,cache:CacheServiceDep,retrieval_service:KnowledgeRetrievalServiceDep,tools:ToolRegistryDep)->AgentRuntime:
+    settings=get_settings()
+    common=dict(agents=agents,skills=skills,executions=executions,model_provider=model_provider,cognitive_context_builder=cognitive_context_builder,memory_service=memory_service,cache=cache,tool_registry=tools)
+    if settings.agent_runtime.lower()=="langgraph":
+        return LangGraphAgentRuntime(**common,checkpoint_database_url=settings.langgraph_checkpoint_database_url,proposal_retrieval_service=retrieval_service)
+    return AgentRuntime(**common)
+AgentRuntimeDep=Annotated[AgentRuntime,Depends(get_agent_runtime)]
+
