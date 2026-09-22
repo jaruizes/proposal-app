@@ -403,6 +403,16 @@ def _duplicate_object_ids(plan: dict[str, Any], slide_index: int) -> dict[str, s
     return mapping
 
 
+def _slide_move_steps(slide_ids: list[str]) -> list[tuple[str, int]]:
+    """Return single-slide moves in approved order.
+
+    Google Slides requires every multi-slide updateSlidesPosition request to list
+    slides in their *current* presentation order. Single-slide moves avoid that
+    constraint while still allowing us to establish the approved target order.
+    """
+    return [(slide_id, index) for index, slide_id in enumerate(slide_ids)]
+
+
 def _template_slide_ids(template_inventory: str) -> list[str]:
     try:
         inventory = json.loads(template_inventory)
@@ -787,7 +797,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             # inserted next to their source template slides. Move one slide at a time instead:
             # a single-ID request always satisfies Google's ordering constraint and produces
             # the deterministic approved order.
-            for insertion_index, slide_id in enumerate(generated_slide_ids):
+            for slide_id, insertion_index in _slide_move_steps(generated_slide_ids):
                 await _tool_text(runtime, execution, "slides_move_slides", {
                     "presentationId": presentation_id,
                     "slideObjectIds": [slide_id],
@@ -880,5 +890,6 @@ __all__ = [
     "_compact_template",
     "_extract_json_object",
     "_duplicate_object_ids",
+    "_slide_move_steps",
     "PRESENTATION_MATERIALIZATION_CONTRACT_VERSION",
 ]
