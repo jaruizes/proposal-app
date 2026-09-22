@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 1
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 15
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 16
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -781,11 +781,17 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
                 })
                 operation_count += 1
 
-            if generated_slide_ids:
+            # Google Slides requires slideObjectIds in each updateSlidesPosition request
+            # to already be in the presentation's current order. Our desired order is the
+            # approved plan order, which may differ because duplicated slides are initially
+            # inserted next to their source template slides. Move one slide at a time instead:
+            # a single-ID request always satisfies Google's ordering constraint and produces
+            # the deterministic approved order.
+            for insertion_index, slide_id in enumerate(generated_slide_ids):
                 await _tool_text(runtime, execution, "slides_move_slides", {
                     "presentationId": presentation_id,
-                    "slideObjectIds": generated_slide_ids,
-                    "insertionIndex": 0,
+                    "slideObjectIds": [slide_id],
+                    "insertionIndex": insertion_index,
                 })
                 operation_count += 1
         else:
