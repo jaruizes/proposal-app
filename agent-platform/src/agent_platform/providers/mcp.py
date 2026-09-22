@@ -25,6 +25,7 @@ class McpServerDefinition:
     cwd: str | None = None
     env: dict[str, str] = field(default_factory=dict)
     timeout_seconds: float = 30.0
+    max_message_bytes: int = 16 * 1024 * 1024
     enabled: bool = True
 
 
@@ -47,6 +48,7 @@ class McpStdioSession:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            limit=self._server.max_message_bytes,
         )
         try:
             result = await self.request(
@@ -116,6 +118,12 @@ class McpStdioSession:
             )
         except asyncio.TimeoutError as exc:
             raise McpProtocolError(f"MCP server '{self._server.key}' timed out") from exc
+        except (ValueError, asyncio.LimitOverrunError) as exc:
+            raise McpProtocolError(
+                f"MCP server '{self._server.key}' returned a message larger than "
+                f"{self._server.max_message_bytes} bytes. Increase the platform MCP message limit "
+                "or make the tool return a bounded/reference-based result."
+            ) from exc
         if not raw:
             code = await self._process.wait()
             raise McpProtocolError(f"MCP server '{self._server.key}' exited with code {code}")
