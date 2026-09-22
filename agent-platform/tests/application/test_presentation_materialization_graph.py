@@ -5,6 +5,7 @@ import pytest
 from agent_platform.application.presentation_materialization_graph import (
     PresentationMaterializationError,
     _compact_template,
+    _duplicate_object_ids,
     _extract_json_object,
     _operation_plan,
     _parse_duplicate_result,
@@ -171,11 +172,25 @@ def test_semantic_slide_plan_requires_all_populated_template_text_shapes():
 
 
 def test_parse_duplicate_result_returns_real_slide_and_element_mapping():
-    slide_id, mapping = _parse_duplicate_result(json.dumps([
-        {"duplicateObject": {
-            "objectId": "generated-slide-1",
-            "objectIds": {"title-1": "generated-title-1", "body-1": "generated-body-1"},
-        }}
-    ]))
+    slide_id, mapping = _parse_duplicate_result(json.dumps({
+        "objectId": "generated-slide-1",
+        "objectIds": {"title-1": "generated-title-1", "body-1": "generated-body-1"},
+    }))
     assert slide_id == "generated-slide-1"
     assert mapping["title-1"] == "generated-title-1"
+
+
+def test_duplicate_object_ids_are_platform_owned_and_deterministic():
+    plan = {
+        "templateSlideObjectId": "template-slide-1",
+        "elements": [
+            {"templateElementObjectId": "title-1", "text": "Title"},
+            {"templateElementObjectId": "body-1", "text": "Body"},
+        ],
+    }
+    mapping = _duplicate_object_ids(plan, 5)
+    assert mapping == {
+        "template-slide-1": "pf_s0005",
+        "title-1": "pf_s0005_e001",
+        "body-1": "pf_s0005_e002",
+    }
