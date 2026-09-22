@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 3
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 6
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 7
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -378,7 +378,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
                         "metadata": {"checkpoint_hit": True},
                     })
 
-        factors = (1.0, 0.65, 0.40)
+        factors = (1.0, 1.0, 1.0)
         last_error = "unknown"
         for attempt, factor in enumerate(factors, start=1):
             limit = max(900, int(max_output_tokens * factor))
