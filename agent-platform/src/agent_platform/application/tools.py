@@ -3,8 +3,11 @@ from __future__ import annotations
 import time
 from typing import Protocol
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError, ValidationError
+
 from agent_platform.application.observability import TOOL_CALLS, TOOL_LATENCY, timed_span
-from agent_platform.domain.tools import ToolCall, ToolDefinition, ToolResult
+from agent_platform.domain.tools import ToolCall, ToolDefinition, ToolError, ToolResult
 
 
 class ToolProvider(Protocol):
@@ -47,7 +50,37 @@ class ToolRegistry:
         tool,provider=entry;started=time.perf_counter()
         with timed_span("tool.invoke",tool=tool.key,provider=provider.provider_key):
             try:
+                validation_error=self._validation_error(tool,call.arguments)
+                if validation_error is not None:
+                    result=ToolResult(
+                        call_id=call.id,
+                        tool_key=call.tool_key,
+                        is_error=True,
+                        error=ToolError(
+                            code="TOOL_INPUT_VALIDATION_ERROR",
+                            message=validation_error,
+                            retryable=False,
+                            details={"provider":provider.provider_key},
+                        ),
+                        metadata={"provider":provider.provider_key,"validation":"platform-json-schema"},
+                    )
+                    TOOL_CALLS.labels(tool.key,provider.provider_key,"error").inc()
+                    return result
                 result=await provider.invoke(call);TOOL_CALLS.labels(tool.key,provider.provider_key,"error" if result.is_error else "ok").inc();return result
             except Exception:
                 TOOL_CALLS.labels(tool.key,provider.provider_key,"error").inc();raise
             finally:TOOL_LATENCY.labels(tool.key,provider.provider_key).observe(time.perf_counter()-started)
+
+    @staticmethod
+    def _validation_error(tool:ToolDefinition,arguments:dict)->str|None:
+        schema=tool.input_schema or {}
+        if not schema:return None
+        try:
+            Draft202012Validator.check_schema(schema)
+            errors=sorted(Draft202012Validator(schema).iter_errors(arguments),key=lambda e:list(e.absolute_path))
+        except SchemaError as exc:
+            raise ToolRegistryError(f"Invalid input schema for tool '{tool.key}': {exc.message}") from exc
+        if not errors:return None
+        error=errors[0]
+        location=".".join(str(item) for item in error.absolute_path) or "$"
+        return f"Invalid arguments for {tool.key} at {location}: {error.message}"
