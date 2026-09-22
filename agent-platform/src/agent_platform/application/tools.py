@@ -4,7 +4,7 @@ import time
 from typing import Protocol
 
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError, ValidationError
+from jsonschema.exceptions import SchemaError
 
 from agent_platform.application.observability import TOOL_CALLS, TOOL_LATENCY, timed_span
 from agent_platform.domain.tools import ToolCall, ToolDefinition, ToolError, ToolResult
