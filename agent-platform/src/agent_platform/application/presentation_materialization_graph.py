@@ -26,8 +26,8 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_replace_element_text",
     "slides_batch_update",
 }
-_MAX_SLIDES_PER_CHUNK = 3
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 7
+_MAX_SLIDES_PER_CHUNK = 1
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 8
 
 
 class PresentationMaterializationError(RuntimeError):
