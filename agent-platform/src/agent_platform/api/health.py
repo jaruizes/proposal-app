@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from agent_platform.api.dependencies import get_cache_service
+from agent_platform.application.presentation_materialization_graph import PRESENTATION_MATERIALIZATION_CONTRACT_VERSION
 from agent_platform.persistence.database import SessionFactory
 
 router = APIRouter(tags=["platform"])
@@ -13,7 +14,12 @@ router = APIRouter(tags=["platform"])
 @router.get("/health")
 @router.get("/health/live")
 async def live() -> dict:
-    return {"status": "ok", "service": "proposal-agent-platform", "version": "0.1.0"}
+    return {
+        "status": "ok",
+        "service": "proposal-agent-platform",
+        "version": "0.1.0",
+        "presentationMaterializationContractVersion": PRESENTATION_MATERIALIZATION_CONTRACT_VERSION,
+    }
 
 
 @router.get("/health/ready")
