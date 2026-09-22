@@ -92,6 +92,7 @@ services:
       GOOGLE_WORKSPACE_MCP_COMMAND: node
       GOOGLE_WORKSPACE_MCP_SCRIPT: /opt/mcp/google-workspace/dist/server.js
       GOOGLE_WORKSPACE_MCP_CWD: /opt/mcp/google-workspace
+      GOOGLE_WORKSPACE_MCP_MAX_MESSAGE_BYTES: ${GOOGLE_WORKSPACE_MCP_MAX_MESSAGE_BYTES:-16777216}
       GOOGLE_OAUTH_CREDENTIALS: /run/secrets/google/google-oauth-credentials.json
       GOOGLE_OAUTH_TOKEN: /run/secrets/google/google-token.json
     volumes:
