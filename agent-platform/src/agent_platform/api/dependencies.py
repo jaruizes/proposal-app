@@ -79,7 +79,7 @@ def get_mcp_registry()->McpRegistry:
         env={}
         if settings.google_oauth_credentials:env["GOOGLE_OAUTH_CREDENTIALS"]=settings.google_oauth_credentials
         if settings.google_oauth_token:env["GOOGLE_OAUTH_TOKEN"]=settings.google_oauth_token
-        registry.register(McpServerDefinition(key="google-workspace",command=settings.google_workspace_mcp_command,args=(settings.google_workspace_mcp_script,),cwd=settings.google_workspace_mcp_cwd,env=env,timeout_seconds=settings.google_workspace_mcp_timeout_seconds))
+        registry.register(McpServerDefinition(key="google-workspace",command=settings.google_workspace_mcp_command,args=(settings.google_workspace_mcp_script,),cwd=settings.google_workspace_mcp_cwd,env=env,timeout_seconds=settings.google_workspace_mcp_timeout_seconds,max_message_bytes=settings.google_workspace_mcp_max_message_bytes))
     return registry
 
 @lru_cache
