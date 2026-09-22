@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 1
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 10
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 11
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -367,6 +367,10 @@ def _parse_duplicate_result(raw: str) -> tuple[str, dict[str, str]]:
         node = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise PresentationMaterializationError("Slide duplication returned invalid JSON") from exc
+    if isinstance(node, dict) and node.get("objectId"):
+        mapping_raw = node.get("objectIds") or {}
+        mapping = {str(k): str(v) for k, v in mapping_raw.items()} if isinstance(mapping_raw, dict) else {}
+        return str(node["objectId"]), mapping
     replies = node if isinstance(node, list) else node.get("replies", []) if isinstance(node, dict) else []
     for reply in replies:
         duplicate = reply.get("duplicateObject") if isinstance(reply, dict) else None
@@ -378,6 +382,15 @@ def _parse_duplicate_result(raw: str) -> tuple[str, dict[str, str]]:
         if slide_id:
             return slide_id, mapping
     raise PresentationMaterializationError("Slide duplication returned no duplicated slide objectId")
+
+
+def _duplicate_object_ids(plan: dict[str, Any], slide_index: int) -> dict[str, str]:
+    source_slide_id = str(plan["templateSlideObjectId"])
+    slide_id = f"pf_s{slide_index:04d}"
+    mapping = {source_slide_id: slide_id}
+    for element_index, element in enumerate(plan["elements"], start=1):
+        mapping[str(element["templateElementObjectId"])] = f"{slide_id}_e{element_index:03d}"
+    return mapping
 
 
 def _template_slide_ids(template_inventory: str) -> list[str]:
@@ -715,11 +728,19 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             generated_slide_ids: list[str] = []
             operation_count = 0
             for plan_index, plan in enumerate(semantic_plans, start=1):
+                requested_object_ids = _duplicate_object_ids(plan, plan_index)
                 duplicate_raw = await _tool_text(runtime, execution, "slides_duplicate_slide", {
                     "presentationId": presentation_id,
                     "slideObjectId": plan["templateSlideObjectId"],
+                    "objectIds": requested_object_ids,
                 })
-                duplicated_slide_id, object_id_map = _parse_duplicate_result(duplicate_raw)
+                duplicated_slide_id, returned_object_ids = _parse_duplicate_result(duplicate_raw)
+                object_id_map = {**requested_object_ids, **returned_object_ids}
+                expected_slide_id = requested_object_ids[plan["templateSlideObjectId"]]
+                if duplicated_slide_id != expected_slide_id:
+                    raise PresentationMaterializationError(
+                        f"Slide duplication returned unexpected objectId {duplicated_slide_id}; expected {expected_slide_id}"
+                    )
                 generated_slide_ids.append(duplicated_slide_id)
                 operation_count += 1
 
@@ -839,5 +860,6 @@ __all__ = [
     "_split_slides_plan",
     "_compact_template",
     "_extract_json_object",
+    "_duplicate_object_ids",
     "PRESENTATION_MATERIALIZATION_CONTRACT_VERSION",
 ]
