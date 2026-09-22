@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 3
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 4
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 5
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -266,6 +266,18 @@ def _operation_plan(content: str) -> list[dict[str, Any]]:
     return normalized
 
 
+async def _validate_registry_operations(runtime, operations: list[dict[str, Any]]) -> None:
+    if runtime._tools is None:
+        raise PresentationMaterializationError("Agent Platform ToolRegistry is not configured")
+    for operation in operations:
+        arguments = _replace_presentation_id(operation["arguments"], "$PRESENTATION_ID")
+        if "presentationId" not in arguments:
+            arguments["presentationId"] = "$PRESENTATION_ID"
+        error = await runtime._tools.validate_arguments(operation["tool"], arguments)
+        if error is not None:
+            raise PresentationMaterializationError(error)
+
+
 async def _tool_text(runtime, execution, tool_key: str, arguments: dict[str, Any]) -> str:
     if runtime._tools is None:
         raise PresentationMaterializationError("Agent Platform ToolRegistry is not configured")
@@ -351,7 +363,8 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             if cached is not None:
                 cached_result = ModelResult.model_validate(cached)
                 try:
-                    _operation_plan(cached_result.content)
+                    cached_operations = _operation_plan(cached_result.content)
+                    await _validate_registry_operations(runtime, cached_operations)
                 except PresentationMaterializationError:
                     await runtime._executions.add_event(execution.id, "presentation.materialization.step.cache_rejected", {
                         "stage": stage,
@@ -382,7 +395,8 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             try:
                 with timed_span("langgraph.presentation-materialization.model", stage=stage, attempt=attempt):
                     result = await runtime._model_provider.generate(request)
-                _operation_plan(result.content)
+                operations = _operation_plan(result.content)
+                await _validate_registry_operations(runtime, operations)
                 calls.append(result)
                 if runtime._cache is not None:
                     await runtime._cache.set_json(
@@ -490,6 +504,8 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
         # Validate all planned calls before creating/copying the presentation so malformed
         # agent output cannot leave a partial artifact behind.
         validated_plans = [_operation_plan(raw_plan) for raw_plan in data["operation_plans"]]
+        for operations in validated_plans:
+            await _validate_registry_operations(runtime, operations)
 
         if template_id:
             args: dict[str, Any] = {"fileId": template_id, "newName": document_name}
