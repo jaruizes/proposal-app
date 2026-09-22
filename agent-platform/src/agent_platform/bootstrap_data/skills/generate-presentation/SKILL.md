@@ -38,6 +38,12 @@ Spring must not split slides, interpret Google Slides operations or call MCP.
 2. corporate template — visual/layout authority;
 3. previous presentations from RAG — style reference only.
 
+## Materialization contract
+
+For corporate-template rendering, the model MUST NOT generate raw Google Slides API requests, MCP calls, synthetic object IDs or `batchUpdate` payloads. The model selects one existing corporate template slide pattern and maps approved visible text onto existing template element IDs. Agent Platform performs duplication, resolves the real duplicated object IDs returned by Google Slides, applies text changes, removes template/sample slides and orders the generated deck.
+
+This keeps Google Slides object lifecycle and API mechanics deterministic and owned by Agent Platform rather than by the LLM or Spring.
+
 ## Tool policy
 
 The graph may use only the Google Workspace tools required for presentation materialization, including:
