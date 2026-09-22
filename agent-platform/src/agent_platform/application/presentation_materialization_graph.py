@@ -243,11 +243,53 @@ def _validate_operation_arguments(tool: str, arguments: dict[str, Any]) -> None:
             raise PresentationMaterializationError("slides_batch_update requests[] must contain non-empty objects")
 
 
-def _operation_plan(content: str) -> list[dict[str, Any]]:
+def _extract_json_object(content: str) -> dict[str, Any]:
+    raw = (content or "").strip()
+    if not raw:
+        raise PresentationMaterializationError("Presentation materialization returned empty output")
     try:
-        value = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise PresentationMaterializationError("Presentation materialization returned invalid JSON") from exc
+        value = json.loads(raw)
+        if isinstance(value, dict):
+            return value
+    except json.JSONDecodeError:
+        pass
+
+    start = raw.find("{")
+    if start < 0:
+        raise PresentationMaterializationError("Presentation materialization returned invalid JSON")
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(raw)):
+        ch = raw[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = raw[start:index + 1]
+                try:
+                    value = json.loads(candidate)
+                except json.JSONDecodeError as exc:
+                    raise PresentationMaterializationError("Presentation materialization returned invalid JSON") from exc
+                if not isinstance(value, dict):
+                    raise PresentationMaterializationError("Presentation materialization JSON must be an object")
+                return value
+    raise PresentationMaterializationError("Presentation materialization returned incomplete JSON")
+
+
+def _operation_plan(content: str) -> list[dict[str, Any]]:
+    value = _extract_json_object(content)
     operations = value.get("operations") if isinstance(value, dict) else None
     if not isinstance(operations, list):
         raise PresentationMaterializationError("Presentation operation plan must contain operations[]")
@@ -592,5 +634,6 @@ __all__ = [
     "add_presentation_materialization_nodes",
     "_split_slides_plan",
     "_compact_template",
+    "_extract_json_object",
     "PRESENTATION_MATERIALIZATION_CONTRACT_VERSION",
 ]
