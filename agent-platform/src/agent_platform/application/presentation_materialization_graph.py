@@ -198,6 +198,50 @@ def _replace_presentation_id(value: Any, presentation_id: str) -> Any:
     return value
 
 
+def _validate_operation_arguments(tool: str, arguments: dict[str, Any]) -> None:
+    """Validate platform-owned MCP contracts before any external side effect."""
+    def require_string(name: str) -> None:
+        value = arguments.get(name)
+        if not isinstance(value, str) or not value.strip():
+            raise PresentationMaterializationError(f"{tool} requires non-empty {name}")
+
+    def require_list(name: str) -> list[Any]:
+        value = arguments.get(name)
+        if not isinstance(value, list) or not value:
+            raise PresentationMaterializationError(f"{tool} requires non-empty {name}[]")
+        return value
+
+    if tool in {"slides_duplicate_slide", "slides_delete_slide"}:
+        require_string("slideObjectId")
+    elif tool == "slides_move_slides":
+        slide_ids = require_list("slideObjectIds")
+        if not all(isinstance(item, str) and item.strip() for item in slide_ids):
+            raise PresentationMaterializationError("slides_move_slides slideObjectIds[] must contain non-empty strings")
+        insertion_index = arguments.get("insertionIndex")
+        if not isinstance(insertion_index, int) or isinstance(insertion_index, bool) or insertion_index < 0:
+            raise PresentationMaterializationError("slides_move_slides requires insertionIndex >= 0")
+    elif tool == "slides_replace_text":
+        page_ids = require_list("pageObjectIds")
+        if not all(isinstance(item, str) and item.strip() for item in page_ids):
+            raise PresentationMaterializationError("slides_replace_text pageObjectIds[] must contain non-empty strings")
+        replacements = require_list("replacements")
+        for replacement in replacements:
+            if not isinstance(replacement, dict):
+                raise PresentationMaterializationError("slides_replace_text replacements[] must contain objects")
+            if not isinstance(replacement.get("from"), str) or not isinstance(replacement.get("to"), str):
+                raise PresentationMaterializationError("slides_replace_text replacements[] requires string from/to")
+            if not isinstance(replacement.get("matchCase", True), bool):
+                raise PresentationMaterializationError("slides_replace_text replacements[].matchCase must be boolean")
+    elif tool == "slides_replace_element_text":
+        require_string("elementObjectId")
+        if not isinstance(arguments.get("text"), str):
+            raise PresentationMaterializationError("slides_replace_element_text requires string text")
+    elif tool == "slides_batch_update":
+        requests = require_list("requests")
+        if not all(isinstance(item, dict) and item for item in requests):
+            raise PresentationMaterializationError("slides_batch_update requests[] must contain non-empty objects")
+
+
 def _operation_plan(content: str) -> list[dict[str, Any]]:
     try:
         value = json.loads(content)
@@ -216,6 +260,7 @@ def _operation_plan(content: str) -> list[dict[str, Any]]:
         arguments = operation.get("arguments") or {}
         if not isinstance(arguments, dict):
             raise PresentationMaterializationError(f"Arguments for {tool} must be an object")
+        _validate_operation_arguments(tool, arguments)
         normalized.append({"tool": tool, "arguments": arguments})
     return normalized
 
@@ -295,7 +340,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
 
     async def generate_json(base: ModelRequest, instruction: str, stage: str, max_output_tokens: int = 4500) -> ModelResult:
         checkpoint = stable_cache_key({
-            "version": 2,
+            "version": 3,
             "stage": stage,
             "model": base.model,
             "instruction": instruction,
@@ -303,12 +348,21 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
         if runtime._cache is not None:
             cached = await runtime._cache.get_json("presentation-materialization-step", checkpoint)
             if cached is not None:
-                await runtime._executions.add_event(execution.id, "presentation.materialization.step.reused", {"stage": stage})
-                return ModelResult.model_validate(cached).model_copy(update={
-                    "usage": ModelUsage(),
-                    "provider_request_id": None,
-                    "metadata": {"checkpoint_hit": True},
-                })
+                cached_result = ModelResult.model_validate(cached)
+                try:
+                    _operation_plan(cached_result.content)
+                except PresentationMaterializationError:
+                    await runtime._executions.add_event(execution.id, "presentation.materialization.step.cache_rejected", {
+                        "stage": stage,
+                        "reason": "invalid_tool_contract",
+                    })
+                else:
+                    await runtime._executions.add_event(execution.id, "presentation.materialization.step.reused", {"stage": stage})
+                    return cached_result.model_copy(update={
+                        "usage": ModelUsage(),
+                        "provider_request_id": None,
+                        "metadata": {"checkpoint_hit": True},
+                    })
 
         factors = (1.0, 0.65, 0.40)
         last_error = "unknown"
@@ -405,6 +459,10 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
                 "Global slide order and exact titles are frozen. Never modify slides outside this chunk. "
                 "Reuse the compact corporate template inventory where useful. If no pattern fits, use "
                 "slides_batch_update createSlide/createShape/insertText. Prefer compact batchUpdate requests. "
+                "Tool argument contracts are strict: duplicate/delete={slideObjectId}; move={slideObjectIds[],insertionIndex}; "
+                "replace_text={pageObjectIds[],replacements:[{from,to,matchCase}]}; "
+                "replace_element_text={elementObjectId,text}; batch_update={requests[]}. "
+                "presentationId may be omitted because the platform injects it. "
                 "Do not rewrite approved narrative copy.\n\n"
                 f"# GLOBAL OUTLINE\n{data['outline']}\n\n"
                 f"# CURRENT CHUNK {index}/{len(chunks)}\n{chunk}\n\n"
@@ -428,6 +486,10 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
         folder_id = _drive_id(str(config.get("outputFolder") or ""))
         document_name = str(config.get("presentationName") or "Generated presentation").strip()
 
+        # Validate all planned calls before creating/copying the presentation so malformed
+        # agent output cannot leave a partial artifact behind.
+        validated_plans = [_operation_plan(raw_plan) for raw_plan in data["operation_plans"]]
+
         if template_id:
             args: dict[str, Any] = {"fileId": template_id, "newName": document_name}
             if folder_id:
@@ -444,8 +506,8 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             })
 
         operation_count = 0
-        for raw_plan in data["operation_plans"]:
-            for operation in _operation_plan(raw_plan):
+        for operations in validated_plans:
+            for operation in operations:
                 arguments = _replace_presentation_id(operation["arguments"], presentation_id)
                 if "presentationId" not in arguments:
                     arguments["presentationId"] = presentation_id
