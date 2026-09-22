@@ -1,6 +1,13 @@
 import json
 
-from agent_platform.application.presentation_materialization_graph import _compact_template, _split_slides_plan
+import pytest
+
+from agent_platform.application.presentation_materialization_graph import (
+    PresentationMaterializationError,
+    _compact_template,
+    _operation_plan,
+    _split_slides_plan,
+)
 
 
 def test_split_slides_plan_is_internal_and_bounded():
@@ -78,3 +85,34 @@ def test_template_compaction_keeps_mcp_payload_small():
     assert "slide-0" in compact
     assert "shape-0-0" in compact
     assert '"heavy"' not in compact
+
+
+def test_operation_plan_rejects_replace_text_without_required_contract_fields():
+    content = json.dumps({
+        "operations": [
+            {
+                "tool": "slides_replace_text",
+                "arguments": {"presentationId": "$PRESENTATION_ID"},
+            }
+        ]
+    })
+
+    with pytest.raises(PresentationMaterializationError, match=r"pageObjectIds"):
+        _operation_plan(content)
+
+
+def test_operation_plan_accepts_replace_text_contract_without_presentation_id():
+    content = json.dumps({
+        "operations": [
+            {
+                "tool": "slides_replace_text",
+                "arguments": {
+                    "pageObjectIds": ["slide-1"],
+                    "replacements": [{"from": "Old", "to": "New", "matchCase": True}],
+                },
+            }
+        ]
+    })
+
+    operations = _operation_plan(content)
+    assert operations[0]["arguments"]["pageObjectIds"] == ["slide-1"]
