@@ -52,3 +52,36 @@ async def test_tool_registry_rejects_duplicate_tool_keys() -> None:
 
     with pytest.raises(ToolRegistryError, match="Duplicate tool key"):
         await registry.refresh()
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_rejects_invalid_arguments_before_provider_call() -> None:
+    provider = FakeProvider(
+        "fake",
+        [ToolDefinition(
+            key="slides_replace_text",
+            name="Replace text",
+            provider="fake",
+            input_schema={
+                "type": "object",
+                "required": ["presentationId", "pageObjectIds", "replacements"],
+                "properties": {
+                    "presentationId": {"type": "string"},
+                    "pageObjectIds": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                    "replacements": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+                },
+            },
+        )],
+    )
+    registry = ToolRegistry([provider])
+
+    result = await registry.invoke(ToolCall(
+        tool_key="slides_replace_text",
+        arguments={"presentationId": "presentation-1"},
+    ))
+
+    assert result.is_error is True
+    assert result.error is not None
+    assert result.error.code == "TOOL_INPUT_VALIDATION_ERROR"
+    assert "pageObjectIds" in result.error.message or "replacements" in result.error.message
+    assert provider.calls == []
