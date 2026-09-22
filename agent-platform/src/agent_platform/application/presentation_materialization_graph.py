@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 1
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 14
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 15
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -322,10 +322,21 @@ def _semantic_slide_plan(content: str, template_inventory: str) -> dict[str, Any
     value = _extract_json_object(content)
     source_slide_id = str(value.get("templateSlideObjectId") or "").strip()
     texts = value.get("texts")
+    if texts is None and isinstance(value.get("elements"), list):
+        texts = [
+            str(item.get("text") or "") if isinstance(item, dict) else str(item or "")
+            for item in value["elements"]
+        ]
     if not source_slide_id:
         raise PresentationMaterializationError("Semantic slide plan requires templateSlideObjectId")
-    if not isinstance(texts, list) or not all(isinstance(item, str) for item in texts):
-        raise PresentationMaterializationError("Semantic slide plan requires texts[] as strings")
+    if not isinstance(texts, list):
+        raise PresentationMaterializationError("Semantic slide plan requires texts[]")
+    texts = [
+        item if isinstance(item, str)
+        else str(item.get("text") or "") if isinstance(item, dict)
+        else str(item or "")
+        for item in texts
+    ]
 
     try:
         inventory = json.loads(template_inventory)
