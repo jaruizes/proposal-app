@@ -1,13 +1,13 @@
 ---
 name: generate-presentation
-description: Materialize the approved slides-plan.md into the final corporate presentation without changing the approved narrative.
+description: Materialize approved slides-plan.md into the final corporate presentation through Agent Platform MCP tools.
 ---
 
 # Generate Presentation
 
 Owner: **Business Analyst / Offer Owner**
 
-The Business Analyst owns the approved presentation content. The deterministic application layer applies the corporate template and executes bounded operation plans.
+This skill is executed as **one AgentExecution**. Internal chunking, model calls, Google Workspace MCP calls and checkpoints are owned by Agent Platform/LangGraph and are invisible to the business workflow.
 
 ## Preconditions
 
@@ -15,51 +15,62 @@ Require:
 
 - approved `slides-plan.md`;
 - presentation output configuration;
-- optional corporate presentation template.
+- optional corporate presentation template ID.
+
+## Execution graph
+
+`presentation-materialization`:
+
+1. read the approved slide plan and materialization configuration;
+2. inspect the corporate template with the Agent Platform Google Workspace MCP provider;
+3. choose bounded internal slide chunks;
+4. generate operation plans per chunk with checkpoints and truncation recovery;
+5. only after all planning succeeds, copy/create the target Google Slides file;
+6. execute Slides/Drive MCP tools;
+7. inspect the generated structure;
+8. return the final presentation metadata/report as the execution artifact.
+
+Spring must not split slides, interpret Google Slides operations or call MCP.
 
 ## Authority hierarchy
 
 1. approved `slides-plan.md` — narrative, hierarchy, titles and content intent;
 2. corporate template — visual/layout authority;
-3. relevant previous presentations from RAG — style/pattern reference only.
+3. previous presentations from RAG — style reference only.
 
-## Execution model
+## Tool policy
 
-Presentation materialization is **chunked and checkpointable**.
+The graph may use only the Google Workspace tools required for presentation materialization, including:
 
-- The application splits the frozen slide plan into small, structurally valid chunks.
-- Each chunk is a standard `AgentExecution` using the same process-agnostic Spring ↔ Agent Platform protocol.
-- A chunk must materialize only its assigned slides.
-- Completed chunks are checkpointed and reused after retries.
-- All cognitive planning finishes **before** the application creates/copies or mutates the target Google Slides file.
-- The final side-effect phase applies the validated operation batches in order.
-- Post-build QA is deterministic structural inspection; the current text-only transport must not claim visual thumbnail inspection.
+- `slides_get_presentation`;
+- `slides_create_presentation`;
+- `slides_duplicate_slide`;
+- `slides_delete_slide`;
+- `slides_move_slides`;
+- `slides_replace_text`;
+- `slides_replace_element_text`;
+- `slides_batch_update`;
+- `drive_copy_file`;
+- `drive_move_file`.
 
-## Rules
+The original template is never edited directly.
 
-- Preserve approved section hierarchy, global slide order, titles and primary messages.
-- Do not invent new commercial or technical commitments.
-- Do not rewrite approved narrative copy.
-- Never edit the corporate template itself; copy it first.
-- Use `$PRESENTATION_ID` as the target placeholder in operation plans.
-- Return only the declared JSON operation contract.
-- Keep every chunk bounded; do not emit operations for slides outside the assigned chunk.
+## Output
 
-## Operation output contract
+Return one complete JSON object:
 
 ```json
 {
-  "operations": [
-    {
-      "tool": "slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|slides_replace_element_text|slides_batch_update",
-      "arguments": {}
-    }
-  ]
+  "externalId": "...",
+  "url": "https://docs.google.com/presentation/d/.../edit",
+  "buildReport": {
+    "templateId": "...",
+    "renderingMode": "corporate-template|blank",
+    "operationCount": 0,
+    "chunks": 0,
+    "structuralQa": "..."
+  }
 }
 ```
 
-## Outputs
-
-- final Google Slides/PPTX-equivalent presentation;
-- `presentation-build-report.md`;
-- presentation metadata/URL.
+The number of internal chunks/model calls is an Agent Platform implementation detail, not a Spring workflow concern.
