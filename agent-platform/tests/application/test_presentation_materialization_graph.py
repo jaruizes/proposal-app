@@ -10,6 +10,7 @@ from agent_platform.application.presentation_materialization_graph import (
     _operation_plan,
     _parse_duplicate_result,
     _semantic_slide_plan,
+    _slide_move_steps,
     _split_slides_plan,
 )
 
@@ -288,4 +289,12 @@ def test_semantic_slide_plan_normalizes_legacy_elements_output():
     assert semantic["elements"] == [
         {"templateElementObjectId": "title-1", "text": "Approved title"},
         {"templateElementObjectId": "body-1", "text": "Approved body"},
+    ]
+
+
+def test_slide_move_steps_use_single_slide_requests_in_approved_order():
+    assert _slide_move_steps(["pf_s0001", "pf_s0002", "pf_s0003"]) == [
+        ("pf_s0001", 0),
+        ("pf_s0002", 1),
+        ("pf_s0003", 2),
     ]
