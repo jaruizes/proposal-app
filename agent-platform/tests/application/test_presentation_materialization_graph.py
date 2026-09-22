@@ -194,3 +194,50 @@ def test_duplicate_object_ids_are_platform_owned_and_deterministic():
         "title-1": "pf_s0005_e001",
         "body-1": "pf_s0005_e002",
     }
+
+
+def test_compact_template_understands_mcp_summarized_elements():
+    raw = json.dumps({
+        "presentationId": "template-1",
+        "slides": [{
+            "objectId": "slide-1",
+            "pageElements": [{
+                "objectId": "title-1",
+                "type": "shape",
+                "text": "Template title",
+                "shapeType": "TEXT_BOX",
+            }],
+        }],
+        "layouts": [],
+        "masters": [],
+    })
+    compact = json.loads(_compact_template(raw))
+    element = compact["slides"][0]["elements"][0]
+    assert element["kind"] == "shape"
+    assert element["text"] == "Template title"
+    assert element["objectId"] == "title-1"
+
+
+def test_large_template_compaction_preserves_element_ids():
+    raw = {
+        "presentationId": "template-1",
+        "slides": [],
+        "layouts": [],
+        "masters": [],
+    }
+    for slide_index in range(40):
+        raw["slides"].append({
+            "objectId": f"slide-{slide_index}",
+            "pageElements": [
+                {
+                    "objectId": f"shape-{slide_index}-{element_index}",
+                    "type": "shape",
+                    "text": "x" * 500,
+                    "shapeType": "TEXT_BOX",
+                }
+                for element_index in range(24)
+            ],
+        })
+    compact = json.loads(_compact_template(json.dumps(raw)))
+    assert compact["slides"][0]["elements"][0]["objectId"] == "shape-0-0"
+    assert compact["slides"][39]["elements"][23]["objectId"] == "shape-39-23"
