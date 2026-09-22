@@ -12,8 +12,10 @@ Angular UI
 Spring Boot ProposalFlow
  ├─ PostgreSQL application state
  ├─ NATS JetStream ───────────────→ Agent Platform
- ├─ Google Workspace MCP           ├─ LangGraph
- └─ Document Renderer              ├─ Anthropic
+ └─ Document Renderer              ├─ LangGraph
+                                   ├─ Anthropic
+                                   ├─ MCP ToolRegistry
+                                   │   └─ Google Workspace MCP
                                    ├─ PostgreSQL + pgvector
                                    └─ Valkey
 ```
@@ -51,7 +53,12 @@ SLIDE_PLAN (optional)
 
 PRESENTATION (optional)
   Generación de presentación
-  Business Analyst + deterministic Google Slides materialization
+  Business Analyst
+  → one AgentExecution
+      → presentation-materialization LangGraph
+          → internal bounded model calls
+          → Google Workspace MCP tool calls
+          → final Google Slides artifact
 ```
 
 ## Evidence authority
@@ -105,7 +112,8 @@ Large-mode substeps are checkpointed in Valkey and reused across retries. Refere
 - Spring → Agent Platform execution: NATS JetStream commands/events.
 - Spring → Agent Platform management/query: HTTP when appropriate.
 - Spring → document-renderer: HTTP.
-- Spring → Google Workspace: MCP stdio.
+- Agent Platform → Google Workspace: MCP stdio through the platform ToolRegistry.
+- Spring never calls MCP directly.
 
 ## Persistence boundaries
 
@@ -179,6 +187,8 @@ GraphRegistry
         ├── resilient-single
         ├── proposal
         ├── presentation-plan
+        ├── presentation-materialization
+        ├── source-ingestion
         └── future registered graphs
 ```
 
@@ -245,3 +255,28 @@ Business semantics belong to the Skill and artifact content/metadata, not to the
 Large documents and binaries must be externalized and referenced by URI. NATS transports commands/events and lightweight descriptors, not document payloads.
 
 Output validation is also platform-wide. The declared `constraints.output_format` is validated by the common runtime. Recoverable failures such as provider truncation or incomplete JSON/Markdown are retried according to the Skill execution policy before a terminal failure is emitted.
+
+
+## MCP ownership boundary
+
+MCP is an Agent Platform capability, not an application/backend capability.
+
+```text
+Spring business workflow
+        │
+        │ AgentExecutionCommandV1
+        ▼
+      NATS
+        ▼
+Agent Platform
+        │
+        ├─ Skill
+        ├─ LangGraph
+        ├─ Tool policy
+        └─ ToolRegistry
+              │
+              └─ MCP providers
+                    └─ Google Workspace
+```
+
+The Spring backend contains no MCP client, no Google Workspace tool gateway and no presentation/tool chunking. Source ingestion and presentation materialization are each one business-visible AgentExecution; any internal tool calls, chunking, retries or checkpoints are private Agent Platform implementation details.
