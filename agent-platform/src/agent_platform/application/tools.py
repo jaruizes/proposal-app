@@ -43,6 +43,13 @@ class ToolRegistry:
     async def get(self,tool_key):
         if tool_key not in self._tools:await self.refresh()
         entry=self._tools.get(tool_key);return entry[0] if entry else None
+    async def validate_arguments(self,tool_key:str,arguments:dict)->str|None:
+        if tool_key not in self._tools:await self.refresh()
+        entry=self._tools.get(tool_key)
+        if entry is None:raise ToolRegistryError(f"Unknown tool: {tool_key}")
+        tool,_=entry
+        return self._validation_error(tool,arguments)
+
     async def invoke(self,call):
         if call.tool_key not in self._tools:await self.refresh()
         entry=self._tools.get(call.tool_key)
