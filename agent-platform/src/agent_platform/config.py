@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     api_key_enabled:bool=False;api_key:str|None=None;protect_metrics:bool=False
     max_request_body_bytes:int=Field(default=30*1024*1024,ge=1024);rate_limit_enabled:bool=True;rate_limit_requests_per_minute:int=Field(default=240,ge=1)
     database_pool_size:int=Field(default=10,ge=1,le=100);database_max_overflow:int=Field(default=20,ge=0,le=200);database_pool_recycle_seconds:int=Field(default=1800,ge=60)
-    google_workspace_mcp_enabled:bool=True;google_workspace_mcp_command:str="node";google_workspace_mcp_script:str="/opt/mcp/google-workspace/dist/server.js";google_workspace_mcp_cwd:str="/opt/mcp/google-workspace";google_workspace_mcp_timeout_seconds:float=30.0;google_oauth_credentials:str|None=None;google_oauth_token:str|None=None
+    google_workspace_mcp_enabled:bool=True;google_workspace_mcp_command:str="node";google_workspace_mcp_script:str="/opt/mcp/google-workspace/dist/server.js";google_workspace_mcp_cwd:str="/opt/mcp/google-workspace";google_workspace_mcp_timeout_seconds:float=30.0;google_workspace_mcp_max_message_bytes:int=Field(default=16*1024*1024,ge=64*1024);google_oauth_credentials:str|None=None;google_oauth_token:str|None=None
 
 @lru_cache
 def get_settings()->Settings:return Settings()
