@@ -562,16 +562,18 @@ Markdown artifacts are versioned, inspectable and human-reviewable.
 ┌─────────────────────────────────────────────────────────────┐
 │ Spring Boot backend                                         │
 │ deterministic workflow owner                                │
-│ phase state · human gates · artifacts · source ingestion    │
+│ phase state · human gates · artifacts                       │
 │ command/event correlation · document materialization        │
 └───────────────┬──────────────────────────────┬──────────────┘
-                │ NATS JetStream               │ HTTP/MCP
+                │ NATS JetStream               │ HTTP
                 ▼                              ▼
 ┌──────────────────────────────┐      ┌───────────────────────┐
-│ Agent Platform               │      │ Render / Workspace     │
-│ FastAPI + LangGraph          │      │ DOCX/PDF + Slides      │
-│ agents · skills · RAG        │      │ Google Workspace MCP   │
-│ checkpoints · Valkey cache   │      └───────────────────────┘
+│ Agent Platform               │      │ Document Renderer      │
+│ FastAPI + LangGraph          │      │ DOCX/PDF               │
+│ agents · skills · RAG        │      └───────────────────────┘
+│ MCP ToolRegistry             │
+│ Google Workspace MCP         │
+│ checkpoints · Valkey cache   │
 │ provider integrations        │
 └───────────────┬──────────────┘
                 │
@@ -706,11 +708,11 @@ Anthropic prompt caching is enabled for stable agent/skill instructions and reus
 - Java 21 / Spring Boot 3.5.
 - PostgreSQL + Flyway.
 - Deterministic five-phase business workflow.
-- Source ingestion.
+- Delegates source ingestion to Agent Platform through the standard AgentExecution protocol.
 - NATS command/event execution.
 - Durable phase resume.
 - Versioned artifacts.
-- Google Workspace MCP integration.
+- No direct MCP integration; external tools are owned by Agent Platform.
 - deterministic DOCX/PDF materialization.
 
 ## Reusable cognitive execution policy
@@ -739,6 +741,8 @@ The built-in graph strategies are:
 | `resilient-single` | Default for any bounded current or future skill. One cognitive task with checkpoint/cache support and automatic compact retries on provider truncation. |
 | `proposal` | Semantic decomposition for large proposal documents. |
 | `presentation-plan` | Semantic decomposition for large presentation storylines. |
+| `presentation-materialization` | Agent-owned Google Slides materialization with internal chunking and MCP tools. |
+| `source-ingestion` | Agent-owned Google Drive discovery/preparation through MCP tools. |
 
 A new workflow step therefore does **not** require changing `LangGraphAgentRuntime`. A new skill such as `find-investments` can initially use `resilient-single`. If its cognitive process later needs planning, loops, specialist delegation or tool-driven research, implement and register a graph such as `investment-research` and reference it declaratively from the skill.
 
