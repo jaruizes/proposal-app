@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 1
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 9
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 10
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -308,6 +308,90 @@ def _operation_plan(content: str) -> list[dict[str, Any]]:
     return normalized
 
 
+def _semantic_slide_plan(content: str, template_inventory: str) -> dict[str, Any]:
+    value = _extract_json_object(content)
+    source_slide_id = str(value.get("templateSlideObjectId") or "").strip()
+    elements = value.get("elements")
+    if not source_slide_id:
+        raise PresentationMaterializationError("Semantic slide plan requires templateSlideObjectId")
+    if not isinstance(elements, list):
+        raise PresentationMaterializationError("Semantic slide plan requires elements[]")
+
+    try:
+        inventory = json.loads(template_inventory)
+    except json.JSONDecodeError as exc:
+        raise PresentationMaterializationError("Template inventory is invalid JSON") from exc
+    slides = inventory.get("slides", []) if isinstance(inventory, dict) else []
+    source = next((slide for slide in slides if slide.get("objectId") == source_slide_id), None)
+    if source is None:
+        raise PresentationMaterializationError(f"Unknown template slide objectId: {source_slide_id}")
+    allowed_elements = {
+        str(element.get("objectId")): element
+        for element in (source.get("elements") or [])
+        if isinstance(element, dict) and element.get("objectId")
+    }
+
+    normalized_elements: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for element in elements:
+        if not isinstance(element, dict):
+            raise PresentationMaterializationError("Semantic slide elements[] must contain objects")
+        element_id = str(element.get("templateElementObjectId") or "").strip()
+        text = element.get("text")
+        if not element_id or element_id not in allowed_elements:
+            raise PresentationMaterializationError(f"Unknown template element objectId: {element_id}")
+        if allowed_elements[element_id].get("kind") != "shape":
+            raise PresentationMaterializationError(f"Template element is not a text shape: {element_id}")
+        if not isinstance(text, str):
+            raise PresentationMaterializationError(f"Semantic slide element {element_id} requires string text")
+        if element_id in seen:
+            raise PresentationMaterializationError(f"Duplicate semantic slide element: {element_id}")
+        seen.add(element_id)
+        normalized_elements.append({"templateElementObjectId": element_id, "text": text})
+
+    text_shape_ids = {
+        element_id for element_id, element in allowed_elements.items()
+        if element.get("kind") == "shape" and str(element.get("text") or "")
+    }
+    missing = sorted(text_shape_ids - seen)
+    if missing:
+        raise PresentationMaterializationError(
+            "Semantic slide plan must explicitly map or clear every populated template text shape: "
+            + ", ".join(missing)
+        )
+    return {"templateSlideObjectId": source_slide_id, "elements": normalized_elements}
+
+
+def _parse_duplicate_result(raw: str) -> tuple[str, dict[str, str]]:
+    try:
+        node = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise PresentationMaterializationError("Slide duplication returned invalid JSON") from exc
+    replies = node if isinstance(node, list) else node.get("replies", []) if isinstance(node, dict) else []
+    for reply in replies:
+        duplicate = reply.get("duplicateObject") if isinstance(reply, dict) else None
+        if not isinstance(duplicate, dict):
+            continue
+        slide_id = str(duplicate.get("objectId") or "").strip()
+        mapping_raw = duplicate.get("objectIds") or {}
+        mapping = {str(k): str(v) for k, v in mapping_raw.items()} if isinstance(mapping_raw, dict) else {}
+        if slide_id:
+            return slide_id, mapping
+    raise PresentationMaterializationError("Slide duplication returned no duplicated slide objectId")
+
+
+def _template_slide_ids(template_inventory: str) -> list[str]:
+    try:
+        inventory = json.loads(template_inventory)
+    except json.JSONDecodeError as exc:
+        raise PresentationMaterializationError("Template inventory is invalid JSON") from exc
+    return [
+        str(slide.get("objectId"))
+        for slide in (inventory.get("slides", []) if isinstance(inventory, dict) else [])
+        if isinstance(slide, dict) and slide.get("objectId")
+    ]
+
+
 async def _validate_registry_operations(runtime, operations: list[dict[str, Any]]) -> None:
     if runtime._tools is None:
         raise PresentationMaterializationError("Agent Platform ToolRegistry is not configured")
@@ -463,6 +547,64 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
                 last_error = str(exc)[:1200] or "INVALID_AGENT_OUTPUT"
         raise AssertionError("unreachable")
 
+    async def generate_semantic_json(base: ModelRequest, instruction: str, stage: str, template_inventory: str) -> ModelResult:
+        checkpoint = stable_cache_key({
+            "version": PRESENTATION_MATERIALIZATION_CONTRACT_VERSION,
+            "stage": stage,
+            "model": base.model,
+            "instruction": instruction,
+            "mode": "semantic-template-slide",
+        })
+        if runtime._cache is not None:
+            cached = await runtime._cache.get_json("presentation-materialization-step", checkpoint)
+            if cached is not None:
+                cached_result = ModelResult.model_validate(cached)
+                try:
+                    _semantic_slide_plan(cached_result.content, template_inventory)
+                except PresentationMaterializationError:
+                    await runtime._executions.add_event(execution.id, "presentation.materialization.step.cache_rejected", {
+                        "stage": stage,
+                        "reason": "invalid_semantic_slide_plan",
+                    })
+                else:
+                    return cached_result.model_copy(update={
+                        "usage": ModelUsage(),
+                        "provider_request_id": None,
+                        "metadata": {"checkpoint_hit": True},
+                    })
+
+        last_error = "unknown"
+        for attempt in range(1, 4):
+            retry = "" if attempt == 1 else (
+                "\n\n# RETRY AFTER OUTPUT FAILURE\n"
+                f"Previous attempt failed ({last_error}). Return ONLY the semantic JSON object. "
+                "Do not emit Google Slides API requests, synthetic object IDs, markdown or prose."
+            )
+            request = base.model_copy(update={
+                "messages": [ModelMessage(role=ModelRole.USER, content=instruction + retry)],
+                "max_output_tokens": 2200,
+            })
+            try:
+                with timed_span("langgraph.presentation-materialization.semantic-model", stage=stage, attempt=attempt):
+                    result = await runtime._model_provider.generate(request)
+                _semantic_slide_plan(result.content, template_inventory)
+                calls.append(result)
+                if runtime._cache is not None:
+                    await runtime._cache.set_json(
+                        "presentation-materialization-step", checkpoint,
+                        result.model_dump(mode="json"), ttl_seconds=604800,
+                    )
+                return result
+            except ModelProviderError as exc:
+                if exc.code != "ANTHROPIC_OUTPUT_TRUNCATED" or attempt == 3:
+                    raise
+                last_error = exc.code
+            except PresentationMaterializationError as exc:
+                if attempt == 3:
+                    raise
+                last_error = str(exc)[:1200] or "INVALID_SEMANTIC_SLIDE_PLAN"
+        raise AssertionError("unreachable")
+
     async def prepare(state: dict) -> dict:
         request = AgentExecutionRequest.model_validate(state["request"])
         business_context = str(request.context.get("business_context") or "")
@@ -505,35 +647,49 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
     async def plan(state: dict) -> dict:
         data = state["presentation_materialization"]
         base = await base_request(state)
-        plans: list[str] = []
         chunks = data["chunks"]
+        plans: list[str] = []
+
+        if data["template_id"]:
+            for index, chunk in enumerate(chunks, start=1):
+                instruction = (
+                    "Return ONLY JSON with this exact shape: "
+                    "{\"templateSlideObjectId\":\"EXISTING_TEMPLATE_SLIDE_ID\","
+                    "\"elements\":[{\"templateElementObjectId\":\"EXISTING_TEMPLATE_ELEMENT_ID\",\"text\":\"final visible text\"}]}.\n"
+                    "This is a semantic rendering plan, NOT a Google Slides API plan. "
+                    "Choose exactly one EXISTING slide objectId from the compact template inventory. "
+                    "Use ONLY element objectIds that belong to that chosen template slide. "
+                    "Never invent object IDs. Never emit createSlide, duplicateObject, replaceAllText, batchUpdate or any MCP tool. "
+                    "For every populated text shape in the chosen template slide, include an elements[] entry: "
+                    "set its final approved text, or set text to empty string to clear unused template/example copy. "
+                    "Preserve the approved slide title and narrative wording exactly; only map it onto the corporate pattern.\n\n"
+                    f"# GLOBAL OUTLINE\n{data['outline']}\n\n"
+                    f"# CURRENT APPROVED SLIDE {index}/{len(chunks)}\n{chunk}\n\n"
+                    f"# COMPACT TEMPLATE INVENTORY\n{data['template_inventory']}"
+                )
+                result = await generate_semantic_json(
+                    base, instruction, f"presentation.materialization.semantic.{index}", data["template_inventory"]
+                )
+                plans.append(result.content)
+            updated = dict(data)
+            updated["semantic_plans"] = plans
+            updated["materialization_mode"] = "semantic-template"
+            return {"presentation_materialization": updated}
+
+        # Blank-presentation fallback remains supported, but template-based materialization
+        # never exposes low-level Google Slides requests to the model.
         for index, chunk in enumerate(chunks, start=1):
             instruction = (
-                "Produce ONLY JSON {\"operations\":[{\"tool\":"
-                "\"slides_duplicate_slide|slides_delete_slide|slides_move_slides|slides_replace_text|"
-                "slides_replace_element_text|slides_batch_update\",\"arguments\":{...}}]}.\n"
-                "Materialize ONLY the supplied slides-plan chunk. Use $PRESENTATION_ID as presentationId. "
-                "Global slide order and exact titles are frozen. Never modify slides outside this chunk. "
-                "Reuse the compact corporate template inventory where useful. If no pattern fits, use "
-                "slides_batch_update createSlide/createShape/insertText. Prefer compact batchUpdate requests. "
-                "Tool argument contracts are strict: duplicate/delete={slideObjectId}; move={slideObjectIds[],insertionIndex}; "
-                "replace_text={pageObjectIds[],replacements:[{from,to,matchCase}]}; "
-                "replace_element_text={elementObjectId,text}; batch_update={requests[]}. "
-                "presentationId may be omitted because the platform injects it. "
-                "Do not rewrite approved narrative copy.\n\n"
-                f"# GLOBAL OUTLINE\n{data['outline']}\n\n"
-                f"# CURRENT CHUNK {index}/{len(chunks)}\n{chunk}\n\n"
-                f"# COMPACT TEMPLATE INVENTORY\n{data['template_inventory']}"
+                "Produce ONLY JSON {\"operations\":[{\"tool\":\"slides_batch_update\",\"arguments\":{...}}]}.\n"
+                "Materialize ONLY this slide into a blank presentation. Use $PRESENTATION_ID as presentationId. "
+                "Do not modify any other slide. Prefer one compact batchUpdate request.\n\n"
+                f"# CURRENT CHUNK {index}/{len(chunks)}\n{chunk}"
             )
-            result = await generate_json(
-                base,
-                instruction,
-                f"presentation.materialization.chunk.{index}",
-            )
+            result = await generate_json(base, instruction, f"presentation.materialization.blank.{index}")
             plans.append(result.content)
-
         updated = dict(data)
         updated["operation_plans"] = plans
+        updated["materialization_mode"] = "blank-low-level"
         return {"presentation_materialization": updated}
 
     async def materialize(state: dict) -> dict:
@@ -543,35 +699,80 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
         folder_id = _drive_id(str(config.get("outputFolder") or ""))
         document_name = str(config.get("presentationName") or "Generated presentation").strip()
 
-        # Validate all planned calls before creating/copying the presentation so malformed
-        # agent output cannot leave a partial artifact behind.
-        validated_plans = [_operation_plan(raw_plan) for raw_plan in data["operation_plans"]]
-        for operations in validated_plans:
-            await _validate_registry_operations(runtime, operations)
-
         if template_id:
+            semantic_plans = [
+                _semantic_slide_plan(raw_plan, data["template_inventory"])
+                for raw_plan in data.get("semantic_plans", [])
+            ]
+            if len(semantic_plans) != len(data["chunks"]):
+                raise PresentationMaterializationError("Semantic materialization did not produce one plan per approved slide")
             args: dict[str, Any] = {"fileId": template_id, "newName": document_name}
             if folder_id:
                 args["destinationFolderId"] = folder_id
             created = await _tool_text(runtime, execution, "drive_copy_file", args)
-        else:
-            created = await _tool_text(runtime, execution, "slides_create_presentation", {"title": document_name})
+            presentation_id = _parse_created_id(created)
 
-        presentation_id = _parse_created_id(created)
-        if not template_id and folder_id:
-            await _tool_text(runtime, execution, "drive_move_file", {
-                "fileId": presentation_id,
-                "destinationFolderId": folder_id,
-            })
-
-        operation_count = 0
-        for operations in validated_plans:
-            for operation in operations:
-                arguments = _replace_presentation_id(operation["arguments"], presentation_id)
-                if "presentationId" not in arguments:
-                    arguments["presentationId"] = presentation_id
-                await _tool_text(runtime, execution, operation["tool"], arguments)
+            generated_slide_ids: list[str] = []
+            operation_count = 0
+            for plan_index, plan in enumerate(semantic_plans, start=1):
+                duplicate_raw = await _tool_text(runtime, execution, "slides_duplicate_slide", {
+                    "presentationId": presentation_id,
+                    "slideObjectId": plan["templateSlideObjectId"],
+                })
+                duplicated_slide_id, object_id_map = _parse_duplicate_result(duplicate_raw)
+                generated_slide_ids.append(duplicated_slide_id)
                 operation_count += 1
+
+                for element in plan["elements"]:
+                    template_element_id = element["templateElementObjectId"]
+                    duplicated_element_id = object_id_map.get(template_element_id)
+                    if not duplicated_element_id:
+                        raise PresentationMaterializationError(
+                            f"Google Slides duplication did not map template element {template_element_id} "
+                            f"for semantic slide {plan_index}"
+                        )
+                    await _tool_text(runtime, execution, "slides_replace_element_text", {
+                        "presentationId": presentation_id,
+                        "elementObjectId": duplicated_element_id,
+                        "text": element["text"],
+                    })
+                    operation_count += 1
+
+            # Remove template/sample slides only after every target slide exists. This keeps
+            # source IDs valid throughout materialization and avoids synthetic cross-request IDs.
+            for original_slide_id in _template_slide_ids(data["template_inventory"]):
+                await _tool_text(runtime, execution, "slides_delete_slide", {
+                    "presentationId": presentation_id,
+                    "slideObjectId": original_slide_id,
+                })
+                operation_count += 1
+
+            if generated_slide_ids:
+                await _tool_text(runtime, execution, "slides_move_slides", {
+                    "presentationId": presentation_id,
+                    "slideObjectIds": generated_slide_ids,
+                    "insertionIndex": 0,
+                })
+                operation_count += 1
+        else:
+            validated_plans = [_operation_plan(raw_plan) for raw_plan in data.get("operation_plans", [])]
+            for operations in validated_plans:
+                await _validate_registry_operations(runtime, operations)
+            created = await _tool_text(runtime, execution, "slides_create_presentation", {"title": document_name})
+            presentation_id = _parse_created_id(created)
+            if folder_id:
+                await _tool_text(runtime, execution, "drive_move_file", {
+                    "fileId": presentation_id,
+                    "destinationFolderId": folder_id,
+                })
+            operation_count = 0
+            for operations in validated_plans:
+                for operation in operations:
+                    arguments = _replace_presentation_id(operation["arguments"], presentation_id)
+                    if "presentationId" not in arguments:
+                        arguments["presentationId"] = presentation_id
+                    await _tool_text(runtime, execution, operation["tool"], arguments)
+                    operation_count += 1
 
         final_structure = await _tool_text(runtime, execution, "slides_get_presentation", {
             "presentationId": presentation_id,
@@ -592,7 +793,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             "url": url,
             "buildReport": {
                 "templateId": template_id or None,
-                "renderingMode": "corporate-template" if template_id else "blank",
+                "renderingMode": "semantic-corporate-template" if template_id else "blank",
                 "operationCount": operation_count,
                 "chunks": len(data["chunks"]),
                 "structuralQa": qa,
@@ -610,6 +811,8 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
                 "materialization_chunks": len(data["chunks"]),
                 "mcp_owned_by_agent_platform": True,
                 "materialization_contract_version": PRESENTATION_MATERIALIZATION_CONTRACT_VERSION,
+                "materialization_mode": data.get("materialization_mode"),
+                "llm_generates_raw_google_requests": False if template_id else True,
             },
         )
         await runtime._executions.add_event(execution.id, "presentation.materialization.completed", {
@@ -618,6 +821,7 @@ def add_presentation_materialization_nodes(builder: StateGraph, runtime, executi
             "operations": operation_count,
             "chunks": len(data["chunks"]),
             "structural_qa": qa,
+            "mode": data.get("materialization_mode"),
         })
         return {"model_result": result.model_dump(mode="json")}
 
