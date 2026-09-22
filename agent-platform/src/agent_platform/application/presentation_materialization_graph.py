@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 1
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 12
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 13
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -101,7 +101,7 @@ def _compact_template(raw: str) -> str:
             "layoutObjectId": ((slide.get("slideProperties") or {}).get("layoutObjectId") or ""),
             "elements": [],
         }
-        for element in (slide.get("pageElements", []) or [])[:12]:
+        for element in (slide.get("pageElements", []) or [])[:24]:
             item = {"objectId": element.get("objectId", "")}
             summarized_type = str(element.get("type") or "")
             if summarized_type:
@@ -136,9 +136,13 @@ def _compact_template(raw: str) -> str:
         out["masters"].append({"objectId": master.get("objectId", "")})
     value = json.dumps(out, ensure_ascii=False, separators=(",", ":"))
     if len(value) > 200_000:
+        # Semantic materialization needs real slide/element IDs even for large templates.
+        # Reduce descriptive text first; never drop the element inventory entirely.
         for slide in out["slides"]:
-            slide.pop("elements", None)
-        out["elementsOmittedForSize"] = True
+            for element in slide.get("elements", []):
+                if "text" in element:
+                    element["text"] = str(element["text"])[:48]
+        out["textTruncatedForSize"] = True
         value = json.dumps(out, ensure_ascii=False, separators=(",", ":"))
     return value
 
