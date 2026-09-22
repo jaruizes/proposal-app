@@ -26,6 +26,8 @@ def test_graph_registry_defaults_to_resilient_single():
 def test_graph_registry_reads_declarative_skill_graph():
     assert GraphRegistry.graph_key(skill("compose-proposal", "proposal")) == "proposal"
     assert GraphRegistry.graph_key(skill("design-presentation", "presentation-plan")) == "presentation-plan"
+    assert GraphRegistry.graph_key(skill("generate-presentation", "presentation-materialization")) == "presentation-materialization"
+    assert GraphRegistry.graph_key(skill("ingest-sources", "source-ingestion")) == "source-ingestion"
 
 
 def test_graph_registry_rejects_unknown_graph():
