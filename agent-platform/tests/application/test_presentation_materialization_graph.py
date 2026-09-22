@@ -7,6 +7,8 @@ from agent_platform.application.presentation_materialization_graph import (
     _compact_template,
     _extract_json_object,
     _operation_plan,
+    _parse_duplicate_result,
+    _semantic_slide_plan,
     _split_slides_plan,
 )
 
@@ -131,3 +133,49 @@ def test_default_slide_split_uses_one_slide_per_internal_call():
     assert "## SLIDE-1" in chunks[0]
     assert "## SLIDE-2" not in chunks[0]
     assert "## SLIDE-2" in chunks[1]
+
+
+def test_semantic_slide_plan_rejects_synthetic_ids():
+    inventory = json.dumps({
+        "slides": [{
+            "objectId": "template-slide-1",
+            "elements": [{"objectId": "title-1", "kind": "shape", "text": "Template title"}],
+        }]
+    })
+    plan = json.dumps({
+        "templateSlideObjectId": "SLIDE_5_NEW",
+        "elements": [{"templateElementObjectId": "title-1", "text": "Approved title"}],
+    })
+
+    with pytest.raises(PresentationMaterializationError, match="Unknown template slide objectId"):
+        _semantic_slide_plan(plan, inventory)
+
+
+def test_semantic_slide_plan_requires_all_populated_template_text_shapes():
+    inventory = json.dumps({
+        "slides": [{
+            "objectId": "template-slide-1",
+            "elements": [
+                {"objectId": "title-1", "kind": "shape", "text": "Template title"},
+                {"objectId": "body-1", "kind": "shape", "text": "Template body"},
+            ],
+        }]
+    })
+    plan = json.dumps({
+        "templateSlideObjectId": "template-slide-1",
+        "elements": [{"templateElementObjectId": "title-1", "text": "Approved title"}],
+    })
+
+    with pytest.raises(PresentationMaterializationError, match="explicitly map or clear"):
+        _semantic_slide_plan(plan, inventory)
+
+
+def test_parse_duplicate_result_returns_real_slide_and_element_mapping():
+    slide_id, mapping = _parse_duplicate_result(json.dumps([
+        {"duplicateObject": {
+            "objectId": "generated-slide-1",
+            "objectIds": {"title-1": "generated-title-1", "body-1": "generated-body-1"},
+        }}
+    ]))
+    assert slide_id == "generated-slide-1"
+    assert mapping["title-1"] == "generated-title-1"
