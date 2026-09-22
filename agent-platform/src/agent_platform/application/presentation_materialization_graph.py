@@ -27,7 +27,7 @@ _ALLOWED_MUTATION_TOOLS = {
     "slides_batch_update",
 }
 _MAX_SLIDES_PER_CHUNK = 1
-PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 11
+PRESENTATION_MATERIALIZATION_CONTRACT_VERSION = 12
 
 
 class PresentationMaterializationError(RuntimeError):
@@ -103,7 +103,13 @@ def _compact_template(raw: str) -> str:
         }
         for element in (slide.get("pageElements", []) or [])[:12]:
             item = {"objectId": element.get("objectId", "")}
-            if "shape" in element:
+            summarized_type = str(element.get("type") or "")
+            if summarized_type:
+                item["kind"] = summarized_type
+                if summarized_type == "shape":
+                    item["shapeType"] = element.get("shapeType", "")
+                    item["text"] = re.sub(r"\\s+", " ", str(element.get("text") or "")).strip()[:180]
+            elif "shape" in element:
                 item.update({
                     "kind": "shape",
                     "shapeType": (element.get("shape") or {}).get("shapeType", ""),
@@ -464,8 +470,11 @@ def _structural_qa(slides_plan: str, raw_structure: str) -> str:
     leftovers = 0
     for slide in slides:
         for element in slide.get("pageElements", []) or []:
-            shape = element.get("shape") or {}
-            text = _compact_text(shape.get("text") or {}).lower()
+            if isinstance(element.get("text"), str):
+                text = re.sub(r"\\s+", " ", element.get("text") or "").strip().lower()
+            else:
+                shape = element.get("shape") or {}
+                text = _compact_text(shape.get("text") or {}).lower()
             if any(token in text for token in ("lorem ipsum", "placeholder", "insert text")):
                 leftovers += 1
     actual = len(slides)
