@@ -5,6 +5,7 @@ import pytest
 from agent_platform.application.presentation_materialization_graph import (
     PresentationMaterializationError,
     _compact_template,
+    _extract_json_object,
     _operation_plan,
     _split_slides_plan,
 )
@@ -116,3 +117,17 @@ def test_operation_plan_accepts_replace_text_contract_without_presentation_id():
 
     operations = _operation_plan(content)
     assert operations[0]["arguments"]["pageObjectIds"] == ["slide-1"]
+
+
+def test_extract_json_object_accepts_markdown_fence_and_preamble():
+    wrapped = """Here is the requested JSON:\n\n\`\`\`json\n{\"operations\": []}\n\`\`\`"""
+    assert _extract_json_object(wrapped) == {"operations": []}
+
+
+def test_default_slide_split_uses_one_slide_per_internal_call():
+    plan = """# Deck\n\n## SLIDE-1\nOne\n\n## SLIDE-2\nTwo\n"""
+    chunks = _split_slides_plan(plan)
+    assert len(chunks) == 2
+    assert "## SLIDE-1" in chunks[0]
+    assert "## SLIDE-2" not in chunks[0]
+    assert "## SLIDE-2" in chunks[1]
