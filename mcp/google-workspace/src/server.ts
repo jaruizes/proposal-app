@@ -17,6 +17,25 @@ function text(data:unknown){return {content:[{type:"text" as const,text:typeof d
 function escapeDrive(value:string){return value.replace(/\\/g,"\\\\").replace(/'/g,"\\'");}
 function elementText(element:slides_v1.Schema$PageElement){const shape=element.shape?.text?.textElements?.map(x=>x.textRun?.content??"").join("").trim()??"";const table=element.table?.tableRows?.map(r=>r.tableCells?.map(c=>c.text?.textElements?.map(x=>x.textRun?.content??"").join("").trim()).join(" | ")).join("\n").trim()??"";return [shape,table].filter(Boolean).join("\n");}
 function summarize(p:slides_v1.Schema$Presentation){return {presentationId:p.presentationId,title:p.title,pageSize:p.pageSize,slides:p.slides?.map((s,index)=>({index,objectId:s.objectId,slideProperties:s.slideProperties,pageElements:s.pageElements?.map(e=>({objectId:e.objectId,type:e.shape?"shape":e.image?"image":e.table?"table":e.line?"line":e.video?"video":e.wordArt?"wordArt":"other",text:elementText(e),size:e.size,transform:e.transform,shapeType:e.shape?.shapeType}))??[]}))??[],layouts:p.layouts?.map(l=>({objectId:l.objectId,layoutProperties:l.layoutProperties}))??[],masters:p.masters?.map(m=>({objectId:m.objectId}))??[]};}
+function rawShapeText(element:slides_v1.Schema$PageElement){return element.shape?.text?.textElements?.map(x=>x.textRun?.content??"").join("")??"";}
+function findPageElement(p:slides_v1.Schema$Presentation,objectId:string){for(const slide of p.slides??[]){for(const element of slide.pageElements??[]){if(element.objectId===objectId)return element;}}return undefined;}
+async function safeSlideRequests(presentationId:string,requests:slides_v1.Schema$Request[]){
+  const deleteRequests=requests.filter(r=>r.deleteText);
+  if(deleteRequests.length===0)return requests;
+  const presentation=(await slides.presentations.get({presentationId})).data;
+  return requests.filter(request=>{
+    const deletion=request.deleteText;
+    if(!deletion)return true;
+    const range=deletion.textRange;
+    if(range?.type==="FIXED_RANGE"&&typeof range.startIndex==="number"&&typeof range.endIndex==="number"&&range.startIndex>=range.endIndex)return false;
+    if(range?.type!=="ALL"||deletion.cellLocation)return true;
+    const objectId=deletion.objectId;
+    if(!objectId)return true;
+    const element=findPageElement(presentation,objectId);
+    if(!element||!element.shape)return true;
+    return rawShapeText(element).length>0;
+  });
+}
 
 const workspaceRoot=path.resolve(REPO_ROOT,"workspace");
 async function resolveWorkspaceOutput(relativePath:string,overwrite:boolean){
@@ -50,8 +69,22 @@ server.tool("slides_duplicate_slide","Duplicate a slide within a generated prese
 server.tool("slides_delete_slide","Delete a slide from a generated presentation.",{presentationId:z.string(),slideObjectId:z.string()},async({presentationId,slideObjectId})=>text((await slides.presentations.batchUpdate({presentationId,requestBody:{requests:[{deleteObject:{objectId:slideObjectId}}]}})).data));
 server.tool("slides_move_slides","Move slides to a zero-based insertion index.",{presentationId:z.string(),slideObjectIds:z.array(z.string()).min(1),insertionIndex:z.number().int().min(0)},async({presentationId,slideObjectIds,insertionIndex})=>text((await slides.presentations.batchUpdate({presentationId,requestBody:{requests:[{updateSlidesPosition:{slideObjectIds,insertionIndex}}]}})).data));
 server.tool("slides_replace_text","Replace exact text on selected slides.",{presentationId:z.string(),pageObjectIds:z.array(z.string()).min(1),replacements:z.array(z.object({from:z.string(),to:z.string(),matchCase:z.boolean().default(true)})).min(1)},async({presentationId,pageObjectIds,replacements})=>{const requests:slides_v1.Schema$Request[]=replacements.map(x=>({replaceAllText:{containsText:{text:x.from,matchCase:x.matchCase},replaceText:x.to,pageObjectIds}}));return text((await slides.presentations.batchUpdate({presentationId,requestBody:{requests}})).data);});
-server.tool("slides_replace_element_text","Replace all text inside one specific text-bearing page element.",{presentationId:z.string(),elementObjectId:z.string(),text:z.string()},async({presentationId,elementObjectId,text:newText})=>text((await slides.presentations.batchUpdate({presentationId,requestBody:{requests:[{deleteText:{objectId:elementObjectId,textRange:{type:"ALL"}}},{insertText:{objectId:elementObjectId,insertionIndex:0,text:newText}}]}})).data));
-server.tool("slides_batch_update","Advanced Slides API batchUpdate for generated presentations only.",{presentationId:z.string(),requests:z.array(z.record(z.any())).min(1)},async({presentationId,requests})=>text((await slides.presentations.batchUpdate({presentationId,requestBody:{requests:requests as slides_v1.Schema$Request[]}})).data));
+server.tool("slides_replace_element_text","Replace all text inside one specific text-bearing page element.",{presentationId:z.string(),elementObjectId:z.string(),text:z.string()},async({presentationId,elementObjectId,text:newText})=>{
+  const presentation=(await slides.presentations.get({presentationId})).data;
+  const element=findPageElement(presentation,elementObjectId);
+  if(!element?.shape)throw new Error(`Element ${elementObjectId} is not a text-bearing shape in presentation ${presentationId}`);
+  const currentText=rawShapeText(element);
+  const requests:slides_v1.Schema$Request[]=[];
+  if(currentText.length>0)requests.push({deleteText:{objectId:elementObjectId,textRange:{type:"ALL"}}});
+  if(newText.length>0)requests.push({insertText:{objectId:elementObjectId,insertionIndex:0,text:newText}});
+  if(requests.length===0)return text({presentationId,elementObjectId,updated:false,reason:"already-empty"});
+  return text((await slides.presentations.batchUpdate({presentationId,requestBody:{requests}})).data);
+});
+server.tool("slides_batch_update","Advanced Slides API batchUpdate for generated presentations only.",{presentationId:z.string(),requests:z.array(z.record(z.any())).min(1)},async({presentationId,requests})=>{
+  const normalized=await safeSlideRequests(presentationId,requests as slides_v1.Schema$Request[]);
+  if(normalized.length===0)return text({presentationId,updated:false,reason:"all-requests-were-safe-noops"});
+  return text((await slides.presentations.batchUpdate({presentationId,requestBody:{requests:normalized}})).data);
+});
 
 server.tool("docs_get_document","Read a Google Docs document. Read-only.",{documentId:z.string()},async({documentId})=>text((await docs.documents.get({documentId})).data));
 server.tool("docs_create_document","Create a new Google Docs document.",{title:z.string()},async({title})=>text((await docs.documents.create({requestBody:{title}})).data));
